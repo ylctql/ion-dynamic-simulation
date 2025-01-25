@@ -1,0 +1,38 @@
+{
+    "RF": {
+        "esbe6": 1
+    },
+    "Ucenter": {
+        "esbe4": 1
+    },
+    "U4": {
+        "esbe4": 1
+    },
+    "U1": {
+        "esbe1": 0.5,
+        "esbe1asy": -0.5
+    },
+    "U2": {
+        "esbe2": 0.5,
+        "esbe2asy": -0.5
+    },
+    "U3": {
+        "esbe3": 0.5,
+        "esbe3asy": -0.5
+    },
+    "U7": {
+        "esbe1": 0.5,
+        "esbe1asy": 0.5
+    },
+    "U6": {
+        "esbe2": 0.5,
+        "esbe2asy": 0.5
+    },
+    "U5": {
+        "esbe3": 0.5,
+        "esbe3asy": 0.5
+    },
+    "Unear": {
+        "esbe1": 3
+    }
+}
