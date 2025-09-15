@@ -10,9 +10,9 @@ pip install .
 ```
 And it could be used. 
 
-**Remember to get your electric field file, it's not included in this repo!**
+**Remember to get your electric field file, it's not included in this repo!** And you should modify the filename in src/monolithic.py to use your electric field file.
 
 To simulate the motions of ions,
 ```
-python3 src/monolithic.py
+cd src && python3 monolithic.py
 ```
