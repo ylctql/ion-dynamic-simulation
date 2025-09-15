@@ -8,11 +8,11 @@ from dataplot import *
 import math,csv,traceback,json
 from scipy.signal import savgol_filter
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
-filename="../data/monolithic20241118.csv" #文件名：导入的电势场格点数据
+filename="../../Ep_data/300DC50gap_zlarger.csv" #文件名：导入的电势场格点数据
 basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
-N = 150  #离子数
+N = 500  #离子数
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 Vrf=550/2 #RF电压振幅
@@ -123,7 +123,7 @@ class Data_Loader:
             surf = ax.plot_surface(X, Y, np.squeeze(data), cmap='viridis')
             plt.show()
         else:
-            for i    in range(3) :
+            for i in range(3) :
 
                 if len(coords[i])>1:
                     xx=coords[i]
@@ -147,6 +147,7 @@ def interpret_dynamic(value,t):#工具函数
 def gen_grids(potential_static):#工具函数
     [x,y,z]=data_loader.coordinate
     fieldx, fieldy, fieldz = np.gradient(-potential_static, x, y, z, edge_order=2)
+    # 矢量场的三个分量对应三个标量场
     grid_x = ionsim.Grid(x, y, z, value=fieldx)
     grid_y = ionsim.Grid(x, y, z, value=fieldy)
     grid_z = ionsim.Grid(x, y, z, value=fieldz)        
@@ -179,11 +180,11 @@ def force(r: np.ndarray, v: np.ndarray, t: float):
 
     # inside bounds
     coord = data_loader.grids_dc[0].get_coord(r_mask)
-    f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc] ))       )#静电力
+    f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
     for key,value  in grids_dynamic_dict.items():
         grids_rf=value[0]
         fun_=value[1]
-        f_in=f_in+  np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf] ))*interpret_dynamic(fun_,t)#加上含时的力
+        f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
     f_in=f_in.transpose()
     f[mask] =f_in
     # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空

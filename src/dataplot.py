@@ -79,7 +79,7 @@ class CalculationBackend:
 				time.sleep(1)
 				continue
 			
-			# start = time.process_time()
+			start = time.process_time()
 			r_list, v_list = ionsim.calculate_trajectory(
 				r0, v0, 
 				charge, mass,
@@ -88,8 +88,8 @@ class CalculationBackend:
 				t + self.interval * self.batch,
 				force
 			)
-			# end = time.process_time()
-			# print(f't = {t}, dt = {self.interval * self.batch}, elapsed = {end - start}')
+			end = time.process_time()
+			print(f't = {t}, dt = {self.interval * self.batch}, elapsed = {end - start}')
 
 			for i in range(self.batch):
 				t += self.interval
@@ -113,7 +113,7 @@ class DataPlotter:
 		"""
 		self.queue_in = queue_in
 		self.queue_out = queue_out
-		self.fig, self.ax = plt.subplots(1, 2, figsize=(20, 10))
+		self.fig, self.ax = plt.subplots(1, 2, figsize=(10, 5))
 
 		self.dl = dl
 		self.dt = dt
@@ -122,18 +122,18 @@ class DataPlotter:
 		self.ax[0].set_xlim(-x_range+x_bias, x_range+x_bias)
 		self.ax[0].set_ylim(-y_range+y_bias, y_range+y_bias)
 		self.ax[0].set_aspect('equal')
-		self.ax[0].set_xlabel('x/um', fontsize=20)
-		self.ax[0].set_ylabel('y/um', fontsize=20)
-		self.ax[0].tick_params(axis='x', labelsize=20)
-		self.ax[0].tick_params(axis='y', labelsize=20)
+		self.ax[0].set_xlabel('x/um', fontsize=14)
+		self.ax[0].set_ylabel('y/um', fontsize=14)
+		self.ax[0].tick_params(axis='x', labelsize=14)
+		self.ax[0].tick_params(axis='y', labelsize=14)
 
 		self.ax[1].set_xlim(-x_range+x_bias, x_range+x_bias)
 		self.ax[1].set_ylim(-z_range+z_bias, z_range+z_bias)
 		self.ax[1].set_aspect('equal')
-		self.ax[1].set_xlabel('x/um', fontsize=20)
-		self.ax[1].set_ylabel('z/um', fontsize=20)
-		self.ax[1].tick_params(axis='x', labelsize=20)
-		self.ax[1].tick_params(axis='y', labelsize=20)
+		self.ax[1].set_xlabel('x/um', fontsize=14)
+		self.ax[1].set_ylabel('z/um', fontsize=14)
+		self.ax[1].tick_params(axis='x', labelsize=14)
+		self.ax[1].tick_params(axis='y', labelsize=14)
 
 		self.indices = np.arange(frame_init.r.shape[0])
 		self.artists = (
@@ -163,10 +163,10 @@ class DataPlotter:
 			print(self.count * self.interval, f.timestamp)
 		
 		# After 10us, sort the r & v data
-		if f.timestamp*self.dt> 10:
-			self.indices = np.lexsort((f.r[:,1], f.r[:,0], f.r[:,2]))
-			f.r = f.r[self.indices]
-			f.v = f.v[self.indices]
+		# if f.timestamp*self.dt> 10:
+		# 	self.indices = np.lexsort((f.r[:,1], f.r[:,0], f.r[:,2]))
+		# 	f.r = f.r[self.indices]
+		# 	f.v = f.v[self.indices]
 		
 		
 		'''
@@ -177,7 +177,7 @@ class DataPlotter:
 		self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
 		self.artists[1].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
 
-		self.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=20)
+		self.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 
 		self.bm.update()
 
