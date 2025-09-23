@@ -48,7 +48,7 @@ endif(VERSION_INFO)
 
 target_link_libraries(ionsim PRIVATE ioncpp)
 
-
+include_directories(/usr/local/cuda-12.8/targets/x86_64-linux/include)
 
 option(BUILD_MAIN "Build main for testing purpose" ON)
 

@@ -64,6 +64,19 @@ VecType CoulombInteraction(
     auto end = std::chrono::steady_clock::now();
     elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
 
+	//print Coulomb forces
+	std::ofstream ofs("../data_cache/coulomb.txt");
+
+	if (!ofs) {
+        std::cerr << "无法打开文件！" << std::endl;
+    }
+
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < DIM ; j++){
+		ofs << result(i,j) << " ";
+		}
+		ofs << "\n";
+	}
     return result;
 }
 
@@ -143,7 +156,6 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	VecType v = init_v;
 
 	//RK4
-	/*
 	VecType r_tmp(init_r.rows(), DIM);
 	VecType v_tmp(init_r.rows(), DIM);
 
@@ -156,7 +168,7 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	VecType v_k2(init_r.rows(), DIM);
 	VecType v_k3(init_r.rows(), DIM);
 	VecType v_k4(init_r.rows(), DIM);
-	*/
+	//end RK4
 	
 	VecType a_last(init_r.rows(), DIM);
 
@@ -165,7 +177,6 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		double t = time_start + dt * (double)i;
 		
 		// RK4
-		/*
 		tmp = std::chrono::steady_clock::now();
 		v_k1 = (force(r, v, t)+ CoulombInteraction(r, charge)).colwise() / mass * dt;
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
@@ -193,9 +204,10 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		r_k4 = v_tmp * dt;
 		v += v_k1 / 6.0 + v_k2 / 3.0 + v_k3 / 3.0 + v_k4 / 6.0;
 		r += r_k1 / 6.0 + r_k2 / 3.0 + r_k3 / 3.0 + r_k4 / 6.0;
-		*/
+		//end RK4
 
 		// Velocity Verlet
+		/*
 		tmp = std::chrono::steady_clock::now();
 		std::filesystem::path a_file = "../data_cache/a.bin";
 		if (!std::filesystem::exists(a_file))
@@ -212,6 +224,8 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 			saveArray(a, a_file.string());
 			v += (a + a_last) * (dt / 2.0);
 		}
+			*/
+		//end Velocity Verlet
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
 
 		r_ret.push_back(r);
