@@ -14,13 +14,13 @@ __global__ void computeCoulombInteractionKernel(
         if (i != j) {
             data_t dist2 = 0.0;
             for (int d = 0; d < DIM; ++d) {
-                data_t diff = r[d * DIM + i] - r[d * DIM + j];
+                data_t diff = r[d * N + i] - r[d * N + j];
                 dist2 += diff * diff;
                 
             }
             dist2 = sqrt(dist2) * dist2;
             for (int d = 0; d < DIM; ++d) {
-                atomicAdd(&result[d * N + i], (r[d * DIM + i] - r[d * DIM + j]) * charge[i] * charge[j] / dist2);
+                atomicAdd(&result[d * N + i], (r[d * N + i] - r[d * N + j]) * charge[i] * charge[j] / dist2);
             }
         }
     }

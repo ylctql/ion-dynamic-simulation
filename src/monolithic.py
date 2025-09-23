@@ -38,7 +38,7 @@ def cut(t):
     else:
         return 0
 
-V_static = {"RF":-5.4, "U4":-0.5}
+V_static = {"RF":-8.4, "U4":-0.5}
 V_dynamic = {"RF":[Vrf,oscillate_RF]}# 含时动态电压设置{"basis的文件名":[该组电极施加电压(V),时间因子函数（最终相当于二者相乘）]}
 
 epsl = 8.854*10**(-12)#真空介电常数@SI
@@ -127,7 +127,6 @@ class Data_Loader:
             surf = ax.plot_surface(X, Y, np.squeeze(data), cmap='viridis')
             plt.show()
         else:
-            for i in range(3) :
             for i in range(3) :
 
                 if len(coords[i])>1:
