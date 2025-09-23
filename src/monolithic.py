@@ -11,13 +11,7 @@ import os
 
 dirname = os.path.dirname(__file__)
 
-import os
-
-dirname = os.path.dirname(__file__)
-
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
-filename=os.path.join(dirname, "../data/300DC50gap_zlarger.csv") #文件名：导入的电势场格点数据
-basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 filename=os.path.join(dirname, "../data/300DC50gap_zlarger.csv") #文件名：导入的电势场格点数据
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
