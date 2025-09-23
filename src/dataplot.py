@@ -138,8 +138,8 @@ class DataPlotter:
 		self.indices = np.arange(frame_init.r.shape[0])
 		self.artists = (
 			
-			self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, 'r'),
-			self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 50, 'r'),
+			self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 10, 'r'),
+			self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 10, 'r'),
 		)
 
 		self.bm = BlitManager(self.fig.canvas, self.artists)

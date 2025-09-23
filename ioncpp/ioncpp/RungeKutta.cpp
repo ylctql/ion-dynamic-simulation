@@ -4,6 +4,14 @@
 #include <chrono>
 #include <fstream>
 #include <filesystem>
+#include <cuda_runtime.h>
+
+using data_t = double; // 假设 data_t 是 float 类型
+constexpr int DIM = 3;
+
+// CUDA 核函数计算 Coulomb Interaction
+extern "C" void computeCoulombInteraction(
+    const data_t* r, const data_t* charge, data_t* result, int N, int grid_size, int block_size);
 
 namespace ioncpp
 {
@@ -18,6 +26,48 @@ namespace
 chrono::microseconds elapsed1 = 0us;
 
 VecType CoulombInteraction(
+    CRef<VecType> r, 
+    CRef<ArrayType>& charge
+) {
+    auto begin = chrono::steady_clock::now();
+
+    const auto N = r.rows();
+    VecType result(N, DIM);
+    result.setZero();
+
+    // 分配 GPU 内存
+    data_t* d_r;
+    data_t* d_charge;
+    data_t* d_result;
+    cudaMalloc(&d_r, N * DIM * sizeof(data_t));
+    cudaMalloc(&d_charge, N * sizeof(data_t));
+    cudaMalloc(&d_result, N * DIM * sizeof(data_t));
+
+    // 将数据从 CPU 传输到 GPU
+    cudaMemcpy(d_r, r.data(), N * DIM * sizeof(data_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_charge, charge.data(), N * sizeof(data_t), cudaMemcpyHostToDevice);
+    cudaMemset(d_result, 0, N * DIM * sizeof(data_t));
+
+    // 配置 CUDA 核函数
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+    computeCoulombInteraction(d_r, d_charge, d_result, N, threadsPerBlock, blocksPerGrid);
+
+    // 将结果从 GPU 传输回 CPU
+    cudaMemcpy(result.data(), d_result, N * DIM * sizeof(data_t), cudaMemcpyDeviceToHost);
+
+    // 释放 GPU 内存
+    cudaFree(d_r);
+    cudaFree(d_charge);
+    cudaFree(d_result);
+
+    auto end = std::chrono::steady_clock::now();
+    elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
+
+    return result;
+}
+
+/* VecType CoulombInteraction(
 	CRef<VecType> r, 
 	CRef<ArrayType>& charge
 )
@@ -50,7 +100,7 @@ VecType CoulombInteraction(
 	elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
 
 	return result;
-}
+} */
 
 }
 

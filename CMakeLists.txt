@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
+project(ioncpp LANGUAGES CXX CUDA)
+
+enable_language(CUDA)
 
 project(quantum_sim LANGUAGES CXX)
 
@@ -16,6 +19,11 @@ endif(OpenMP_FOUND)
 
 
 add_library(ioncpp)
+
+set_target_properties(ioncpp PROPERTIES
+    CUDA_ARCHITECTURES 86
+    CUDA_STANDARD 14
+)
 
 target_compile_features(ioncpp PRIVATE cxx_std_17)
 set_target_properties(ioncpp PROPERTIES CXX_STANDARD 17)

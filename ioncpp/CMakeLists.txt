@@ -6,6 +6,7 @@ target_sources(
 	ioncpp/Grid.hpp
 	ioncpp/Grid.cpp
 	ioncpp/types.hpp
+    ioncpp/CoulombInteraction.cu
 )
 
-target_include_directories(ioncpp PUBLIC .)
+target_include_directories(ioncpp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -7,12 +7,16 @@ from utils import *
 from dataplot import *    
 import math,csv,traceback,json
 from scipy.signal import savgol_filter
+import os
+
+dirname = os.path.dirname(__file__)
+
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
-filename="../../Ep_data/300DC50gap_zlarger.csv" #文件名：导入的电势场格点数据
-basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
+filename=os.path.join(dirname, "../data/300DC50gap_zlarger.csv") #文件名：导入的电势场格点数据
+basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
-N = 500  #离子数
+N = 100  #离子数
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 Vrf=550/2 #RF电压振幅
@@ -34,7 +38,7 @@ def cut(t):
     else:
         return 0
 
-V_static = {"RF":-6.4, "U4":-0.5}
+V_static = {"RF":-5.4, "U4":-0.5}
 V_dynamic = {"RF":[Vrf,oscillate_RF]}# 含时动态电压设置{"basis的文件名":[该组电极施加电压(V),时间因子函数（最终相当于二者相乘）]}
 
 epsl = 8.854*10**(-12)#真空介电常数@SI
