@@ -16,7 +16,7 @@ filename=os.path.join(dirname, "../../Ep_data/300DC50gap_zlarger.csv") #文件�
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
-N = 100  #离子数
+N = 2  #离子数
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 Vrf=550/2 #RF电压振幅
@@ -196,6 +196,8 @@ def force(r: np.ndarray, v: np.ndarray, t: float):
     f[mask] =f_in
     # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
     f=f-gamma*v#Doppler cooling
+    # f = np.zeros_like(r)
+    # print("forcetype:",type(f),f.shape)
     return f
 data_loader=Data_Loader(filename)
 data_loader.loadData()
@@ -288,11 +290,21 @@ if __name__ == "__main__":
     # r0 = np.loadtxt("./balance/balance.txt")/(1e6*dl) #从平衡位置开始演化
     r0 = (np.random.rand(N, 3)-0.5) *ini_range
     v0 = np.zeros((N, 3))
+    print(type(r0),r0.shape)
+    print(type(v0),v0.shape)
+    print(type(mass),mass.shape)
+    print(type(charge),charge.shape)
+    # r0 = np.array([[-1, 0, 0],
+    #            [1, 0, 0]]) 
+    v0 = np.array([[0, 1, 0],
+                [0, -1, 0]])
+    # mass = np.array([1, 1])
+    # charge = np.array([1, -1]).reshape(-1, 1)
 
     q1 = mp.Queue()
     q2 = mp.Queue(maxsize=50)
 
-    q1.put(Message(CommandType.START, r0, v0, mass, charge, force))
+    q1.put(Message(CommandType.START, r0, v0, charge, mass, force))
     q2.put(Frame(r0, v0, 0))
 
     plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)

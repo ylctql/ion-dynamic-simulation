@@ -11,6 +11,7 @@ namespace ioncpp
 
 void saveArray(const VecType& arr, const std::string& filename);
 void loadArray(VecType& arr, const std::string& filename);
+void savetxt(const VecType& arr, const std::string& filename);
 
 
 using ForceCallback = std::function<VecType(CRef<VecType>& r, CRef<VecType>& v, data_t t)>;

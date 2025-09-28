@@ -24,7 +24,7 @@ namespace
 
 // NOLINTNEXTLINE
 chrono::microseconds elapsed1 = 0us;
-
+/*
 VecType CoulombInteraction(
     CRef<VecType> r, 
     CRef<ArrayType>& charge
@@ -65,22 +65,15 @@ VecType CoulombInteraction(
     elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
 
 	//print Coulomb forces
-	std::ofstream ofs("../data_cache/coulomb.txt");
+	savetxt(result, "../data_cache/coulomb.txt");
 
-	if (!ofs) {
-        std::cerr << "无法打开文件！" << std::endl;
-    }
+	//print r
+	savetxt(r, "../data_cache/r.txt");
 
-	for (int i = 0; i < N; i++) {
-		for (int j = 0; j < DIM ; j++){
-		ofs << result(i,j) << " ";
-		}
-		ofs << "\n";
-	}
     return result;
-}
-
-/* VecType CoulombInteraction(
+} 
+*/
+ VecType CoulombInteraction(
 	CRef<VecType> r, 
 	CRef<ArrayType>& charge
 )
@@ -112,10 +105,17 @@ VecType CoulombInteraction(
 	auto end = std::chrono::steady_clock::now();
 	elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
 
-	return result;
-} */
+	
+	//print Coulomb forces
+	savetxt(result, "../data_cache/coulomb.txt");
 
+	//print r
+	savetxt(r, "../data_cache/r.txt");
+
+	return result;
+} 
 }
+
 
 void saveArray(const VecType& arr, const std::string& filename)
 	{
@@ -127,6 +127,16 @@ void loadArray(VecType& arr, const std::string& filename)
 	{
 		std::ifstream ifs(filename, std::ios::binary);
 		ifs.read(reinterpret_cast<char*>(arr.data()), arr.size() * sizeof(data_t));
+	}
+void savetxt(const VecType& arr, const std::string& filename)
+	{
+		std::ofstream ofs(filename);
+		for (int i = 0; i < arr.rows(); i++) {
+			for (int j = 0; j < arr.cols(); j++) {
+				ofs << arr(i, j) << " ";
+			}
+			ofs << "\n";
+		}
 	}
 
 std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
@@ -222,9 +232,10 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 			r += v * dt + a_last * (dt * dt / 2.0);
 			a = (force(r, v, t + dt) + CoulombInteraction(r, charge)).colwise() / mass;
 			saveArray(a, a_file.string());
+			savetxt(a, "../data_cache/a.txt");
 			v += (a + a_last) * (dt / 2.0);
 		}
-			*/
+		*/
 		//end Velocity Verlet
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
 
