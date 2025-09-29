@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import ionsim
+from matplotlib.patches import Circle
 
 from utils import *
 
@@ -134,6 +135,9 @@ class DataPlotter:
 		self.ax[1].set_ylabel('z/um', fontsize=14)
 		self.ax[1].tick_params(axis='x', labelsize=14)
 		self.ax[1].tick_params(axis='y', labelsize=14)
+
+		circ = Circle((0, 0), 1, color='black', fill=False, ls='--')
+		self.ax[0].add_patch(circ)
 
 		self.indices = np.arange(frame_init.r.shape[0])
 		self.artists = (

@@ -24,6 +24,7 @@ namespace
 
 // NOLINTNEXTLINE
 chrono::microseconds elapsed1 = 0us;
+// CUDA
 /*
 VecType CoulombInteraction(
     CRef<VecType> r, 
@@ -72,7 +73,11 @@ VecType CoulombInteraction(
 
     return result;
 } 
-*/
+	*/
+//End CUDA
+
+//Matrix
+
  VecType CoulombInteraction(
 	CRef<VecType> r, 
 	CRef<ArrayType>& charge
@@ -114,6 +119,8 @@ VecType CoulombInteraction(
 
 	return result;
 } 
+
+//End Matrix
 }
 
 
