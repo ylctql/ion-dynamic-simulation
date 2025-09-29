@@ -10,8 +10,10 @@ using data_t = double; // 假设 data_t 是 float 类型
 constexpr int DIM = 3;
 
 // CUDA 核函数计算 Coulomb Interaction
+
 extern "C" void computeCoulombInteraction(
     const data_t* r, const data_t* charge, data_t* result, int N, int grid_size, int block_size);
+
 
 namespace ioncpp
 {
@@ -25,7 +27,7 @@ namespace
 // NOLINTNEXTLINE
 chrono::microseconds elapsed1 = 0us;
 // CUDA
-/*
+
 VecType CoulombInteraction(
     CRef<VecType> r, 
     CRef<ArrayType>& charge
@@ -73,11 +75,11 @@ VecType CoulombInteraction(
 
     return result;
 } 
-	*/
+	
 //End CUDA
 
 //Matrix
-
+/*
  VecType CoulombInteraction(
 	CRef<VecType> r, 
 	CRef<ArrayType>& charge
@@ -119,7 +121,7 @@ VecType CoulombInteraction(
 
 	return result;
 } 
-
+*/
 //End Matrix
 }
 
@@ -194,6 +196,7 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		double t = time_start + dt * (double)i;
 		
 		// RK4
+		/*
 		tmp = std::chrono::steady_clock::now();
 		v_k1 = (force(r, v, t)+ CoulombInteraction(r, charge)).colwise() / mass * dt;
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
@@ -221,10 +224,10 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		r_k4 = v_tmp * dt;
 		v += v_k1 / 6.0 + v_k2 / 3.0 + v_k3 / 3.0 + v_k4 / 6.0;
 		r += r_k1 / 6.0 + r_k2 / 3.0 + r_k3 / 3.0 + r_k4 / 6.0;
+		*/
 		//end RK4
 
 		// Velocity Verlet
-		/*
 		tmp = std::chrono::steady_clock::now();
 		std::filesystem::path a_file = "../data_cache/a.bin";
 		if (!std::filesystem::exists(a_file))
@@ -242,7 +245,6 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 			savetxt(a, "../data_cache/a.txt");
 			v += (a + a_last) * (dt / 2.0);
 		}
-		*/
 		//end Velocity Verlet
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
 

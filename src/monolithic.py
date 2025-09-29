@@ -17,7 +17,7 @@ filename=os.path.join(dirname, "../../data/monolithic20241118.csv") #debian
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
-N = 150  #离子数
+N = 1000  #离子数
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 Vrf=550/2 #RF电压振幅
@@ -153,7 +153,6 @@ def gen_grids(potential_static):#工具函数
     [x,y,z]=data_loader.coordinate
     fieldx, fieldy, fieldz = np.gradient(-potential_static, x, y, z, edge_order=2)
     # 矢量场的三个分量对应三个标量场
-    # 矢量场的三个分量对应三个标量场
     grid_x = ionsim.Grid(x, y, z, value=fieldx)
     grid_y = ionsim.Grid(x, y, z, value=fieldy)
     grid_z = ionsim.Grid(x, y, z, value=fieldz)        
@@ -183,15 +182,12 @@ def force(r: np.ndarray, v: np.ndarray, t: float):
         mask =  data_loader.grids_dc[0].in_bounds(r)
     r_mask = r[mask].copy(order='F')
     
-
     # inside bounds
     coord = data_loader.grids_dc[0].get_coord(r_mask)
-    f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
     f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
     for key,value  in grids_dynamic_dict.items():
         grids_rf=value[0]
         fun_=value[1]
-        f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
         f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
     f_in=f_in.transpose()
     f[mask] =f_in
@@ -216,13 +212,19 @@ for key,value in V_dynamic.items():
     potential_dynamic_list.append(data_loader.load_basis(key)*interpret_voltage(value))
     grids_dynamic_dict[key]=[gen_grids(potential_dynamic_list[-1]),value] #含时的分开处理，时间因子不一样
 
-# 绘制赝势
-def psudo_potential():
+
+def pseudo_potential():
     V0 = data_loader.load_basis("RF")*interpret_voltage(Vrf)*ec*dV #此处统一使用国际单位制
     [x, y, z] = data_loader.coordinate_um   #换算成国际单位制
     Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
     F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
     V_pseudo_rf = F0**2/(4*m*Omega**2*ec)
+    return V_pseudo_rf
+
+# 绘制赝势
+def plot_psudo_potential():
+    [x, y, z] = data_loader.coordinate_um   #换算成国际单位制
+    V_pseudo_rf = pseudo_potential()
     Vs = potential_static*dV
     shape = Vs.shape
     Vs_y0 = Vs[:, int(np.ceil(shape[1]/2)), :]
@@ -283,13 +285,6 @@ def R2(x,y):
     '''
     return 1-np.sum((x-y)**2)/np.sum((y-np.mean(y))**2)
 
-def pseudo_potential():
-    V0 = data_loader.load_basis("RF")*interpret_voltage(Vrf)*ec*dV #此处统一使用国际单位制
-    [x, y, z] = data_loader.coordinate_um   #换算成国际单位制
-    Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
-    F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
-    V_pseudo_rf = F0**2/(4*m*Omega**2*ec)
-    return V_pseudo_rf
 def plot_2D_potential():
     Vp = pseudo_potential()
     Vs = potential_static*dV
@@ -335,7 +330,7 @@ def plot_2D_potential():
     ax[2].legend(title=f'$R^2$ = {R2(Vt_fit, Vt_0):.4f} \n y = {ta:.2e}x² + {tb:.2e}x + {tc:.2e}')
     plt.show()
 
-plot_2D_potential()
+# plot_2D_potential()
 
 bound_min=[np.min(data_loader.coordinate[i])+1e-9 for i in range(3)]
 bound_max=[np.max(data_loader.coordinate[i])-1e-9 for i in range(3)]
