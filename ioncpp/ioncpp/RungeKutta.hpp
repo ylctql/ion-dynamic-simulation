@@ -18,6 +18,7 @@ using ForceCallback = std::function<VecType(CRef<VecType>& r, CRef<VecType>& v, 
 /**
  * @brief Calculate ion trajectory using 4th order Runge-Kutta
  * 
+ * @param device 0 for CPU, 1 for CUDA
  * @param init_r the initial position of ions
  * @param init_v the initial velocity of ions
  * @param charge the charge of ions
@@ -30,6 +31,7 @@ using ForceCallback = std::function<VecType(CRef<VecType>& r, CRef<VecType>& v, 
  * @return std::pair<std::vector<ArrayType>, std::vector<ArrayType>>
  */
 std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
+    int device,
 	CRef<VecType>& init_r,
 	CRef<VecType>& init_v,
 	CRef<ArrayType>& charge,

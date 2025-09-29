@@ -7,6 +7,7 @@ M = typing.TypeVar("M", bound=int)
 __version__: str = '0.0.4'
 
 def calculate_trajectory(
+        device: int,
         init_r: numpy.ndarray[tuple[M, typing.Literal[3]], numpy.dtype[numpy.float64]], 
         init_v: numpy.ndarray[tuple[M, typing.Literal[3]], numpy.dtype[numpy.float64]], 
         charge: numpy.ndarray[tuple[M, typing.Literal[1]], numpy.dtype[numpy.float64]], 

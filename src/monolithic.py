@@ -8,6 +8,11 @@ from dataplot import *
 import math,csv,traceback,json
 from scipy.signal import savgol_filter
 import os
+import argparse
+
+Parser = argparse.ArgumentParser()
+Parser.add_argument('N', type=int, help='number of ions', default=50)
+Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
 
 dirname = os.path.dirname(__file__)
 
@@ -16,9 +21,7 @@ filename=os.path.join(dirname, "../data/300DC50gap_zlarger.csv") #文件名：�
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
-N = 100  #离子数
-charge = np.ones(N) #每个离子带电荷量都是1个元电荷
-mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
+
 Vrf=550/2 #RF电压振幅
 freq_RF=35.28 #RF射频频率@MHz
 Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
@@ -38,7 +41,7 @@ def cut(t):
     else:
         return 0
 
-V_static = {"RF":-8.4, "U4":-0.5}
+V_static = {"RF":-4.4, "U4":-0.5}
 V_dynamic = {"RF":[Vrf,oscillate_RF]}# 含时动态电压设置{"basis的文件名":[该组电极施加电压(V),时间因子函数（最终相当于二者相乘）]}
 
 epsl = 8.854*10**(-12)#真空介电常数@SI
@@ -186,11 +189,9 @@ def force(r: np.ndarray, v: np.ndarray, t: float):
     # inside bounds
     coord = data_loader.grids_dc[0].get_coord(r_mask)
     f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
-    f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
     for key,value  in grids_dynamic_dict.items():
         grids_rf=value[0]
         fun_=value[1]
-        f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
         f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
     f_in=f_in.transpose()
     f[mask] =f_in
@@ -278,11 +279,17 @@ bound_max=[np.max(data_loader.coordinate[i])-1e-9 for i in range(3)]
 print(bound_min,bound_max)#网格边界
 
 if __name__ == "__main__":
-
+    args = Parser.parse_args()
+    device = 1 if args.CUDA else 0
+    print("Using %s for computation."%( "CUDA" if device==1 else "CPU"))
     # backend = CalculationBackend(step=100, interval=5, batch=50)#step越大精度越高
-    backend = CalculationBackend(step=10, interval=5, batch=50)
+    backend = CalculationBackend(device=device, step=10, interval=5, batch=50)
     # ini_range=100#影响画图范围和初始离子坐标
     ini_range = np.random.randint(100, 200) #初始范围也随机，探索更多可能
+
+    N = args.N  #离子数
+    charge = np.ones(N) #每个离子带电荷量都是1个元电荷
+    mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 
     # r0 = r0[np.lexsort([r0[:, 1], r0[:, 0], r0[:, 2]])]  #依次按z-x-y从小到大排序
     # r0 = np.loadtxt("./balance/balance.txt")/(1e6*dl) #从平衡位置开始演化

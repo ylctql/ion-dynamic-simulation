@@ -6,8 +6,10 @@
 #include <filesystem>
 #include <cuda_runtime.h>
 
-using data_t = double; // 假设 data_t 是 float 类型
+using data_t = double; // 假设 data_t 是 double 类型
 constexpr int DIM = 3;
+constexpr int CPU = 0;
+constexpr int CUDA = 1;
 
 // CUDA 核函数计算 Coulomb Interaction
 extern "C" void computeCoulombInteraction(
@@ -25,7 +27,7 @@ namespace
 // NOLINTNEXTLINE
 chrono::microseconds elapsed1 = 0us;
 
-VecType CoulombInteraction(
+VecType CoulombInteractionCuda(
     CRef<VecType> r, 
     CRef<ArrayType>& charge
 ) {
@@ -58,6 +60,7 @@ VecType CoulombInteraction(
 
     // 释放 GPU 内存
     cudaFree(d_r);
+
     cudaFree(d_charge);
     cudaFree(d_result);
 
@@ -67,7 +70,7 @@ VecType CoulombInteraction(
     return result;
 }
 
-/* VecType CoulombInteraction(
+VecType CoulombInteractionCpu(
 	CRef<VecType> r, 
 	CRef<ArrayType>& charge
 )
@@ -100,7 +103,7 @@ VecType CoulombInteraction(
 	elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
 
 	return result;
-} */
+} 
 
 }
 
@@ -117,6 +120,7 @@ void loadArray(VecType& arr, const std::string& filename)
 	}
 
 std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
+    int device,
 	CRef<VecType>& init_r,
 	CRef<VecType>& init_v,
 	CRef<ArrayType>& charge,
@@ -127,6 +131,7 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	ForceCallback force
 )
 {
+    // printf("Using %s for computation.\n", device == CUDA ? "CUDA" : "CPU");
 	auto begin = chrono::steady_clock::now();
 	auto tmp = chrono::steady_clock::now();
 	elapsed1 = 0us;
@@ -200,7 +205,8 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		std::filesystem::path a_file = "../data_cache/a.bin";
 		if (!std::filesystem::exists(a_file))
 		{
-			a = (force(r, v, t) + CoulombInteraction(r, charge)).colwise() / mass;
+            if (device == CUDA) {a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;}
+            else {a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;}
 			saveArray(a, a_file.string());
 			r += v * dt + a * (dt * dt / 2.0);
 			v += a * dt;
@@ -208,7 +214,8 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		else{
 			loadArray(a_last, a_file.string());
 			r += v * dt + a_last * (dt * dt / 2.0);
-			a = (force(r, v, t + dt) + CoulombInteraction(r, charge)).colwise() / mass;
+			if (device == CUDA) {a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;}
+            else {a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;}
 			saveArray(a, a_file.string());
 			v += (a + a_last) * (dt / 2.0);
 		}

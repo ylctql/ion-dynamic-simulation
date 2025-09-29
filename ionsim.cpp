@@ -24,6 +24,7 @@ using namespace std::string_literals;
 
 // Wrapper around the original function, mainly dealing with storage orders
 auto CalcTrajRK_wrapper(
+    int device,
 	const pybind11::EigenDRef<const VecType>& init_r,
 	const pybind11::EigenDRef<const VecType>& init_v,
 	CRef<ArrayType>& charge,
@@ -59,6 +60,7 @@ auto CalcTrajRK_wrapper(
 		);
 
 	return CalcTrajRK(
+        device,
 		init_r, 
 		init_v, 
 		charge, 
@@ -136,6 +138,7 @@ PYBIND11_MODULE(ionsim, m)
 	m.def(
 		"calculate_trajectory", 
 		&CalcTrajRK_wrapper,
+        "device"_a,
 		"init_r"_a.noconvert(),
 		"init_v"_a.noconvert(),
 		"charge"_a.noconvert(),

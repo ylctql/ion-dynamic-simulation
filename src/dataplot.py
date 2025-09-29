@@ -12,12 +12,13 @@ from utils import *
 
 # Data calculating backend
 class CalculationBackend:
-	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10):
+	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, device: int = 0):
 		"""
 		:param step: number of steps to calculate in an interval
 		:param interval: time interval
 		:param batch: number of data to be sent each time
 		"""
+		self.device = device
 		self.step = step
 		self.interval = interval
 		self.batch = batch
@@ -30,6 +31,7 @@ class CalculationBackend:
 		:param queue_in: input channel for controls
 		"""
 		# wait for start signal
+
 		m: Message = queue_in.get()
 		while m.command != CommandType.START:
 			m = queue_in.get()
@@ -81,6 +83,7 @@ class CalculationBackend:
 			
 			start = time.process_time()
 			r_list, v_list = ionsim.calculate_trajectory(
+				self.device,
 				r0, v0, 
 				charge, mass,
 				self.step * self.batch,

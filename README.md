@@ -14,5 +14,6 @@ And it could be used.
 
 To simulate the motions of ions,
 ```
-python3 src/monolithic.py
+python3 src/monolithic.py <number of ions> [--CUDA]
 ```
+--CUDA is for cuda acceleration on large number of ions, which is an optional parameter. If not used, the program runs on CPU for default, which is faster when the number of ions is small.
