@@ -8,14 +8,14 @@ from dataplot import *
 import math,csv,traceback,json
 from scipy.signal import savgol_filter
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
-filename="../../Ep_data/300DC50gap_zlarger.csv" #文件名：导入的电势场格点数据
+filename="../../data/monolithic20241118.csv" #文件名：导入的电势场格点数据
 basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
-N = 500  #离子数
+N = 50  #离子数
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
-Vrf=550/2 #RF电压振幅
+Vrf=275 #RF电压振幅
 freq_RF=35.28 #RF射频频率@MHz
 Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
 
@@ -206,17 +206,77 @@ for key,value in V_dynamic.items():
     potential_dynamic_list.append(data_loader.load_basis(key)*interpret_voltage(value))
     grids_dynamic_dict[key]=[gen_grids(potential_dynamic_list[-1]),value] #含时的分开处理，时间因子不一样
 
-# 绘制赝势
-def psudo_potential():
+# calculate R^2
+def R2(x,y):
+    '''
+    x: fit data
+    y: raw data
+    '''
+    return 1-np.sum((x-y)**2)/np.sum((y-np.mean(y))**2)
+
+# Using SI
+def pseudo_potential():
     V0 = data_loader.load_basis("RF")*interpret_voltage(Vrf)*ec*dV #此处统一使用国际单位制
     [x, y, z] = data_loader.coordinate_um   #换算成国际单位制
     Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
     F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
     V_pseudo_rf = F0**2/(4*m*Omega**2*ec)
+    return V_pseudo_rf
+def plot_2D_potential():
+    Vp = pseudo_potential()
+    Vs = potential_static*dV
+    shape = Vs.shape
+    
+    Vs_0 = Vs[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+    Vp_0 = Vp[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+    Vt_0 = Vs_0 + Vp_0
+    x = data_loader.coordinate_um[0]   
+
+    # quadratic fit
+    coeffs_Vs = np.polyfit(x, Vs_0, 2)
+    sa, sb, sc = coeffs_Vs
+    coeffs_Vp = np.polyfit(x, Vp_0, 2)
+    pa, pb, pc = coeffs_Vp
+    coeffs_Vt = np.polyfit(x, Vt_0, 2)
+    ta, tb, tc = coeffs_Vt
+    Vs_fit = np.polyval(coeffs_Vs, x)
+    Vp_fit = np.polyval(coeffs_Vp, x)
+    Vt_fit = np.polyval(coeffs_Vt, x)
+   
+    fig, ax = plt.subplots(1,3,figsize=(12,4))
+    ax[0].plot(x, Vs_0,label='Static potential')
+    ax[0].plot(x, Vs_fit,label='Quadratic fit', linestyle='--')
+    ax[1].plot(x, Vp_0,label='Pseudo potential')
+    ax[1].plot(x, Vp_fit,label='Quadratic fit', linestyle='--')
+    ax[2].plot(x, Vt_0,label='Total potential')
+    ax[2].plot(x, Vt_fit,label='Quadratic fit', linestyle='--')
+    ax[0].set_xlabel('x/um', fontsize=14)
+    ax[0].set_ylabel('Vs_0/V', fontsize=14)
+    ax[0].tick_params(axis='x', labelsize=14)
+    ax[0].tick_params(axis='y', labelsize=14)
+    ax[0].legend(title=f'$R^2$ = {R2(Vs_fit, Vs_0):.4f}\n y = {sa:.2e}x² + {sb:.2e}x + {sc:.2e}')
+    ax[1].set_xlabel('x/um', fontsize=14)
+    ax[1].set_ylabel('Vp_0/V', fontsize=14)
+    ax[1].tick_params(axis='x', labelsize=14)
+    ax[1].tick_params(axis='y', labelsize=14)
+    ax[1].legend(title=f'$R^2$ = {R2(Vp_fit, Vp_0):.4f} \n y = {pa:.2e}x² + {pb:.2e}x + {pc:.2e}')
+    ax[2].set_xlabel('x/um', fontsize=14)
+    ax[2].set_ylabel('Vt_0/V', fontsize=14)
+    ax[2].tick_params(axis='x', labelsize=14)
+    ax[2].tick_params(axis='y', labelsize=14)
+    ax[2].legend(title=f'$R^2$ = {R2(Vt_fit, Vt_0):.4f} \n y = {ta:.2e}x² + {tb:.2e}x + {tc:.2e}')
+    plt.show()
+
+plot_2D_potential()
+
+# 绘制赝势
+def psudo_potential():
+    Vp = pseudo_potential()
     Vs = potential_static*dV
     shape = Vs.shape
     Vs_y0 = Vs[:, int(np.ceil(shape[1]/2)), :]
-    Vp_y0 = V_pseudo_rf[:, int(np.ceil(shape[1]/2)), :]
+    Vp_y0 = Vp[:, int(np.ceil(shape[1]/2)), :]
+    [x, y, z] = data_loader.coordinate_um   #换算成国际单位制
     X, Y = np.meshgrid(z, x)   
     fig = plt.figure()
     # plt.rcParams.update({'font.size': 14})
@@ -285,7 +345,7 @@ if __name__ == "__main__":
     q1 = mp.Queue()
     q2 = mp.Queue(maxsize=50)
 
-    q1.put(Message(CommandType.START, r0, v0, mass, charge, force))
+    q1.put(Message(CommandType.START, r0, v0, charge, mass, force))
     q2.put(Frame(r0, v0, 0))
 
     plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)

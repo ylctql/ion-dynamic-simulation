@@ -93,7 +93,7 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	VecType v = init_v;
 
 	//RK4
-	/*
+	
 	VecType r_tmp(init_r.rows(), DIM);
 	VecType v_tmp(init_r.rows(), DIM);
 
@@ -106,7 +106,7 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	VecType v_k2(init_r.rows(), DIM);
 	VecType v_k3(init_r.rows(), DIM);
 	VecType v_k4(init_r.rows(), DIM);
-	*/
+	
 	
 	VecType a_last(init_r.rows(), DIM);
 
@@ -115,7 +115,7 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		double t = time_start + dt * (double)i;
 		
 		// RK4
-		/*
+		
 		tmp = std::chrono::steady_clock::now();
 		v_k1 = (force(r, v, t)+ CoulombInteraction(r, charge)).colwise() / mass * dt;
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
@@ -143,9 +143,12 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		r_k4 = v_tmp * dt;
 		v += v_k1 / 6.0 + v_k2 / 3.0 + v_k3 / 3.0 + v_k4 / 6.0;
 		r += r_k1 / 6.0 + r_k2 / 3.0 + r_k3 / 3.0 + r_k4 / 6.0;
-		*/
+
+		//End RK4
+		
 
 		// Velocity Verlet
+		/*
 		tmp = std::chrono::steady_clock::now();
 		std::filesystem::path a_file = "../data_cache/a.bin";
 		if (!std::filesystem::exists(a_file))
@@ -163,7 +166,8 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 			v += (a + a_last) * (dt / 2.0);
 		}
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-
+		*/
+		//End Velocity Verlet
 		r_ret.push_back(r);
 		v_ret.push_back(v);
 	}
