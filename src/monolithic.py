@@ -8,6 +8,19 @@ from dataplot import *
 import math,csv,traceback,json
 from scipy.signal import savgol_filter
 import os
+import argparse
+
+parser = argparse.ArgumentParser(description='To set the parameters of ion crystals')
+
+parser.add_argument('--N', type=int, default=150, help='Number of ions')
+parser.add_argument('--U0', type=float, default=-6.4, help='DC on RF electrode')
+parser.add_argument('--U1', type=float, default=0, help='Voltage on U1/U7 electrode')
+parser.add_argument('--U2', type=float, default=0, help='Voltage on U2/U6 electrode')
+parser.add_argument('--U3', type=float, default=0, help='Voltage on U3/U5 electrode')
+parser.add_argument('--U4', type=float, default=-0.5, help='Voltage on U4 electrode')
+# parser.add_argument('--U', nargs='+', type=float, default=[-6.4, 0, 0, 0, -0.5], help='Voltage on U0~U4 electrodes')
+
+args = parser.parse_args()
 
 dirname = os.path.dirname(__file__)
 
@@ -17,7 +30,7 @@ filename=os.path.join(dirname, "../../data/monolithic20241118.csv") #debian
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
-N = 1000  #离子数
+N = args.N  #离子数
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 Vrf=550/2 #RF电压振幅
@@ -39,7 +52,8 @@ def cut(t):
     else:
         return 0
 
-V_static = {"RF":-6.4, "U4":-0.5}
+V_static = {"RF":args.U0, "U1":args.U1, "U2":args.U2, "U3":args.U3, "U4":args.U4, "U5":args.U3, "U6":args.U2, "U7":args.U1}
+# V_static = {"RF":args.U[0], "U1":args.U[1], "U2":args.U[2], "U3":args.U[3], "U4":args.U[4], "U5":args.U[3], "U6":args.U[2], "U7":args.U[1]} #静电电压设置{"basis的文件名":该组电极施加电压(V)}
 V_dynamic = {"RF":[Vrf,oscillate_RF]}# 含时动态电压设置{"basis的文件名":[该组电极施加电压(V),时间因子函数（最终相当于二者相乘）]}
 
 epsl = 8.854*10**(-12)#真空介电常数@SI
@@ -285,18 +299,27 @@ def R2(x,y):
     '''
     return 1-np.sum((x-y)**2)/np.sum((y-np.mean(y))**2)
 
-def plot_2D_potential():
+def plot_2D_potential(ax_id):
+    '''
+    ax_id: 0, 1, 2 represent x, y, z
+    '''
+
     Vp = pseudo_potential()
     Vs = potential_static*dV
     shape = Vs.shape
-    
-    Vs_0 = Vs[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
-    Vp_0 = Vp[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+    ls_label = ['x', 'y', 'z']
+
+    Vs_0 = np.take(np.take(Vs, [int(np.ceil(shape[(ax_id+1)%3]/2))], axis=(ax_id+1)%3), [int(np.ceil(shape[(ax_id+2)%3]/2))], axis=(ax_id+2)%3).flatten()
+    Vp_0 = np.take(np.take(Vp, [int(np.ceil(shape[(ax_id+1)%3]/2))], axis=(ax_id+1)%3), [int(np.ceil(shape[(ax_id+2)%3]/2))], axis=(ax_id+2)%3).flatten()
+    # Vs_0 = Vs[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+    # Vp_0 = Vp[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
     Vt_0 = Vs_0 + Vp_0
-    x = data_loader.coordinate_um[0]   
+
+    x = data_loader.coordinate_um[ax_id]   
 
     # quadratic fit
     coeffs_Vs = np.polyfit(x, Vs_0, 2)
+
     sa, sb, sc = coeffs_Vs
     coeffs_Vp = np.polyfit(x, Vp_0, 2)
     pa, pb, pc = coeffs_Vp
@@ -313,24 +336,24 @@ def plot_2D_potential():
     ax[1].plot(x, Vp_fit,label='Quadratic fit', linestyle='--')
     ax[2].plot(x, Vt_0,label='Total potential')
     ax[2].plot(x, Vt_fit,label='Quadratic fit', linestyle='--')
-    ax[0].set_xlabel('x/um', fontsize=14)
+    ax[0].set_xlabel('%s/um'%(ls_label[ax_id]), fontsize=14)
     ax[0].set_ylabel('Vs_0/V', fontsize=14)
     ax[0].tick_params(axis='x', labelsize=14)
     ax[0].tick_params(axis='y', labelsize=14)
     ax[0].legend(title=f'$R^2$ = {R2(Vs_fit, Vs_0):.4f}\n y = {sa:.2e}x² + {sb:.2e}x + {sc:.2e}')
-    ax[1].set_xlabel('x/um', fontsize=14)
+    ax[1].set_xlabel('%s/um'%(ls_label[ax_id]), fontsize=14)
     ax[1].set_ylabel('Vp_0/V', fontsize=14)
     ax[1].tick_params(axis='x', labelsize=14)
     ax[1].tick_params(axis='y', labelsize=14)
     ax[1].legend(title=f'$R^2$ = {R2(Vp_fit, Vp_0):.4f} \n y = {pa:.2e}x² + {pb:.2e}x + {pc:.2e}')
-    ax[2].set_xlabel('x/um', fontsize=14)
+    ax[2].set_xlabel('%s/um'%(ls_label[ax_id]), fontsize=14)
     ax[2].set_ylabel('Vt_0/V', fontsize=14)
     ax[2].tick_params(axis='x', labelsize=14)
     ax[2].tick_params(axis='y', labelsize=14)
     ax[2].legend(title=f'$R^2$ = {R2(Vt_fit, Vt_0):.4f} \n y = {ta:.2e}x² + {tb:.2e}x + {tc:.2e}')
     plt.show()
 
-# plot_2D_potential()
+# plot_2D_potential(2)
 
 bound_min=[np.min(data_loader.coordinate[i])+1e-9 for i in range(3)]
 bound_max=[np.max(data_loader.coordinate[i])-1e-9 for i in range(3)]
@@ -354,7 +377,7 @@ if __name__ == "__main__":
     q1.put(Message(CommandType.START, r0, v0, charge, mass, force))
     q2.put(Frame(r0, v0, 0))
 
-    plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)
+    plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=150, x_range=75, z_bias=0, dl=dl*1e6,dt=dt*1e6)
     proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)
     
     proc.start()

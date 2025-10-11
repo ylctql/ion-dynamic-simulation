@@ -90,7 +90,7 @@ class CalculationBackend:
 				force
 			)
 			end = time.process_time()
-			print(f't = {t}, dt = {self.interval * self.batch}, elapsed = {end - start}')
+			# print(f't = {t}, dt = {self.interval * self.batch}, elapsed = {end - start}')
 
 			for i in range(self.batch):
 				t += self.interval
@@ -119,6 +119,12 @@ class DataPlotter:
 		self.dl = dl
 		self.dt = dt
 		self.gamma = gamma
+		self.N = frame_init.r.shape[0]
+
+		# Depict 2D of ion crystals
+		self.cur_t = 0
+		self.tls = []
+		self.loss = []
 
 		self.ax[0].set_xlim(-x_range+x_bias, x_range+x_bias)
 		self.ax[0].set_ylim(-y_range+y_bias, y_range+y_bias)
@@ -141,7 +147,6 @@ class DataPlotter:
 
 		self.indices = np.arange(frame_init.r.shape[0])
 		self.artists = (
-			
 			self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 10, 'r'),
 			self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 10, 'r'),
 		)
@@ -152,6 +157,11 @@ class DataPlotter:
 		self.count = 0
 
 		plt.show(block=False)
+	
+	# The std of y position as loss function
+	def LossFunction(self, r):
+		y = r[:,1]
+		return np.std(y)
 
 	def plot(self):
 		if not plt.fignum_exists(self.fig.number):
@@ -163,8 +173,9 @@ class DataPlotter:
 		f: Frame = self.queue_in.get()
 		if f.timestamp < 1e-5:
 			self.count = 0
-		else:
-			print(self.count * self.interval, f.timestamp)
+		# else:
+			# print(self.count * self.interval, f.timestamp)
+
 		
 		# After 10us, sort the r & v data
 		# if f.timestamp*self.dt> 10:
@@ -176,6 +187,16 @@ class DataPlotter:
 		'''
 		self.artists[0]._offsets = np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T
 		self.artists[1]._offsets = np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T'''
+		
+		tls_steps = 200
+		if f.timestamp*self.dt>self.cur_t and len(self.tls)<tls_steps:
+			self.tls.append(self.cur_t)
+			self.loss.append(self.LossFunction(f.r))
+			self.cur_t += 0.05 # Every 0.5us get a loss data point
+		
+		# if len(self.tls) == tls_steps:
+		# 	np.save('../data_cache/2D/r.npy', np.array(f.r))
+		# 	return False
 
 
 		self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
@@ -196,3 +217,8 @@ class DataPlotter:
 			plt.pause(self.interval)
 
 		print('stopping plotter...')
+		np.save('../data_cache/2D/loss_%d.npy'%self.N, np.array([self.tls, self.loss]))
+		# # loss_fig = plt.figure()
+		# plt.plot(self.tls, self.loss)
+		# plt.show()
+		print('done')

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+for N in 100 500 300 700 900 1000 1100 1300 1500
+do
+    python3 monolithic.py --N $N
+done
