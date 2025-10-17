@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cuda_runtime.h>
+#include <optional>
 
 using data_t = double; // 假设 data_t 是 float 类型
 constexpr int DIM = 3;
@@ -67,12 +68,6 @@ VecType CoulombInteraction(
     auto end = std::chrono::steady_clock::now();
     elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
 
-	//print Coulomb forces
-	savetxt(result, "../data_cache/coulomb.txt");
-
-	//print r
-	savetxt(r, "../data_cache/r.txt");
-
     return result;
 } 
 	
@@ -125,28 +120,29 @@ VecType CoulombInteraction(
 //End Matrix
 }
 
+static VecType a_last;
+static bool a_ini = false;
+// void saveArray(const VecType& arr, const std::string& filename)
+// 	{
+// 		std::ofstream ofs(filename, std::ios::binary);
+// 		ofs.write(reinterpret_cast<const char*>(arr.data()), arr.size() * sizeof(data_t));
+// 	}
 
-void saveArray(const VecType& arr, const std::string& filename)
-	{
-		std::ofstream ofs(filename, std::ios::binary);
-		ofs.write(reinterpret_cast<const char*>(arr.data()), arr.size() * sizeof(data_t));
-	}
-
-void loadArray(VecType& arr, const std::string& filename)
-	{
-		std::ifstream ifs(filename, std::ios::binary);
-		ifs.read(reinterpret_cast<char*>(arr.data()), arr.size() * sizeof(data_t));
-	}
-void savetxt(const VecType& arr, const std::string& filename)
-	{
-		std::ofstream ofs(filename);
-		for (int i = 0; i < arr.rows(); i++) {
-			for (int j = 0; j < arr.cols(); j++) {
-				ofs << arr(i, j) << " ";
-			}
-			ofs << "\n";
-		}
-	}
+// void loadArray(VecType& arr, const std::string& filename)
+// 	{
+// 		std::ifstream ifs(filename, std::ios::binary);
+// 		ifs.read(reinterpret_cast<char*>(arr.data()), arr.size() * sizeof(data_t));
+// 	}
+// void savetxt(const VecType& arr, const std::string& filename)
+// 	{
+// 		std::ofstream ofs(filename);
+// 		for (int i = 0; i < arr.rows(); i++) {
+// 			for (int j = 0; j < arr.cols(); j++) {
+// 				ofs << arr(i, j) << " ";
+// 			}
+// 			ofs << "\n";
+// 		}
+// 	}
 
 std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	CRef<VecType>& init_r,
@@ -189,8 +185,6 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	VecType v_k4(init_r.rows(), DIM);
 	//end RK4
 	
-	VecType a_last(init_r.rows(), DIM);
-
 	for (size_t i = 0; i < step; i++)
 	{
 		double t = time_start + dt * (double)i;
@@ -229,21 +223,20 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 
 		// Velocity Verlet
 		tmp = std::chrono::steady_clock::now();
-		std::filesystem::path a_file = "../data_cache/a.bin";
-		if (!std::filesystem::exists(a_file))
+		// std::filesystem::path a_last = "../data_cache/a.bin";
+		// if (!std::filesystem::exists(a_last))
+		if (!a_ini)
 		{
-			a = (force(r, v, t) + CoulombInteraction(r, charge)).colwise() / mass;
-			saveArray(a, a_file.string());
-			r += v * dt + a * (dt * dt / 2.0);
-			v += a * dt;
+			a_last = (force(r, v, t) + CoulombInteraction(r, charge)).colwise() / mass;
+			r += v * dt + a_last * (dt * dt / 2.0);
+			v += a_last * dt;
+			a_ini = true;
 		}
 		else{
-			loadArray(a_last, a_file.string());
 			r += v * dt + a_last * (dt * dt / 2.0);
 			a = (force(r, v, t + dt) + CoulombInteraction(r, charge)).colwise() / mass;
-			saveArray(a, a_file.string());
-			savetxt(a, "../data_cache/a.txt");
 			v += (a + a_last) * (dt / 2.0);
+			a_last = a;
 		}
 		//end Velocity Verlet
 		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);

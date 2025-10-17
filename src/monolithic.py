@@ -12,7 +12,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description='To set the parameters of ion crystals')
 
-parser.add_argument('--N', type=int, default=150, help='Number of ions')
+parser.add_argument('--N', type=int, default=1000, help='Number of ions')
 parser.add_argument('--U0', type=float, default=-6.4, help='DC on RF electrode')
 parser.add_argument('--U1', type=float, default=0, help='Voltage on U1/U7 electrode')
 parser.add_argument('--U2', type=float, default=0, help='Voltage on U2/U6 electrode')
@@ -24,9 +24,11 @@ args = parser.parse_args()
 
 dirname = os.path.dirname(__file__)
 
+print("Using 256 Threads per block!")
+
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
 # filename=os.path.join(dirname, "../../Ep_data/300DC50gap_zlarger.csv") #ubuntu
-filename=os.path.join(dirname, "../../data/monolithic20241118.csv") #debian
+filename=os.path.join(dirname, "../../../data/monolithic20241118.csv") #debian
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
@@ -353,7 +355,7 @@ def plot_2D_potential(ax_id):
     ax[2].legend(title=f'$R^2$ = {R2(Vt_fit, Vt_0):.4f} \n y = {ta:.2e}x² + {tb:.2e}x + {tc:.2e}')
     plt.show()
 
-# plot_2D_potential(2)
+
 
 bound_min=[np.min(data_loader.coordinate[i])+1e-9 for i in range(3)]
 bound_max=[np.max(data_loader.coordinate[i])-1e-9 for i in range(3)]
@@ -370,7 +372,7 @@ if __name__ == "__main__":
     # r0 = np.loadtxt("./balance/balance.txt")/(1e6*dl) #从平衡位置开始演化
     r0 = (np.random.rand(N, 3)-0.5) *ini_range
     v0 = np.zeros((N, 3))
-
+    
     q1 = mp.Queue()
     q2 = mp.Queue(maxsize=50)
 

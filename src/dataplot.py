@@ -194,9 +194,9 @@ class DataPlotter:
 			self.loss.append(self.LossFunction(f.r))
 			self.cur_t += 0.05 # Every 0.5us get a loss data point
 		
-		# if len(self.tls) == tls_steps:
-		# 	np.save('../data_cache/2D/r.npy', np.array(f.r))
-		# 	return False
+		if len(self.tls) == tls_steps:
+			np.save('../data_cache/2D/r.npy', np.array(f.r))
+			return False
 
 
 		self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
