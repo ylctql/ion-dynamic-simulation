@@ -365,12 +365,16 @@ if __name__ == "__main__":
 
     # backend = CalculationBackend(step=100, interval=5, batch=50)#step越大精度越高
     backend = CalculationBackend(step=10, interval=5, batch=50)
+    np.random.seed(42)
     # ini_range=100#影响画图范围和初始离子坐标
     ini_range = np.random.randint(100, 200) #初始范围也随机，探索更多可能
 
     # r0 = r0[np.lexsort([r0[:, 1], r0[:, 0], r0[:, 2]])]  #依次按z-x-y从小到大排序
     # r0 = np.loadtxt("./balance/balance.txt")/(1e6*dl) #从平衡位置开始演化
     r0 = (np.random.rand(N, 3)-0.5) *ini_range
+    # r0 = np.array([[0, 0, 1.0],
+    #                [0, 0, 0.0],
+    #                [0, 0, -1.]])
     v0 = np.zeros((N, 3))
     
     q1 = mp.Queue()

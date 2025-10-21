@@ -53,9 +53,10 @@ VecType CoulombInteraction(
     cudaMemset(d_result, 0, N * DIM * sizeof(data_t));
 
     // 配置 CUDA 核函数
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 1024;
     int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
-    computeCoulombInteraction(d_r, d_charge, d_result, N, threadsPerBlock, blocksPerGrid);
+	// printf("BlockPerGrid: %d", blocksPerGrid);
+    computeCoulombInteraction(d_r, d_charge, d_result, N, blocksPerGrid, threadsPerBlock);
 
     // 将结果从 GPU 传输回 CPU
     cudaMemcpy(result.data(), d_result, N * DIM * sizeof(data_t), cudaMemcpyDeviceToHost);
@@ -67,6 +68,17 @@ VecType CoulombInteraction(
 
     auto end = std::chrono::steady_clock::now();
     elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
+
+	#include <fstream>
+
+	// 在 return result; 之前加上：
+	std::ofstream fout("coulomb_result_new.txt");
+	for (int i = 0; i < N; ++i) {
+		for (int d = 0; d < DIM; ++d) {
+			fout << result(i, d) << (d == DIM-1 ? '\n' : ' ');
+		}
+	}
+	fout.close();
 
     return result;
 } 
