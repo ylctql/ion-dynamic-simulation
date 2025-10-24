@@ -12,7 +12,7 @@ from utils import *
 
 # Data calculating backend
 class CalculationBackend:
-	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, device: int = 0):
+	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0):
 		"""
 		:param step: number of steps to calculate in an interval
 		:param interval: time interval
@@ -22,6 +22,7 @@ class CalculationBackend:
 		self.step = step
 		self.interval = interval
 		self.batch = batch
+		self.time = time
 
 	def run(self, queue_out: mp.Queue, queue_in: mp.Queue):
 		"""
@@ -49,7 +50,7 @@ class CalculationBackend:
 
 		paused = False
 
-		while(True):
+		while True:
 			# consume message first
 			while not queue_in.empty():
 				m = queue_in.get()
@@ -92,10 +93,14 @@ class CalculationBackend:
 				force
 			)
 			end = time.process_time()
-			print(f't = {t}, dt = {self.interval * self.batch}, elapsed = {end - start}')
+			#print(f't = {t}, dt = {self.interval * self.batch}, elapsed = {end - start}')
 
 			for i in range(self.batch):
 				t += self.interval
+				if t > self.time:
+					queue_in.put(Message(CommandType.STOP))
+					queue_out.put(False)
+					break
 				queue_out.put(Frame(
 					r_list[(i + 1) * self.step - 1],
 					v_list[(i + 1) * self.step - 1],
@@ -104,10 +109,9 @@ class CalculationBackend:
 
 			r0 = r_list[-1]
 			v0 = v_list[-1]
-
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt: float = 1):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
@@ -116,7 +120,7 @@ class DataPlotter:
 		"""
 		self.queue_in = queue_in
 		self.queue_out = queue_out
-		self.fig, self.ax = plt.subplots(1, 2, figsize=(10, 5))
+		self.fig, self.ax = plt.subplots(1, 3, figsize=(10, 5))
 
 		self.dl = dl
 		self.dt = dt
@@ -137,12 +141,21 @@ class DataPlotter:
 		self.ax[1].set_ylabel('z/um', fontsize=14)
 		self.ax[1].tick_params(axis='x', labelsize=14)
 		self.ax[1].tick_params(axis='y', labelsize=14)
+		
+		self.ax[2].set_xlim(-z_range+z_bias, z_range+z_bias)
+		self.ax[2].set_ylim(-y_range+y_bias, y_range+y_bias)
+		self.ax[2].set_aspect('equal')
+		self.ax[2].set_xlabel('z/um', fontsize=14)
+		self.ax[2].set_ylabel('y/um', fontsize=14)
+		self.ax[2].tick_params(axis='x', labelsize=14)
+		self.ax[2].tick_params(axis='y', labelsize=14)
 
 		self.indices = np.arange(frame_init.r.shape[0])
 		self.artists = (
 			
-			self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 10, 'r'),
-			self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 10, 'r'),
+			self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
+			self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 5, 'r'),
+			self.ax[2].scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
 		)
 
 		self.bm = BlitManager(self.fig.canvas, self.artists)
@@ -160,10 +173,12 @@ class DataPlotter:
 			return True
 	
 		f: Frame = self.queue_in.get()
-		if f.timestamp < 1e-5:
-			self.count = 0
-		else:
-			print(self.count * self.interval, f.timestamp)
+		if f is False:
+			return False
+		# if f.timestamp < 1e-5:
+		# 	self.count = 0
+		# else:
+		#	print(self.count * self.interval, f.timestamp)
 		
 		# After 10us, sort the r & v data
 		# if f.timestamp*self.dt> 10:
@@ -179,6 +194,7 @@ class DataPlotter:
 
 		self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
 		self.artists[1].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
+		self.artists[2].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
 
 		self.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 
@@ -186,12 +202,20 @@ class DataPlotter:
 
 		return True
 
-	def start(self,):
+	def start(self):
 		print('starting plotter...')
 
+		f = None
 		while True:
+			new_f = self.queue_in.get()
 			if not self.plot():
 				break
 			plt.pause(self.interval)
-
+			f = new_f
+		
 		print('stopping plotter...')
+		return f
+
+
+	def is_alive(self):
+		return self.plot()

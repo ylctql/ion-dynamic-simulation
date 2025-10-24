@@ -70,4 +70,19 @@ data_t Grid::interpolate(const GridCoord& coord) const
 }
 
 
+std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>> Grid::get_state() const
+{
+    return std::make_tuple(this->_grid_x, this->_grid_y, this->_grid_z, this->_value);
+}
+
+Grid Grid::from_state(const std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>>& state)
+{
+    return Grid(
+        std::get<0>(state), // _grid_x
+        std::get<1>(state), // _grid_y
+        std::get<2>(state), // _grid_z
+        std::get<3>(state)  // _value
+    );
+}
+
 }

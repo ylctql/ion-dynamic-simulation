@@ -22,6 +22,8 @@ using namespace ioncpp;
 using namespace pybind11::literals;
 using namespace std::string_literals;
 
+namespace py = pybind11;
+
 // Wrapper around the original function, mainly dealing with storage orders
 auto CalcTrajRK_wrapper(
     int device,
@@ -154,7 +156,6 @@ PYBIND11_MODULE(ionsim, m)
 	auto m_grid = pybind11::class_<Grid>(m, "Grid");
 	auto m_gridcoord = pybind11::class_<Grid::GridCoord>(m_grid, "GridCoord");
 
-
 	m_grid
 	.def(
 		pybind11::init([](
@@ -243,8 +244,17 @@ PYBIND11_MODULE(ionsim, m)
 	"xi"_a.noconvert(),
 	pybind11::return_value_policy::move)
 
-	.def("interpolate", pybind11::overload_cast<const Grid::GridCoord&>(&Grid::interpolate, pybind11::const_), "coord"_a);
+	.def("interpolate", pybind11::overload_cast<const Grid::GridCoord&>(&Grid::interpolate, pybind11::const_), "coord"_a)
 
+	.def(pybind11::pickle(
+        [](const Grid &g) { // __getstate__
+            return g.get_state();
+        },
+        [](std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>> state) { // __setstate__
+            return Grid::from_state(state);
+        }
+    ))
+	;
 
 
 	m_gridcoord

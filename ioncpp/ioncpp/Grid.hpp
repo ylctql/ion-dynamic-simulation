@@ -83,6 +83,16 @@ public:
 	 * 
 	 */
 	data_t interpolate(const GridCoord& coord) const;
+
+	/**
+	 * @brief Serialization support for Pybind11
+	 */
+	std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>> get_state() const;
+
+	/**
+	 * @brief Deserialization support for Pybind11
+	 */
+	static Grid from_state(const std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>>& state);
 };
 
 

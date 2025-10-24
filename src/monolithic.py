@@ -11,13 +11,15 @@ import os
 import argparse
 
 Parser = argparse.ArgumentParser()
-Parser.add_argument('N', type=int, help='number of ions', default=50)
+Parser.add_argument('--N', type=int, help='number of ions', default=50)
+Parser.add_argument('--time', type=float, help='total simulation time in microseconds', default=np.inf)
 Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
+Parser.add_argument('--plot', action='store_true', help='enable plotting')
 
 dirname = os.path.dirname(__file__)
 
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
-filename=os.path.join(dirname, "../data/300DC50gap_zlarger.csv") #文件名：导入的电势场格点数据
+filename=os.path.join(dirname, "../data/monolithic20241118.csv") #文件名：导入的电势场格点数据
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 pi=math.pi
@@ -283,7 +285,7 @@ if __name__ == "__main__":
     device = 1 if args.CUDA else 0
     print("Using %s for computation."%( "CUDA" if device==1 else "CPU"))
     # backend = CalculationBackend(step=100, interval=5, batch=50)#step越大精度越高
-    backend = CalculationBackend(device=device, step=10, interval=5, batch=50)
+    backend = CalculationBackend(device=device, step=10, interval=5, batch=50, time=args.time/(dt * 1e6))#step越大精度越高
     # ini_range=100#影响画图范围和初始离子坐标
     ini_range = np.random.randint(100, 200) #初始范围也随机，探索更多可能
 
@@ -302,16 +304,21 @@ if __name__ == "__main__":
     q1.put(Message(CommandType.START, r0, v0, mass, charge, force))
     q2.put(Frame(r0, v0, 0))
 
-    plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)
-    proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)
-    
+    proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)   
     proc.start()
-    plot.start()#True表示只画图 #False表示只输出轨迹到/traj/文件夹# "both"表示二者都做
 
-    if proc.is_alive():
-        q1.put(Message(CommandType.STOP))
+    f = None
+    if args.plot:
+        plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)
+        f = plot.start()#True表示只画图 #False表示只输出轨迹到/traj/文件夹# "both"表示二者都做    
+        if not plot.is_alive():
+            q1.put(Message(CommandType.STOP))
+            proc.join()
+    else:
         while True:
-            f = q2.get()
-            if isinstance(f, bool) and not f:
+            new_f = q2.get()
+            if isinstance(new_f, bool) and not new_f:
                 break
+            f = new_f
         proc.join()
+    print('The thickness is estimated to be %.3f um at time %.3f us.' % (f.r[:, 1].std()*dl*1e6, f.timestamp * dt * 1e6))#输出最终的离子云径向尺寸，单位um

@@ -202,24 +202,33 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 
 		// Velocity Verlet
 		tmp = std::chrono::steady_clock::now();
-		std::filesystem::path a_file = "../data_cache/a.bin";
-		if (!std::filesystem::exists(a_file))
-		{
-            if (device == CUDA) {a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;}
-            else {a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;}
-			saveArray(a, a_file.string());
-			r += v * dt + a * (dt * dt / 2.0);
-			v += a * dt;
-		}
-		else{
-			loadArray(a_last, a_file.string());
-			r += v * dt + a_last * (dt * dt / 2.0);
-			if (device == CUDA) {a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;}
-            else {a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;}
-			saveArray(a, a_file.string());
-			v += (a + a_last) * (dt / 2.0);
-		}
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// 优化 Velocity Verlet
+        static VecType a_last(init_r.rows(), DIM); // 使用静态变量缓存 a_last，避免频繁分配内存
+        static bool a_last_initialized = false;   // 标记是否已初始化 a_last
+
+        if (!a_last_initialized) {
+            if (device == CUDA) {
+                a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;
+            } else {
+                a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;
+            }
+            a_last = a; 
+            a_last_initialized = true;
+
+            r += v * dt + a * (dt * dt / 2.0);
+            v += a * dt;
+        } else {
+            r += v * dt + a_last * (dt * dt / 2.0);
+            if (device == CUDA) {
+                a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;
+            } else {
+                a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;
+            }
+            v += (a + a_last) * (dt / 2.0);
+            a_last = a;
+        }
+
+        elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
 
 		r_ret.push_back(r);
 		v_ret.push_back(v);

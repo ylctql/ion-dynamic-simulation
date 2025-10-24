@@ -17,7 +17,6 @@ if(OpenMP_FOUND)
 	target_link_libraries(Eigen INTERFACE OpenMP::OpenMP_CXX)
 endif(OpenMP_FOUND)
 
-
 add_library(ioncpp)
 
 set_target_properties(ioncpp PROPERTIES
