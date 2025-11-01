@@ -7,7 +7,7 @@ pip install .
 ```
 This will automatically install the required packages and do the compilation. We strongly recommend you to use virtual environment (such as Anaconda) in case of unexpected conflicts with your pre-installed versions. Please check https://zhuanlan.zhihu.com/p/32925500 for tutorials.
 
-**After that, you should put your own data of electric fields in the directory `/data` as it is too large to be contained in this repo!**
+**After that, you should put your own data of electric fields in the directory `/data` as it is too large to be contained in this repo!** If you do not have one, you may download a sample copy of data from https://cloud.tsinghua.edu.cn/f/aef6277873a0464f9eab/?dl=1.
 
 ### 1. Create a configure
 In this project, we defined two classes called `Data_loader` and `Configure`. First you may load the grid data by 
@@ -80,6 +80,6 @@ configure.save(file)
 
 ### 3. Contact
 
-If you have any questions or ideas, feel free to contact me through Email (xiemx0511@gmail.com) or Wechat (MrLemonader).
+If you have any questions or ideas, feel free to contact us through Email (xiemx0511@gmail.com) or Wechat (MrLemonader).
 
 
