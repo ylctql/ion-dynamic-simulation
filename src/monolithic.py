@@ -148,11 +148,7 @@ def interpret_voltage(value):#工具函数
         return  value[0]
     return value
 def interpret_dynamic(value,t):#工具函数
-    if type(value)==list:
-        for i in range(len(value)):
-            if type(value[i])==type(interpret_voltage):
-                return value[i](t,*[value[j] for j in range(i+1,len(value))])
-    return value
+    return np.cos(2*t)
 def gen_grids(potential_static):#工具函数
     [x,y,z]=data_loader.coordinate
     fieldx, fieldy, fieldz = np.gradient(-potential_static, x, y, z, edge_order=2)

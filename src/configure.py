@@ -121,7 +121,7 @@ class Configure:
     dl = (( ec**2)/(4*pi*m*epsl*(Omega)**2))**(1/3)#单位长度dl
     dV = m/ec*(dl/dt)**2 #单位电压dV
 
-    def __init__(self, V_static: dict, V_dynamic: dict, basis: Data_Loader) -> None:
+    def __init__(self, basis: Data_Loader, V_static: dict = {}, V_dynamic: dict = {}) -> None:
 
         self.V_static = V_static
         self.V_dynamic = V_dynamic
@@ -132,10 +132,9 @@ class Configure:
         self.grad_rf: dict = {}
 
     def __reduce__(self):
-        # 保存必要的状态
         return (
             self.__class__, 
-            (self.V_static, self.V_dynamic, self.basis), 
+            (self.basis, self.V_static, self.V_dynamic), 
             {"grids_dc": self.grids_dc, "grids_rf": self.grids_rf}
         )
 
@@ -143,21 +142,26 @@ class Configure:
         self.grids_dc = state.get("grids_dc", [])
         self.grids_rf = state.get("grids_rf", {})
 
-
         if not self.grids_dc or not self.grids_rf:
             self.calc_field()
+
+    def load_from_file(self, filename: str) -> None:
+        with open(filename, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            self.V_static = data.get("V_static", {})
+            self.V_dynamic = data.get("V_dynamic", {})
+    
+    def load_from_param(self, V_static: dict, V_dynamic: dict) -> None:
+        self.V_static = V_static
+        self.V_dynamic = V_dynamic
 
     def _interpret_voltage(self, value):
         if type(value) == list:
             return value[0]
         return value
 
-    def _interpret_dynamic(self, value, t):
-        if type(value)==list:
-            for i in range(len(value)):
-                if type(value[i])==types.FunctionType:
-                    return value[i](t,*[value[j] for j in range(i+1,len(value))])
-        return value
+    def _interpret_dynamic(self, t):
+        return np.cos(2*t)
 
     def _gen_grids(self, potential_static):
         [x, y, z] = self.basis.coordinate
@@ -198,8 +202,7 @@ class Configure:
         f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in self.grids_dc])))#静电力
         for key, value in self.grids_rf.items():
             grids_rf = value[0]
-            fun_ = value[1]
-            f_in = f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf])) * self._interpret_dynamic(fun_, t)#加上含时的力
+            f_in = f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf])) * self._interpret_dynamic(t)#加上含时的力
         f_in = f_in.transpose()
         f[mask] = f_in
         # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
@@ -224,7 +227,7 @@ class Configure:
 
         f = None
         if plotting:
-            plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=100, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6)
+            plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=200, x_range=60, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6)
             f = plot.start()
             if not plot.is_alive():
                 q1.put(Message(CommandType.STOP))
@@ -240,39 +243,39 @@ class Configure:
                     break
                 f = new_f
             proc.join()
-        std = f.r[:, 1].std() * self.dl * 1e6
-        # print('The thickness is estimated to be %.3f um at time %.3f us.' % (std, f.timestamp * self.dt * 1e6))
-        return std, f.timestamp * self.dt * 1e6
+        std_y = f.r[:, 1].std() * self.dl * 1e6
+        len_z = np.abs(f.r[:, 2].max() - f.r[:, 2].min()) * self.dl * 1e6
+        return std_y, len_z, f.timestamp * self.dt * 1e6
 
-    def calc_gradient(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool,h: float = 0.1) -> None:
+    def calc_gradient(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h: float = 0.1, r: float = 0.05) -> None:
         for key in self.V_static.keys():
             original_value = self.V_static[key]
             self.V_static[key] = original_value + h
             self.calc_field()
-            std_plus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            std_plus, len_plus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
             self.V_static[key] = original_value - h
             self.calc_field()
-            std_minus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
-            grad = (std_plus - std_minus) / (2 * h)
+            std_minus, len_minus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            grad = (std_plus - std_minus + r*len_plus - r*len_minus) / (2 * h)
             self.grad_dc[key] = grad
             self.V_static[key] = original_value
         for key in self.V_dynamic.keys():
-            original_value = self.V_dynamic[key][0]
-            self.V_dynamic[key][0] = original_value + h
+            original_value = self.V_dynamic[key]
+            self.V_dynamic[key] = original_value + h
             self.calc_field()
-            std_plus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
-            self.V_dynamic[key][0] = original_value - h
+            std_plus, len_plus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            self.V_dynamic[key] = original_value - h
             self.calc_field()
-            std_minus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
-            grad = (std_plus - std_minus) / (2 * h)
+            std_minus, len_minus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            grad = (std_plus - std_minus + r*len_plus - r*len_minus) / (2 * h)
             self.grad_rf[key] = grad
-            self.V_dynamic[key][0] = original_value
+            self.V_dynamic[key] = original_value
 
     def update(self, lr: float = 0.1):
         for key in self.grad_dc.keys():
             self.V_static[key] -= lr * self.grad_dc[key]
         for key in self.grad_rf.keys():
-            self.V_dynamic[key][0] -= lr * self.grad_rf[key]
+            self.V_dynamic[key] -= lr * self.grad_rf[key]
 
     def save(self, filename: str) -> None:
         V_static = {}
@@ -280,16 +283,10 @@ class Configure:
         for key, value in self.V_static.items():
             V_static[key] = float(value)
         for key, value in self.V_dynamic.items():
-            V_dynamic[key] = float(value[0])
+            V_dynamic[key] = float(value)
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump({
                 "V_static": V_static,
                 "V_dynamic": V_dynamic
             }, f, indent=4)
-
-    def load(self, filename: str) -> None:
-        with open(filename, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            self.V_static = data.get("V_static", {})
-            self.V_dynamic = data.get("V_dynamic", {})
 

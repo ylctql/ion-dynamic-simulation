@@ -6,12 +6,11 @@
 #include <filesystem>
 #include <cuda_runtime.h>
 
-using data_t = double; // 假设 data_t 是 double 类型
+using data_t = double; 
 constexpr int DIM = 3;
 constexpr int CPU = 0;
 constexpr int CUDA = 1;
 
-// CUDA 核函数计算 Coulomb Interaction
 extern "C" void computeCoulombInteraction(
     const data_t* r, const data_t* charge, data_t* result, int N, int grid_size, int block_size);
 
@@ -24,7 +23,6 @@ using namespace std::literals;
 namespace
 {
 
-// NOLINTNEXTLINE
 chrono::microseconds elapsed1 = 0us;
 
 VecType CoulombInteractionCuda(
@@ -37,7 +35,6 @@ VecType CoulombInteractionCuda(
     VecType result(N, DIM);
     result.setZero();
 
-    // 分配 GPU 内存
     data_t* d_r;
     data_t* d_charge;
     data_t* d_result;
@@ -45,20 +42,16 @@ VecType CoulombInteractionCuda(
     cudaMalloc(&d_charge, N * sizeof(data_t));
     cudaMalloc(&d_result, N * DIM * sizeof(data_t));
 
-    // 将数据从 CPU 传输到 GPU
     cudaMemcpy(d_r, r.data(), N * DIM * sizeof(data_t), cudaMemcpyHostToDevice);
     cudaMemcpy(d_charge, charge.data(), N * sizeof(data_t), cudaMemcpyHostToDevice);
     cudaMemset(d_result, 0, N * DIM * sizeof(data_t));
 
-    // 配置 CUDA 核函数
     int threadsPerBlock = 256;
     int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
     computeCoulombInteraction(d_r, d_charge, d_result, N, threadsPerBlock, blocksPerGrid);
 
-    // 将结果从 GPU 传输回 CPU
     cudaMemcpy(result.data(), d_result, N * DIM * sizeof(data_t), cudaMemcpyDeviceToHost);
 
-    // 释放 GPU 内存
     cudaFree(d_r);
 
     cudaFree(d_charge);

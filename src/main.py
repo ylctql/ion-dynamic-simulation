@@ -24,22 +24,14 @@ if __name__ == "__main__":
     args = Parser.parse_args()
     device = 1 if args.CUDA else 0
     print("Using %s for computation."%( "CUDA" if device==1 else "CPU"))
-    ini_range = np.random.randint(100, 200) #初始范围也随机，探索更多可能
-    N = args.N  #离子数
-    charge = np.ones(N) #每个离子带电荷量都是1个元电荷
-    mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
+    ini_range = np.random.randint(100, 200) 
+    N = args.N  
+    charge = np.ones(N) 
+    mass = np.ones(N) 
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
-    configure = Configure(V_static={
-        "RF": -6.961206877539749,
-        "U1": 0.04790252101741849,
-        "U2": -0.07065312492226086,
-        "U3": 0.14516592808150125,
-        "U4": 1.4597137709304562,
-        "U5": 0.2083854172475653,
-        "U6": -0.04400262941551117,
-        "U7": 0.04874354976365938
-    }, V_dynamic={"RF": [274.9213508142432, oscillate]}, basis=basis)#静态电压和动态电压
+    configure = Configure(basis=basis)
+    configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0.01_1000.json"))
     t = args.time
-    std, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=args.plot)
-    print("Estimated thickness: %.3f um at time %.3f us."%(std, simu_t))
+    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=args.plot)
+    print("Estimated thickness: %.3f um at time %.3f us."%(std_y, simu_t))

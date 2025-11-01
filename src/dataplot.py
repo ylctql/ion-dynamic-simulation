@@ -120,42 +120,46 @@ class DataPlotter:
 		"""
 		self.queue_in = queue_in
 		self.queue_out = queue_out
-		self.fig, self.ax = plt.subplots(1, 3, figsize=(10, 5))
+		self.fig = plt.figure() 
+		self.ax1 = plt.subplot2grid((3, 3), (0, 0), colspan=1, rowspan=1, fig=self.fig)
+		self.ax2 = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=1, fig=self.fig)
+		self.ax3 = plt.subplot2grid((3, 3), (1, 0), colspan=3, rowspan=2, fig=self.fig)
 
 		self.dl = dl
 		self.dt = dt
 		self.gamma = gamma
 
-		self.ax[0].set_xlim(-x_range+x_bias, x_range+x_bias)
-		self.ax[0].set_ylim(-y_range+y_bias, y_range+y_bias)
-		self.ax[0].set_aspect('equal')
-		self.ax[0].set_xlabel('x/um', fontsize=14)
-		self.ax[0].set_ylabel('y/um', fontsize=14)
-		self.ax[0].tick_params(axis='x', labelsize=14)
-		self.ax[0].tick_params(axis='y', labelsize=14)
+		self.ax1.set_xlim(-x_range+x_bias, x_range+x_bias)
+		self.ax1.set_ylim(-y_range+y_bias, y_range+y_bias)
+		self.ax1.set_aspect('equal')
+		self.ax1.set_xlabel('x/um', fontsize=14)
+		self.ax1.set_ylabel('y/um', fontsize=14)
+		self.ax1.tick_params(axis='x', labelsize=14)
+		self.ax1.tick_params(axis='y', labelsize=14)
 
-		self.ax[1].set_xlim(-x_range+x_bias, x_range+x_bias)
-		self.ax[1].set_ylim(-z_range+z_bias, z_range+z_bias)
-		self.ax[1].set_aspect('equal')
-		self.ax[1].set_xlabel('x/um', fontsize=14)
-		self.ax[1].set_ylabel('z/um', fontsize=14)
-		self.ax[1].tick_params(axis='x', labelsize=14)
-		self.ax[1].tick_params(axis='y', labelsize=14)
-		
-		self.ax[2].set_xlim(-z_range+z_bias, z_range+z_bias)
-		self.ax[2].set_ylim(-y_range+y_bias, y_range+y_bias)
-		self.ax[2].set_aspect('equal')
-		self.ax[2].set_xlabel('z/um', fontsize=14)
-		self.ax[2].set_ylabel('y/um', fontsize=14)
-		self.ax[2].tick_params(axis='x', labelsize=14)
-		self.ax[2].tick_params(axis='y', labelsize=14)
+		self.ax2.set_xlim(-z_range+z_bias, z_range+z_bias)
+		self.ax2.set_ylim(-y_range+y_bias, y_range+y_bias)
+		self.ax2.set_aspect('equal')
+		self.ax2.set_xlabel('z/um', fontsize=14)
+		self.ax2.set_ylabel('y/um', fontsize=14)
+		self.ax2.tick_params(axis='x', labelsize=14)
+		self.ax2.tick_params(axis='y', labelsize=14)
+
+		self.ax3.set_xlim(-z_range+z_bias, z_range+z_bias)
+		self.ax3.set_ylim(-x_range+x_bias, x_range+x_bias)
+		self.ax3.set_aspect('equal')
+		self.ax3.set_xlabel('z/um', fontsize=14)
+		self.ax3.set_ylabel('x/um', fontsize=14)
+		self.ax3.tick_params(axis='x', labelsize=14)
+		self.ax3.tick_params(axis='y', labelsize=14)
 
 		self.indices = np.arange(frame_init.r.shape[0])
 		self.artists = (
+
+			self.ax1.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
+			self.ax2.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
+			self.ax3.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 0]*self.dl, 5, 'r'),
 			
-			self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
-			self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 5, 'r'),
-			self.ax[2].scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
 		)
 
 		self.bm = BlitManager(self.fig.canvas, self.artists)
@@ -193,10 +197,10 @@ class DataPlotter:
 
 
 		self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
-		self.artists[1].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
-		self.artists[2].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
+		self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
+		self.artists[2].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
 
-		self.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
+		self.ax3.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 
 		self.bm.update()
 

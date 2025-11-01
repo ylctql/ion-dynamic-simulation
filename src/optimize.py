@@ -7,10 +7,9 @@ import argparse
 
 Parser = argparse.ArgumentParser()
 Parser.add_argument('--N', type=int, help='number of ions', default=50)
-Parser.add_argument('--time', type=float, help='total simulation time in microseconds', default=np.inf)
+Parser.add_argument('--time', type=float, help='total simulation time in microseconds', default=10.0)
 Parser.add_argument('--epochs',  type=int, default=10, help='number of optimization epochs')
 Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
-Parser.add_argument('--plot', action='store_true', help='enable plotting')
 
 dirname = os.path.dirname(__file__)
 
@@ -30,15 +29,15 @@ if __name__ == "__main__":
     mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
-    configure = Configure(V_static={"RF":-5.006910107928535, "U1":0.0, "U2":0.0, "U3":0.0, "U4":-0.09771459237434063, "U5":0, "U6":0, "U7":0}, V_dynamic={"RF": [274.98096803557326, oscillate]}, basis=basis)#静态电压和动态电压
+    configure = Configure(V_static={"RF":-5.006910107928535, "U1":0, "U2":0, "U3":0, "U4":-0.09771459237434063, "U5":0, "U6":0, "U7":0, }, V_dynamic={"RF": 274.98096803557326}, basis=basis)#静态电压和动态电压
     t = args.time
     for i in range(args.epochs):
         print("Processing epoch %d/%d"%(i+1, args.epochs))
-        configure.calc_gradient(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, h=0.1)
+        configure.calc_gradient(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, h=0.1, r=0.01)
         configure.update(lr=0.1)
-        std, _ = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=0)
-        print("Estimated thickness: %.3f um at epoch %d"%(std, i+1))
-    configure.save(os.path.join(dirname, "saved_config5000.json"))
+        std_y, len_z, _ = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=False)
+        print("Estimated thickness: %.3f um; length: %.3f um at epoch %d"%(std_y, len_z, i+1))
+    configure.save(os.path.join(dirname, "saved_config_regression_0.01_5000.json"))
     print("Optimization completed. Final voltages:")
     print("Static Voltages:", configure.V_static)
-    print("Dynamic Voltages:", {k: v[0] for k, v in configure.V_dynamic.items()})
+    print("Dynamic Voltages:", {k: v for k, v in configure.V_dynamic.items()})
