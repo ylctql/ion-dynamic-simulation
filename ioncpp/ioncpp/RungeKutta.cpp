@@ -46,9 +46,9 @@ VecType CoulombInteractionCuda(
     cudaMemcpy(d_charge, charge.data(), N * sizeof(data_t), cudaMemcpyHostToDevice);
     cudaMemset(d_result, 0, N * DIM * sizeof(data_t));
 
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 64;
     int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
-    computeCoulombInteraction(d_r, d_charge, d_result, N, threadsPerBlock, blocksPerGrid);
+    computeCoulombInteraction(d_r, d_charge, d_result, N, blocksPerGrid, threadsPerBlock);
 
     cudaMemcpy(result.data(), d_result, N * DIM * sizeof(data_t), cudaMemcpyDeviceToHost);
 
