@@ -1,13 +1,13 @@
 import multiprocessing as mp
 import time
-from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 import os
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import ionsim
-
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize
 from utils import *
 
 # Data calculating backend
@@ -120,22 +120,25 @@ class DataPlotter:
 		"""
 		self.queue_in = queue_in
 		self.queue_out = queue_out
-		self.fig = plt.figure() 
-		self.ax1 = plt.subplot2grid((3, 3), (0, 0), colspan=1, rowspan=1, fig=self.fig)
-		self.ax2 = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=1, fig=self.fig)
-		self.ax3 = plt.subplot2grid((3, 3), (1, 0), colspan=3, rowspan=2, fig=self.fig)
-
 		self.dl = dl
 		self.dt = dt
 		self.gamma = gamma
 
-		self.ax1.set_xlim(-x_range+x_bias, x_range+x_bias)
-		self.ax1.set_ylim(-y_range+y_bias, y_range+y_bias)
-		self.ax1.set_aspect('equal')
-		self.ax1.set_xlabel('x/um', fontsize=14)
-		self.ax1.set_ylabel('y/um', fontsize=14)
-		self.ax1.tick_params(axis='x', labelsize=14)
-		self.ax1.tick_params(axis='y', labelsize=14)
+		self.fig = plt.figure() 
+		# self.ax1 = plt.subplot2grid((3, 3), (0, 0), colspan=1, rowspan=1, fig=self.fig)
+		# self.ax2 = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=1, fig=self.fig)
+		# self.ax3 = plt.subplot2grid((3, 3), (1, 0), colspan=3, rowspan=2, fig=self.fig)
+
+		self.ax2 = plt.subplot2grid((6, 1), (0, 0), colspan=1, rowspan=1, fig=self.fig)
+		self.ax3 = plt.subplot2grid((6, 1), (1, 0), colspan=1, rowspan=5, fig=self.fig)
+
+		# self.ax1.set_xlim(-x_range+x_bias, x_range+x_bias)
+		# self.ax1.set_ylim(-y_range+y_bias, y_range+y_bias)
+		# self.ax1.set_aspect('equal')
+		# self.ax1.set_xlabel('x/um', fontsize=14)
+		# self.ax1.set_ylabel('y/um', fontsize=14)
+		# self.ax1.tick_params(axis='x', labelsize=14)
+		# self.ax1.tick_params(axis='y', labelsize=14)
 
 		self.ax2.set_xlim(-z_range+z_bias, z_range+z_bias)
 		self.ax2.set_ylim(-y_range+y_bias, y_range+y_bias)
@@ -156,7 +159,7 @@ class DataPlotter:
 		self.indices = np.arange(frame_init.r.shape[0])
 		self.artists = (
 
-			self.ax1.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
+			# self.ax1.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
 			self.ax2.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
 			self.ax3.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 0]*self.dl, 5, 'r'),
 			
@@ -196,9 +199,21 @@ class DataPlotter:
 		self.artists[1]._offsets = np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T'''
 
 
-		self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
-		self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
-		self.artists[2].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
+		# self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
+		# self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
+		# self.artists[2].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
+
+		self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
+		self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
+
+		# 归一化 y 值到 [0, 1]
+		norm = Normalize(vmin=np.min(f.r[:, 1]), vmax=np.max(f.r[:, 1]))
+
+		# 使用颜色映射（'RdBu'：小值蓝，大值红）
+		cmap = cm.RdBu
+		colors = cmap(norm(f.r[:, 1]))  # 转换为 RGBA 颜色数组
+
+		self.artists[1].set_facecolor(colors)
 
 		self.ax3.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 
