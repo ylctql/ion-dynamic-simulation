@@ -80,6 +80,6 @@ configure.save(file)
 
 ### 3. Contact
 
-If you have any questions or ideas, feel free to contact us through Email (xiemx0511@gmail.com) or Wechat (MrLemonader).
+If you have any questions or ideas, feel free to contact us through Email (alexyan0431@gmail.com).
 
 
