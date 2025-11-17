@@ -19,9 +19,12 @@ Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
 epsl = epsilon_0#8.854*10**(-12)#真空介电常数@SI
 m = 2.273e-25 #Ba137+ #170.936*(1.66053904*10**(-27))#离子的质量 @SI #Yb171=170.936323；Yb174=173.938859
 ec = e#1.6*10**(-19)#元电荷@SI
-dt = 2/Omega#单位时间dt #dt*T*Omega=2pi ->  T=pi
+dt = 2/Omega#单位时间dt #dt*T*Omega=2pi ->  T=pi    # 满足Nyquist采样定理，确保频率分析的最大值刚好为Omega
 dl = (( ec**2)/(4*pi*m*epsl*(Omega)**2))**(1/3)#单位长度dl
 dV = m/ec*(dl/dt)**2 #单位电压dV
+print("dl:", dl, "m")
+print("dt:", dt, "s")
+print("dV:", dV, "V")
 
 class Data_Loader:
     '''
@@ -260,11 +263,21 @@ class Configure:
             count = 0
             std_y = 0.0
             dominator = 0.0
+            flag = True
             while True:
                 new_f = q2.get()
                 if isinstance(new_f, bool) and not new_f:
                     break
                 f = new_f
+                # print("count=", count, "time=", f.timestamp)
+                if f.timestamp*self.dt*1e6>150 and f.timestamp*self.dt*1e6<200:
+                    if flag:
+                        start_stamp = f.timestamp
+                        start = start_stamp*self.dt*1e6
+                        print("start:", start_stamp, start, "us")
+                        flag = False
+                    np.save("./data_cache/ion_pos/10000/timestamp%.1f&time%.3fus.npy"%(f.timestamp-start_stamp, f.timestamp*self.dt*1e6-start), f.r*self.dl*1e6)
+                # print(f.timestamp, self.dt*1e6, f.timestamp*self.dt*1e6)
                 if count>2000:  # From experience, about 200 data points
                     std_y += f.r[:, 1].std() * self.dl * 1e6
                     dominator += 1
@@ -274,6 +287,7 @@ class Configure:
             std_y /= dominator
             # print(std_y)
         len_z = np.abs(f.r[:, 2].max() - f.r[:, 2].min()) * self.dl * 1e6
+        np.save("./data_cache/ion_pos/%d/%s_%.3fus"%(f.r.shape[0], "flat_28", f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
         return std_y, len_z, f.timestamp * self.dt * 1e6
     
     def single_grad(self, key_id, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h_dc: float = 0.01, h_rf: float = 0.1, r: float = 0.05, sym: bool = True, biside: bool = False) -> None:

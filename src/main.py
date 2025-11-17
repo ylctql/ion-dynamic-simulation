@@ -41,8 +41,8 @@ if __name__ == "__main__":
     basis.loadData()
     configure = Configure(basis=basis)
     # configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0.01_1000.json"))
-    configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0_10000_sym.json"))
+    configure.load_from_file(os.path.join(dirname, "../saves/flat_28.json"))  
     # configure.load_from_param(V_static, V_dynamic)
     t = args.time
-    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=args.plot)
+    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=0.5, batch=50, t=t, device=device, plotting=args.plot)
     print("Estimated thickness: %.3f um at time %.3f us."%(std_y, simu_t))

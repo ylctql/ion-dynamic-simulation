@@ -217,6 +217,11 @@ class DataPlotter:
 
 		self.ax3.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 
+		print(f.timestamp, f.timestamp*self.dt)
+
+		if f.timestamp*self.dt >100 and not os.path.exists("./data_cache/10000/ion_pos/%dus.npy"%100*int(f.timestamp*self.dt/100)):
+			np.save("./data_cache/10000/ion_pos/%dus.npy"%100*int(f.timestamp*self.dt/100), f.r*self.dl)
+
 		self.bm.update()
 
 		return True
