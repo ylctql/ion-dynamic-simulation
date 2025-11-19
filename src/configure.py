@@ -231,16 +231,17 @@ class Configure:
         f = f - gamma * v
         return f
 
-    def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0, t_start: float = 0.0, config_name: str = "flat_28") -> tuple:
+    def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0, 
+                   t_start: float = 0.0, config_name: str = "flat_28", save_final: bool = False, save_traj: bool = False) -> tuple:
 
-        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6))
+        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, config_name=config_name, save_traj=save_traj)
 
         q1 = mp.Queue()
         q2 = mp.Queue(maxsize=50)
 
-        if t_start > 0.1 and os.path.exists("./data_cache/%d/status/r/%s_%.3fus.npy"%(N, config_name, t_start)):
-            r0 = np.load("./data_cache/%d/status/r/%s_%.3fus.npy"%(N, config_name, t_start))/(self.dl*1e6)    # In Status dir r is in the unit of um
-            v0 = np.load("./data_cache/%d/status/v/%s_%.3fus.npy"%(N, config_name, t_start))/(self.dl/self.dt)   # In Status dir v is in the unit of m/s
+        if t_start > 0.1 and os.path.exists("./data_cache/%d/status/%s/r/%.3fus.npy"%(N, config_name, t_start)):
+            r0 = np.load("./data_cache/%d/status/%s/r/%.3fus.npy"%(N, config_name, t_start))/(self.dl*1e6)    # In Status dir r is in the unit of um
+            v0 = np.load("./data_cache/%d/status/%s/v/%.3fus.npy"%(N, config_name, t_start))/(self.dl/self.dt)   # In Status dir v is in the unit of m/s
             print("using stored data")
 
         else:
@@ -293,8 +294,9 @@ class Configure:
             std_y /= dominator
             # print(std_y)
         len_z = np.abs(f.r[:, 2].max() - f.r[:, 2].min()) * self.dl * 1e6
-        np.save("./data_cache/%d/status/r/%s_%.3fus"%(f.r.shape[0], config_name, f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
-        np.save("./data_cache/%d/status/v/%s_%.3fus"%(f.v.shape[0], config_name, f.timestamp*self.dt*1e6), f.v*self.dl/self.dt)
+        if save_final:
+            np.save("./data_cache/%d/status/%s/r/%.3fus"%(f.r.shape[0], config_name, f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
+            np.save("./data_cache/%d/status/%s/v/%.3fus"%(f.v.shape[0], config_name, f.timestamp*self.dt*1e6), f.v*self.dl/self.dt)
         return std_y, len_z, f.timestamp * self.dt * 1e6
     
     def single_grad(self, key_id, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h_dc: float = 0.01, h_rf: float = 0.1, r: float = 0.05, sym: bool = True, biside: bool = False) -> None:

@@ -12,10 +12,10 @@ from utils import *
 
 # Data calculating backend
 class CalculationBackend:
-	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0):
+	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0, dt: float = 1.0, dl: float = 1.0, config_name: str = "flat_28", save_traj: str = False):
 		"""
 		:param step: number of steps to calculate in an interval
-		:param interval: time interval
+		:param interval: time interval between 2 adjacent frames
 		:param batch: number of data to be sent each time
 		"""
 		self.device = device
@@ -23,6 +23,10 @@ class CalculationBackend:
 		self.interval = interval
 		self.batch = batch
 		self.time = time
+		self.dt = dt
+		self.dl = dl
+		self.config_name = config_name
+		self.save_traj = save_traj
 
 	def run(self, queue_out: mp.Queue, queue_in: mp.Queue):
 		"""
@@ -108,6 +112,10 @@ class CalculationBackend:
 					v_list[(i + 1) * self.step - 1],
 					t
 				))
+				if self.save_traj:
+					np.save("./data_cache/%d/traj/%s/r/%.3fus.npy"%(charge.shape[0], self.config_name, t*self.dt*1e6), r_list[(i + 1) * self.step - 1]*self.dl*1e6)
+					np.save("./data_cache/%d/traj/%s/v/%.3fus.npy"%(charge.shape[0], self.config_name, t*self.dt*1e6), v_list[(i + 1) * self.step - 1]*self.dl/self.dt)
+					# queue_out中两帧之间的时间差应该是interval个dt，即绘制的两帧间隔
 
 			r0 = r_list[-1]
 			v0 = v_list[-1]

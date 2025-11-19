@@ -13,6 +13,9 @@ Parser.add_argument('--time', type=float, help='total simulation time in microse
 Parser.add_argument('--epochs',  type=int, default=10, help='number of optimization epochs')
 Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
 Parser.add_argument('--plot', action='store_true', help='enable plotting')
+Parser.add_argument('--interval', type=float, help='the interval between 2 adjacent frames', default=0.5)
+Parser.add_argument('--save_final', type=bool, help='enable saving the final configuration', default=False)
+Parser.add_argument('--save_traj', type=bool, help='enable saving the trajectory', default=False)
 
 dirname = os.path.dirname(__file__)
 
@@ -40,6 +43,7 @@ if __name__ == "__main__":
     charge = np.ones(N) 
     mass = np.ones(N)
     t_start = args.t0
+    interval = args.interval
     config_name = args.config_name
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
@@ -48,5 +52,5 @@ if __name__ == "__main__":
     configure.load_from_file(os.path.join(dirname, "../saves/%s.json"%config_name))  
     # configure.load_from_param(V_static, V_dynamic)
     t = args.time
-    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=0.5, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name)
+    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj)
     print("Estimated thickness: %.3f um at time %.3f us."%(std_y, simu_t))
