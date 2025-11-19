@@ -46,7 +46,7 @@ class CalculationBackend:
 		charge = m.charge
 		mass = m.mass
 		force = m.force
-		t: float = 0
+		t: float = m.t_satrt
 
 		paused = False
 
@@ -67,6 +67,8 @@ class CalculationBackend:
 						r0 = m.r
 					if m.v is not None:
 						v0 = m.v
+					if m.t_satrt is not None:
+						t_start = m.t_satrt
 					if m.charge is not None:
 						charge = m.charge
 					if m.mass is not None:
@@ -219,8 +221,13 @@ class DataPlotter:
 
 		print(f.timestamp, f.timestamp*self.dt)
 
-		if f.timestamp*self.dt >100 and not os.path.exists("./data_cache/10000/ion_pos/%dus.npy"%100*int(f.timestamp*self.dt/100)):
-			np.save("./data_cache/10000/ion_pos/%dus.npy"%100*int(f.timestamp*self.dt/100), f.r*self.dl)
+		if not os.path.exists("./data_cache/%d/ion_pos"%f.r.shape[0]):
+			os.makedirs("./data_cache/%d/ion_pos/"%f.r.shape[0])
+		
+		duration = 10
+
+		if f.timestamp*self.dt >100 and not os.path.exists("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration))):
+			np.save("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration)), f.r*self.dl)
 
 		self.bm.update()
 

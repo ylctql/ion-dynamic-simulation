@@ -7,6 +7,8 @@ import argparse
 
 Parser = argparse.ArgumentParser()
 Parser.add_argument('--N', type=int, help='number of ions', default=50)
+Parser.add_argument('--t0', type=float, help='the beginning of evolution', default=0.0)
+Parser.add_argument('--config_name', type=str, help='the name of voltage configs', default="flat_28")
 Parser.add_argument('--time', type=float, help='total simulation time in microseconds', default=np.inf)
 Parser.add_argument('--epochs',  type=int, default=10, help='number of optimization epochs')
 Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
@@ -36,13 +38,15 @@ if __name__ == "__main__":
     ini_range = np.random.randint(100, 200) 
     N = args.N  
     charge = np.ones(N) 
-    mass = np.ones(N) 
+    mass = np.ones(N)
+    t_start = args.t0
+    config_name = args.config_name
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
     configure = Configure(basis=basis)
     # configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0.01_1000.json"))
-    configure.load_from_file(os.path.join(dirname, "../saves/flat_28.json"))  
+    configure.load_from_file(os.path.join(dirname, "../saves/%s.json"%config_name))  
     # configure.load_from_param(V_static, V_dynamic)
     t = args.time
-    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=0.5, batch=50, t=t, device=device, plotting=args.plot)
+    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=0.5, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name)
     print("Estimated thickness: %.3f um at time %.3f us."%(std_y, simu_t))

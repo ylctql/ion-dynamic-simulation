@@ -231,25 +231,31 @@ class Configure:
         f = f - gamma * v
         return f
 
-    def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0) -> tuple:
+    def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0, t_start: float = 0.0, config_name: str = "flat_28") -> tuple:
 
         backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6))
 
         q1 = mp.Queue()
         q2 = mp.Queue(maxsize=50)
 
-        r0 = (np.random.rand(N, 3)-0.5) *ini_range
-        v0 = np.zeros((N, 3))
+        if t_start > 0.1 and os.path.exists("./data_cache/%d/status/r/%s_%.3fus.npy"%(N, config_name, t_start)):
+            r0 = np.load("./data_cache/%d/status/r/%s_%.3fus.npy"%(N, config_name, t_start))/(self.dl*1e6)    # In Status dir r is in the unit of um
+            v0 = np.load("./data_cache/%d/status/v/%s_%.3fus.npy"%(N, config_name, t_start))/(self.dl/self.dt)   # In Status dir v is in the unit of m/s
+            print("using stored data")
 
-        q1.put(Message(CommandType.START, r0, v0, mass, charge, self.calc_force))
-        q2.put(Frame(r0, v0, 0))
+        else:
+            r0 = (np.random.rand(N, 3)-0.5) *ini_range
+            v0 = np.zeros((N, 3))
+            
+        q1.put(Message(CommandType.START, r0, v0, t_start/(self.dt*1e6), mass, charge, self.calc_force))
+        q2.put(Frame(r0, v0, t_start/(self.dt*1e6)))
 
         proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)   
         proc.start()
 
         f = None
         if plotting:
-            plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=550, x_range=100, y_range=20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6)
+            plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=550, x_range=100, y_range=20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6)
             f = plot.start()
             if not plot.is_alive():
                 q1.put(Message(CommandType.STOP))
@@ -287,7 +293,8 @@ class Configure:
             std_y /= dominator
             # print(std_y)
         len_z = np.abs(f.r[:, 2].max() - f.r[:, 2].min()) * self.dl * 1e6
-        np.save("./data_cache/ion_pos/%d/%s_%.3fus"%(f.r.shape[0], "flat_28", f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
+        np.save("./data_cache/%d/status/r/%s_%.3fus"%(f.r.shape[0], config_name, f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
+        np.save("./data_cache/%d/status/v/%s_%.3fus"%(f.v.shape[0], config_name, f.timestamp*self.dt*1e6), f.v*self.dl/self.dt)
         return std_y, len_z, f.timestamp * self.dt * 1e6
     
     def single_grad(self, key_id, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h_dc: float = 0.01, h_rf: float = 0.1, r: float = 0.05, sym: bool = True, biside: bool = False) -> None:

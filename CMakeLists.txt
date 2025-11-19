@@ -24,6 +24,11 @@ set_target_properties(ioncpp PROPERTIES
     CUDA_STANDARD 14
 )
 
+include_directories(/usr/local/cuda-12.8/include)
+link_directories(/usr/local/cuda-12.8/lib64)
+
+target_link_libraries(ioncpp PRIVATE cudart)
+
 target_compile_features(ioncpp PRIVATE cxx_std_17)
 set_target_properties(ioncpp PROPERTIES CXX_STANDARD 17)
 set_target_properties(ioncpp PROPERTIES CXX_STANDARD_REQUIRED ON)
@@ -46,8 +51,6 @@ if(VERSION_INFO)
 endif(VERSION_INFO)
 
 target_link_libraries(ionsim PRIVATE ioncpp)
-
-
 
 option(BUILD_MAIN "Build main for testing purpose" ON)
 
