@@ -216,8 +216,10 @@ class DataPlotter:
 		self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
 		self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
 
+		mask = (np.abs(f.r[:, 0]*self.dl)<50) & (np.abs(f.r[:, 1]*self.dl)<20)
+
 		# 归一化 y 值到 [0, 1]
-		norm = Normalize(vmin=np.min(f.r[:, 1]), vmax=np.max(f.r[:, 1]))
+		norm = Normalize(vmin=np.min(f.r[mask, 1]), vmax=np.max(f.r[mask, 1]))
 
 		# 使用颜色映射（'RdBu'：小值蓝，大值红）
 		cmap = cm.RdBu

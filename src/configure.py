@@ -118,7 +118,7 @@ class Configure:
     :param basis: Data_Loader object containing electrode potential data and basis configuration
     """
 
-    def __init__(self, basis: Data_Loader, V_static: dict = {}, V_dynamic: dict = {}) -> None:
+    def __init__(self, basis: Data_Loader, V_static: dict = {}, V_dynamic: dict = {}, sym: bool = False) -> None:
 
         self.V_static = V_static
         self.V_dynamic = V_dynamic
@@ -135,6 +135,7 @@ class Configure:
         self.m = m
         self.dt = dt
         self.dl = dl
+        self.sym = sym
 
     def __reduce__(self):
         return (
@@ -153,8 +154,27 @@ class Configure:
     def load_from_file(self, filename: str) -> None:
         with open(filename, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            self.V_static = data.get("V_static", {})
             self.V_dynamic = data.get("V_dynamic", {})
+            if self.sym:
+                # 对称性处理：将设置的电极电压分解为sym和asym两部分
+                self.V_raw = data.get("V_static", {})
+                key_ls = list(self.V_raw.keys())
+                if "RF" in key_ls:
+                    self.V_static["RF"] = self.V_raw["RF"]
+                    key_ls.remove("RF")
+                for key_id in range(len(key_ls)):
+                    if key_id < len(key_ls) / 2 - 1:
+                        self.V_static[key_ls[key_id]] = 0.5*(self.V_raw[key_ls[key_id]] + self.V_raw[key_ls[len(key_ls) - key_id - 1]]) #Vs = (V+ + V-)/2，这里有除以2！
+                        self.V_static[key_ls[len(key_ls) - key_id - 1]] = 0.5*(self.V_raw[key_ls[key_id]] - self.V_raw[key_ls[len(key_ls) - key_id - 1]]) # Va = (V- - V+)/2，这里也有除以2！
+                    elif key_id == int((len(key_ls)) / 2):
+                        self.V_static[key_ls[key_id]] = self.V_raw[key_ls[key_id]]
+                        print("U8 is used")
+                    else:
+                        print(self.V_static)
+                        break
+            else:
+                self.V_static = data.get("V_static", {})
+            
     
     def load_from_param(self, V_static: dict, V_dynamic: dict) -> None:
         self.V_static = V_static
@@ -180,6 +200,12 @@ class Configure:
         V0 = self._interpret_voltage(self.V_dynamic["RF"])*self.basis.load_basis("RF")*self.ec*self.dV #此处统一使用国际单位制
         [x, y, z] = self.basis.coordinate_um   #换算成国际单位制
         Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
+        # Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=1) #尝试1阶
+        # print("using 1st order gradient for pseudo potential calculation")
+        # Potential symmetry -> z field asymmetry, xy symmetry
+        Fx = 0.5*(Fx + Fx[:, :, ::-1]) if self.sym else Fx
+        Fy = 0.5*(Fy + Fy[:, :, ::-1]) if self.sym else Fy
+        Fz = 0.5*(Fz - Fz[:, :, ::-1]) if self.sym else Fz
         # F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
         V_pseudo_rf = (Fx**2 + Fy**2 + Fz**2)*1e12/(4*self.m*self.Omega**2*self.ec)
         return V_pseudo_rf
@@ -228,6 +254,8 @@ class Configure:
         f_in = f_in.transpose()
         f[mask] = f_in
         # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
+        k_unit = np.array([0, np.cos(0.25*np.pi), np.sin(0.25*np.pi)])
+        # f = f - gamma * np.dot(np.dot(v, k_unit).reshape(-1, 1), k_unit.reshape(1, -1))
         f = f - gamma * v
         return f
 
@@ -245,8 +273,11 @@ class Configure:
             print("using stored data")
 
         else:
-            r0 = (np.random.rand(N, 3)-0.5) *ini_range
+            r0 = (np.random.rand(N, 3)-0.5) *ini_range 
             v0 = np.zeros((N, 3))
+            r0[:, 1] *= 0.1
+            # r0[:-100, 2] -= 700/(self.dl*1e6) # Large crystal site
+            # r0[-100:, 2] += 700/(self.dl*1e6) # Small crystal site
             
         q1.put(Message(CommandType.START, r0, v0, t_start/(self.dt*1e6), mass, charge, self.calc_force))
         q2.put(Frame(r0, v0, t_start/(self.dt*1e6)))
@@ -295,8 +326,12 @@ class Configure:
             # print(std_y)
         len_z = np.abs(f.r[:, 2].max() - f.r[:, 2].min()) * self.dl * 1e6
         if save_final:
-            np.save("./data_cache/%d/status/%s/r/%.3fus"%(f.r.shape[0], config_name, f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
-            np.save("./data_cache/%d/status/%s/v/%.3fus"%(f.v.shape[0], config_name, f.timestamp*self.dt*1e6), f.v*self.dl/self.dt)
+            status_dir = "./data_cache/%d/status/"%f.r.shape[0]
+            if not os.path.exists(status_dir):
+                os.makedirs(status_dir+"%s/r/"%config_name)
+                os.makedirs(status_dir+"%s/v/"%config_name)
+            np.save(status_dir + "%s/r/%.3fus"%(config_name, f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
+            np.save(status_dir + "%s/v/%.3fus"%(f.v.shape[0], config_name, f.timestamp*self.dt*1e6), f.v*self.dl/self.dt)
         return std_y, len_z, f.timestamp * self.dt * 1e6
     
     def single_grad(self, key_id, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h_dc: float = 0.01, h_rf: float = 0.1, r: float = 0.05, sym: bool = True, biside: bool = False) -> None:
