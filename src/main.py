@@ -7,7 +7,7 @@ import argparse
 
 Parser = argparse.ArgumentParser()
 Parser.add_argument('--N', type=int, help='number of ions', default=50)
-Parser.add_argument('--num_electrodes', type=int, help='number of electrodes', default=28)
+Parser.add_argument('--electrodes', type=int, help='number of electrodes', default=28)
 Parser.add_argument('--t0', type=float, help='the beginning of evolution', default=0.0)
 Parser.add_argument('--config_name', type=str, help='the name of voltage configs', default="flat_28")
 Parser.add_argument('--time', type=float, help='total simulation time in microseconds', default=np.inf)
@@ -37,13 +37,16 @@ if __name__ == "__main__":
     # V_dynamic = {"RF":300}
     args = Parser.parse_args()
     flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
-    if args.num_electrodes == 28:
+    if args.electrodes == 28:
         filename=os.path.join(dirname, "../../../data/monolithic20241118.csv") #文件名：导入的电势场格点数据
+        # filename=os.path.join(dirname, "../../../data/28electrodes_x60y40z1000.csv") #文件名：导入的电势场格点数据
         basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
-    elif args.num_electrodes == 60:
+        sym = False
+    elif args.electrodes == 60:
         # filename=os.path.join(dirname, "../../../data/60electrodes_x50y20z1000_tiny.csv")
-        filename=os.path.join(dirname, "../../../data/60electrodes_sym_x50y20z1000.csv")
+        filename=os.path.join(dirname, "../../../data/60electrodes_sym4_x100y50z1000_dx2dy2dz5_CM62.csv")
         basis_filename=os.path.join(dirname, "electrode_basis_60.json")
+        sym = False
     device = 1 if args.CUDA else 0
     print("Using %s for computation."%( "CUDA" if device==1 else "CPU"))
     ini_range = np.random.randint(100, 200) 
@@ -55,7 +58,7 @@ if __name__ == "__main__":
     config_name = args.config_name
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
-    configure = Configure(basis=basis, sym=True)
+    configure = Configure(basis=basis, sym=sym)
     # configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0.01_1000.json"))
     configure.load_from_file(os.path.join(dirname, "../saves/%s.json"%config_name))  
     # configure.load_from_param(V_static, V_dynamic)

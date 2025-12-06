@@ -231,13 +231,13 @@ class DataPlotter:
 
 		print(f.timestamp, f.timestamp*self.dt)
 
-		if not os.path.exists("./data_cache/%d/ion_pos"%f.r.shape[0]):
-			os.makedirs("./data_cache/%d/ion_pos/"%f.r.shape[0])
+		# if not os.path.exists("./data_cache/%d/ion_pos"%f.r.shape[0]):
+		# 	os.makedirs("./data_cache/%d/ion_pos/"%f.r.shape[0])
 		
-		duration = 10
+		# duration = 10
 
-		if f.timestamp*self.dt >100 and not os.path.exists("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration))):
-			np.save("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration)), f.r*self.dl)
+		# if f.timestamp*self.dt >100 and not os.path.exists("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration))):
+		# 	np.save("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration)), f.r*self.dl)
 
 		self.bm.update()
 

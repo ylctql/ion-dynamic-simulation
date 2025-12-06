@@ -48,7 +48,7 @@ class Data_Loader:
         self.dV = dV
 
     def smoothing(self, data):#由于电势场数据崎岖不平，因而做的平滑化函数
-        return savgol_filter(data, 11, 3)
+        return savgol_filter(data, 15, 3)
     
     def getcol(self,key): #把电势场名key转换为表格的列序号
         if key in self.keymaps:
@@ -203,9 +203,9 @@ class Configure:
         # Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=1) #尝试1阶
         # print("using 1st order gradient for pseudo potential calculation")
         # Potential symmetry -> z field asymmetry, xy symmetry
-        Fx = 0.5*(Fx + Fx[:, :, ::-1]) if self.sym else Fx
-        Fy = 0.5*(Fy + Fy[:, :, ::-1]) if self.sym else Fy
-        Fz = 0.5*(Fz - Fz[:, :, ::-1]) if self.sym else Fz
+        # Fx = 0.5*(Fx + Fx[:, :, ::-1]) if self.sym else Fx
+        # Fy = 0.5*(Fy + Fy[:, :, ::-1]) if self.sym else Fy
+        # Fz = 0.5*(Fz - Fz[:, :, ::-1]) if self.sym else Fz
         # F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
         V_pseudo_rf = (Fx**2 + Fy**2 + Fz**2)*1e12/(4*self.m*self.Omega**2*self.ec)
         return V_pseudo_rf
@@ -276,7 +276,7 @@ class Configure:
             r0 = (np.random.rand(N, 3)-0.5) *ini_range 
             v0 = np.zeros((N, 3))
             r0[:, 1] *= 0.1
-            # r0[:-100, 2] -= 700/(self.dl*1e6) # Large crystal site
+            # r0[:-100, 2] -= 350/(self.dl*1e6) # Large crystal site
             # r0[-100:, 2] += 700/(self.dl*1e6) # Small crystal site
             
         q1.put(Message(CommandType.START, r0, v0, t_start/(self.dt*1e6), mass, charge, self.calc_force))
@@ -331,7 +331,7 @@ class Configure:
                 os.makedirs(status_dir+"%s/r/"%config_name)
                 os.makedirs(status_dir+"%s/v/"%config_name)
             np.save(status_dir + "%s/r/%.3fus"%(config_name, f.timestamp*self.dt*1e6), f.r*self.dl*1e6)
-            np.save(status_dir + "%s/v/%.3fus"%(f.v.shape[0], config_name, f.timestamp*self.dt*1e6), f.v*self.dl/self.dt)
+            np.save(status_dir + "%s/v/%.3fus"%(config_name, f.timestamp*self.dt*1e6), f.v*self.dl/self.dt)
         return std_y, len_z, f.timestamp * self.dt * 1e6
     
     def single_grad(self, key_id, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h_dc: float = 0.01, h_rf: float = 0.1, r: float = 0.05, sym: bool = True, biside: bool = False) -> None:
