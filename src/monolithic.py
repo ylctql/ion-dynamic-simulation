@@ -6,17 +6,29 @@ import ionsim
 from utils import *
 from dataplot import *    
 import math,csv,traceback,json
+from scipy.constants import e
 from scipy.signal import savgol_filter
+import argparse
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
 filename="../../data/monolithic20241118.csv" #文件名：导入的电势场格点数据
 basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
+Parser = argparse.ArgumentParser()
+Parser.add_argument('--N', type=int, help='number of ions', default=150)
+Parser.add_argument('--t0', type=float, help='the beginning of evolution', default=0.0)
+Parser.add_argument('--g', type=float, help='the cooling rate', default=0.1)
+Parser.add_argument('--interval', type=float, help='the interval between 2 adjacent frames', default=1)
+Parser.add_argument('--save_final', action='store_true', help='enable saving the final configuration')
+Parser.add_argument('--save_traj', action='store_true', help='enable saving the trajectory')
+args = Parser.parse_args()
+print("using ", filename)
 pi=math.pi
-N = 50  #离子数
+N = args.N  #离子数
+interval = args.interval  #每两帧之间的时间间隔，单位为dt
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
-Vrf=275 #RF电压振幅
-freq_RF=35.28 #RF射频频率@MHz
+Vrf=550/2 #RF电压振幅
+freq_RF=35.28#27 #35.28 #RF射频频率@MHz
 Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
 
 def oscillate_RF(t):#RF场的时间函数。单位时间为dt
@@ -34,12 +46,12 @@ def cut(t):
     else:
         return 0
 
-V_static = {"RF":-6.4, "U4":-0.5}
+V_static = {"RF":-8, "U1":0, "U2":0, "U3":0, "U4":-1, "U5":0, "U6":0, "U7":0}
 V_dynamic = {"RF":[Vrf,oscillate_RF]}# 含时动态电压设置{"basis的文件名":[该组电极施加电压(V),时间因子函数（最终相当于二者相乘）]}
 
 epsl = 8.854*10**(-12)#真空介电常数@SI
-m = 170.936*(1.66053904*10**(-27))#离子的质量 @SI #Yb171=170.936323；Yb174=173.938859
-ec = 1.6*10**(-19)#元电荷@SI
+m = 2.239367e-25 # Ba135 #170.936*(1.66053904*10**(-27))#离子的质量 @SI #Yb171=170.936323；Yb174=173.938859
+ec = e#1.6*10**(-19)#元电荷@SI
 #【normalization：在下面的程序求解过程中，“1”相当于什么呢？】
 dt = 2/Omega#单位时间dt #dt*T*Omega=2pi ->  T=pi
 dl = (( ec**2)/(4*pi*m*epsl*(Omega)**2))**(1/3)#单位长度dl
@@ -167,7 +179,7 @@ def saveConfig(config, fileName,):#工具函数
         jf.write(json.dumps(config,indent=4, ensure_ascii=False))
 
 def force(r: np.ndarray, v: np.ndarray, t: float):
-    gamma = 0.1
+    gamma = args.g
 
     f = np.zeros_like(r)
     mask =  data_loader.grids_dc[0].in_bounds(r)#大家都没出界吧？
@@ -222,18 +234,61 @@ def pseudo_potential():
     F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
     V_pseudo_rf = F0**2/(4*m*Omega**2*ec)
     return V_pseudo_rf
-def plot_2D_potential():
-    Vp = pseudo_potential()
-    Vs = potential_static*dV
-    shape = Vs.shape
-    
-    Vs_0 = Vs[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
-    Vp_0 = Vp[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+
+# Calculate trap frequency
+Vp = pseudo_potential()
+Vs = potential_static*dV
+shape = Vs.shape
+ls_label = ['x', 'y', 'z']
+
+sa, sb, sc = np.zeros(3), np.zeros(3), np.zeros(3)
+pa, pb, pc = np.zeros(3), np.zeros(3), np.zeros(3)
+ta, tb, tc = np.zeros(3), np.zeros(3), np.zeros(3)
+
+for ax_id in range(3):
+    Vs_0 = np.take(np.take(Vs, [int(np.ceil(shape[(ax_id+1)%3]/2))], axis=(ax_id+1)%3), [int(np.ceil(shape[(ax_id+2)%3]/2))], axis=(ax_id+2)%3).flatten()
+    Vp_0 = np.take(np.take(Vp, [int(np.ceil(shape[(ax_id+1)%3]/2))], axis=(ax_id+1)%3), [int(np.ceil(shape[(ax_id+2)%3]/2))], axis=(ax_id+2)%3).flatten()
+    # Vs_0 = Vs[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+    # Vp_0 = Vp[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
     Vt_0 = Vs_0 + Vp_0
-    x = data_loader.coordinate_um[0]   
+
+    x = data_loader.coordinate_um[ax_id]   
 
     # quadratic fit
     coeffs_Vs = np.polyfit(x, Vs_0, 2)
+
+    sa[ax_id], sb[ax_id], sc[ax_id] = coeffs_Vs
+    coeffs_Vp = np.polyfit(x, Vp_0, 2)
+    pa[ax_id], pb[ax_id], pc[ax_id] = coeffs_Vp
+    coeffs_Vt = np.polyfit(x, Vt_0, 2)
+    ta[ax_id], tb[ax_id], tc[ax_id] = coeffs_Vt
+
+print("fx=", math.sqrt(2*ta[0]/m*ec)/(2*pi), "MHz")
+print("fy=", math.sqrt(2*ta[1]/m*ec)/(2*pi), "MHz")
+print("fz=", math.sqrt(2*ta[2]/m*ec)/(2*pi), "MHz")
+    
+
+def plot_2D_potential(ax_id):
+    '''
+    ax_id: 0, 1, 2 represent x, y, z
+    '''
+
+    Vp = pseudo_potential()
+    Vs = potential_static*dV
+    shape = Vs.shape
+    ls_label = ['x', 'y', 'z']
+
+    Vs_0 = np.take(np.take(Vs, [int(np.ceil(shape[(ax_id+1)%3]/2))], axis=(ax_id+1)%3), [int(np.ceil(shape[(ax_id+2)%3]/2))], axis=(ax_id+2)%3).flatten()
+    Vp_0 = np.take(np.take(Vp, [int(np.ceil(shape[(ax_id+1)%3]/2))], axis=(ax_id+1)%3), [int(np.ceil(shape[(ax_id+2)%3]/2))], axis=(ax_id+2)%3).flatten()
+    # Vs_0 = Vs[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+    # Vp_0 = Vp[:, int(np.ceil(shape[1]/2)), int(np.ceil(shape[2]/2))]
+    Vt_0 = Vs_0 + Vp_0
+
+    x = data_loader.coordinate_um[ax_id]   
+
+    # quadratic fit
+    coeffs_Vs = np.polyfit(x, Vs_0, 2)
+
     sa, sb, sc = coeffs_Vs
     coeffs_Vp = np.polyfit(x, Vp_0, 2)
     pa, pb, pc = coeffs_Vp
@@ -250,24 +305,25 @@ def plot_2D_potential():
     ax[1].plot(x, Vp_fit,label='Quadratic fit', linestyle='--')
     ax[2].plot(x, Vt_0,label='Total potential')
     ax[2].plot(x, Vt_fit,label='Quadratic fit', linestyle='--')
-    ax[0].set_xlabel('x/um', fontsize=14)
+    ax[0].set_xlabel('%s/um'%(ls_label[ax_id]), fontsize=14)
     ax[0].set_ylabel('Vs_0/V', fontsize=14)
     ax[0].tick_params(axis='x', labelsize=14)
     ax[0].tick_params(axis='y', labelsize=14)
     ax[0].legend(title=f'$R^2$ = {R2(Vs_fit, Vs_0):.4f}\n y = {sa:.2e}x² + {sb:.2e}x + {sc:.2e}')
-    ax[1].set_xlabel('x/um', fontsize=14)
+    ax[1].set_xlabel('%s/um'%(ls_label[ax_id]), fontsize=14)
     ax[1].set_ylabel('Vp_0/V', fontsize=14)
     ax[1].tick_params(axis='x', labelsize=14)
     ax[1].tick_params(axis='y', labelsize=14)
     ax[1].legend(title=f'$R^2$ = {R2(Vp_fit, Vp_0):.4f} \n y = {pa:.2e}x² + {pb:.2e}x + {pc:.2e}')
-    ax[2].set_xlabel('x/um', fontsize=14)
+    ax[2].set_xlabel('%s/um'%(ls_label[ax_id]), fontsize=14)
     ax[2].set_ylabel('Vt_0/V', fontsize=14)
     ax[2].tick_params(axis='x', labelsize=14)
     ax[2].tick_params(axis='y', labelsize=14)
     ax[2].legend(title=f'$R^2$ = {R2(Vt_fit, Vt_0):.4f} \n y = {ta:.2e}x² + {tb:.2e}x + {tc:.2e}')
-    plt.show()
 
-plot_2D_potential()
+    
+    plt.show()
+# plot_2D_potential(2)
 
 # 绘制赝势
 def psudo_potential():
@@ -331,24 +387,29 @@ bound_max=[np.max(data_loader.coordinate[i])-1e-9 for i in range(3)]
 print(bound_min,bound_max)#网格边界
 
 if __name__ == "__main__":
+    print("using g=", args.g)
 
     # backend = CalculationBackend(step=100, interval=5, batch=50)#step越大精度越高
-    backend = CalculationBackend(step=10, interval=5, batch=50)
+    backend = CalculationBackend(step=10, interval=interval, batch=50, save_traj=args.save_traj, dt=dt, dl=dl, t0=args.t0, g=args.g)#step越大精度越高
     # ini_range=100#影响画图范围和初始离子坐标
     ini_range = np.random.randint(100, 200) #初始范围也随机，探索更多可能
 
     # r0 = r0[np.lexsort([r0[:, 1], r0[:, 0], r0[:, 2]])]  #依次按z-x-y从小到大排序
     # r0 = np.loadtxt("./balance/balance.txt")/(1e6*dl) #从平衡位置开始演化
-    r0 = (np.random.rand(N, 3)-0.5) *ini_range
-    v0 = np.zeros((N, 3))
+    if args.t0 > 0.1:
+        r0 = np.load("../data_cache/status/%d/r/%.3fus.npy"%(N, args.t0))/(1e6*dl)
+        v0 = np.load("../data_cache/status/%d/v/%.3fus.npy"%(N, args.t0))*(dt/dl)
+    else:
+        r0 = (np.random.rand(N, 3)-0.5) *ini_range
+        v0 = np.zeros((N, 3))
 
     q1 = mp.Queue()
     q2 = mp.Queue(maxsize=50)
 
-    q1.put(Message(CommandType.START, r0, v0, charge, mass, force))
-    q2.put(Frame(r0, v0, 0))
+    q1.put(Message(CommandType.START, r0, v0, args.t0/(dt*1e6), charge, mass, force))
+    q2.put(Frame(r0, v0, args.t0/(dt*1e6)))
 
-    plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)
+    plot = DataPlotter(q2, q1, Frame(r0, v0, args.t0/(dt*1e6)), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)
     proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)
     
     proc.start()
@@ -360,4 +421,13 @@ if __name__ == "__main__":
             f = q2.get()
             if isinstance(f, bool) and not f:
                 break
+            f_last = f
         proc.join()
+    if args.save_final:
+        f = f_last
+        status_dir = "../data_cache/status/"
+        if not os.path.exists(status_dir):
+            os.makedirs(status_dir+"%d/r/"%N)
+            os.makedirs(status_dir+"%d/v/"%N)
+        np.save(status_dir + "%d/r/%.3fus"%(N, f.timestamp*dt*1e6), f.r*dl*1e6)
+        np.save(status_dir + "%d/v/%.3fus"%(N, f.timestamp*dt*1e6), f.v*dl/dt)

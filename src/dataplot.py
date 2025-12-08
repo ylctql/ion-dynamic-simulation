@@ -12,7 +12,7 @@ from utils import *
 
 # Data calculating backend
 class CalculationBackend:
-	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10):
+	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, save_traj: bool = False, t0: float = 0, g: float = 0.1, dt: float = 1, dl: float = 1):
 		"""
 		:param step: number of steps to calculate in an interval
 		:param interval: time interval
@@ -21,6 +21,11 @@ class CalculationBackend:
 		self.step = step
 		self.interval = interval
 		self.batch = batch
+		self.t0 = t0
+		self.g = g
+		self.dt = dt
+		self.dl = dl
+		self.save_traj = save_traj
 
 	def run(self, queue_out: mp.Queue, queue_in: mp.Queue):
 		"""
@@ -43,7 +48,7 @@ class CalculationBackend:
 		charge = m.charge
 		mass = m.mass
 		force = m.force
-		t: float = 0
+		t: float = m.t0
 
 		paused = False
 
@@ -64,6 +69,8 @@ class CalculationBackend:
 						r0 = m.r
 					if m.v is not None:
 						v0 = m.v
+					if m.t0 is not None:
+						t0 = m.t0
 					if m.charge is not None:
 						charge = m.charge
 					if m.mass is not None:
@@ -98,13 +105,19 @@ class CalculationBackend:
 					v_list[(i + 1) * self.step - 1],
 					t
 				))
+				if self.save_traj:
+					if not os.path.exists(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/r/"):
+						os.makedirs(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/r/")
+						os.makedirs(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/v/")
+					np.save(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/r/{t*self.dt*1e6:.3f}us.npy", r_list[(i + 1) * self.step - 1]*self.dl*1e6)
+					np.save(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/v/{t*self.dt*1e6:.3f}us.npy", v_list[(i + 1) * self.step - 1]*self.dl/self.dt)
 
 			r0 = r_list[-1]
 			v0 = v_list[-1]
 
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, fig_num=2, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
@@ -113,34 +126,53 @@ class DataPlotter:
 		"""
 		self.queue_in = queue_in
 		self.queue_out = queue_out
-		self.fig, self.ax = plt.subplots(1, 2, figsize=(10, 5))
+		self.fig_num = fig_num
 
 		self.dl = dl
 		self.dt = dt
 		self.gamma = gamma
 
-		self.ax[0].set_xlim(-x_range+x_bias, x_range+x_bias)
-		self.ax[0].set_ylim(-y_range+y_bias, y_range+y_bias)
-		self.ax[0].set_aspect('equal')
-		self.ax[0].set_xlabel('x/um', fontsize=14)
-		self.ax[0].set_ylabel('y/um', fontsize=14)
-		self.ax[0].tick_params(axis='x', labelsize=14)
-		self.ax[0].tick_params(axis='y', labelsize=14)
+		if self.fig_num == 2:
+			self.fig, self.ax = plt.subplots(1, 2, figsize=(10, 5))
 
-		self.ax[1].set_xlim(-x_range+x_bias, x_range+x_bias)
-		self.ax[1].set_ylim(-z_range+z_bias, z_range+z_bias)
-		self.ax[1].set_aspect('equal')
-		self.ax[1].set_xlabel('x/um', fontsize=14)
-		self.ax[1].set_ylabel('z/um', fontsize=14)
-		self.ax[1].tick_params(axis='x', labelsize=14)
-		self.ax[1].tick_params(axis='y', labelsize=14)
+			self.ax[0].set_xlim(-x_range+x_bias, x_range+x_bias)
+			self.ax[0].set_ylim(-y_range+y_bias, y_range+y_bias)
+			self.ax[0].set_aspect('equal')
+			self.ax[0].set_xlabel('x/um', fontsize=14)
+			self.ax[0].set_ylabel('y/um', fontsize=14)
+			self.ax[0].tick_params(axis='x', labelsize=14)
+			self.ax[0].tick_params(axis='y', labelsize=14)
 
-		self.indices = np.arange(frame_init.r.shape[0])
-		self.artists = (
-			
-			self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, 'r'),
-			self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 50, 'r'),
-		)
+			self.ax[1].set_xlim(-x_range+x_bias, x_range+x_bias)
+			self.ax[1].set_ylim(-z_range+z_bias, z_range+z_bias)
+			self.ax[1].set_aspect('equal')
+			self.ax[1].set_xlabel('x/um', fontsize=14)
+			self.ax[1].set_ylabel('z/um', fontsize=14)
+			self.ax[1].tick_params(axis='x', labelsize=14)
+			self.ax[1].tick_params(axis='y', labelsize=14)
+
+			# self.indices = np.arange(frame_init.r.shape[0])
+			self.artists = (
+				
+				self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, 'r'),
+				self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 50, 'r'),
+			)
+		elif self.fig_num == 1:
+			self.fig, self.ax = plt.subplots(1, 1, figsize=(10, 5))
+
+			self.ax.set_xlim(-z_range+z_bias, z_range+z_bias)
+			self.ax.set_ylim(-x_range+x_bias, x_range+x_bias)
+			self.ax.set_aspect('equal')
+			self.ax.set_xlabel('z/um', fontsize=14)
+			self.ax.set_ylabel('x/um', fontsize=14)
+			self.ax.tick_params(axis='x', labelsize=14)
+			self.ax.tick_params(axis='y', labelsize=14)
+
+			# self.indices = np.arange(frame_init.r.shape[0])
+			self.artists = (
+				self.ax.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, 'r'),
+			)
+			print("start time:", frame_init.timestamp*self.dt*1e6)
 
 		self.bm = BlitManager(self.fig.canvas, self.artists)
 
@@ -173,11 +205,16 @@ class DataPlotter:
 		self.artists[0]._offsets = np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T
 		self.artists[1]._offsets = np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T'''
 
+		if self.fig_num == 2:
+			self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
+			self.artists[1].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
 
-		self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
-		self.artists[1].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
-
-		self.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
+			self.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
+		elif self.fig_num == 1:
+			self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
+			self.ax.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
+		
+		np.save("../data_cache/r.npy", f.r*self.dl)
 
 		self.bm.update()
 

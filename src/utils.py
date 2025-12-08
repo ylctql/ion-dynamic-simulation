@@ -97,6 +97,7 @@ class Message:
 		command: CommandType,
 		r: np.ndarray | None = None, 
 		v: np.ndarray | None = None,
+		t0: np.ndarray | None = None,
 		charge: np.ndarray | None = None,
 		mass: np.ndarray | None = None,
 		force: Callable[[np.ndarray, np.ndarray, float], np.ndarray] | None = None
@@ -105,6 +106,7 @@ class Message:
 		self.command = command
 		self.r = r
 		self.v = v
+		self.t0 = t0
 		self.charge = charge
 		self.mass = mass
 		self.force = force
