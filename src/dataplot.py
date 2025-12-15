@@ -12,7 +12,7 @@ from utils import *
 
 # Data calculating backend
 class CalculationBackend:
-	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0, dt: float = 1.0, dl: float = 1.0, config_name: str = "flat_28", save_traj: str = False):
+	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0, dt: float = 1.0, dl: float = 1.0, config_name: str = "flat_28", save_traj: bool = False, isotope: str = "Ba135"):
 		"""
 		:param step: number of steps to calculate in an interval
 		:param interval: time interval between 2 adjacent frames
@@ -27,6 +27,7 @@ class CalculationBackend:
 		self.dl = dl
 		self.config_name = config_name
 		self.save_traj = save_traj
+		self.isotope = isotope
 
 	def run(self, queue_out: mp.Queue, queue_in: mp.Queue):
 		"""
@@ -113,15 +114,16 @@ class CalculationBackend:
 					t
 				))
 				if self.save_traj:
-					np.save("./data_cache/%d/traj/%s/r/%.3fus.npy"%(charge.shape[0], self.config_name, t*self.dt*1e6), r_list[(i + 1) * self.step - 1]*self.dl*1e6)
-					np.save("./data_cache/%d/traj/%s/v/%.3fus.npy"%(charge.shape[0], self.config_name, t*self.dt*1e6), v_list[(i + 1) * self.step - 1]*self.dl/self.dt)
+					traj_dir = f"./data_cache/{charge.shape[0]:d}/traj/{self.config_name}/{self.isotope}/"
+					np.save(traj_dir+f"r/{t*self.dt*1e6:.3f}us.npy", r_list[(i + 1) * self.step - 1]*self.dl*1e6)
+					np.save(traj_dir+f"v/{t*self.dt*1e6:.3f}us.npy", v_list[(i + 1) * self.step - 1]*self.dl/self.dt)
 					# queue_out中两帧之间的时间差应该是interval个dt，即绘制的两帧间隔
 
 			r0 = r_list[-1]
 			v0 = v_list[-1]
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt: float = 1):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt: float = 1):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
@@ -132,7 +134,6 @@ class DataPlotter:
 		self.queue_out = queue_out
 		self.dl = dl
 		self.dt = dt
-		self.gamma = gamma
 
 		self.fig = plt.figure() 
 		# self.ax1 = plt.subplot2grid((3, 3), (0, 0), colspan=1, rowspan=1, fig=self.fig)
@@ -175,6 +176,15 @@ class DataPlotter:
 			
 		)
 
+		# isotope_labels = ['133', '134', '135', '136', '137', '138']
+		# color_labels = ['y', 'g', 'r', 'b', 'c', 'k']
+		# self.ax3.legend([plt.Line2D([0], [0], color=c, lw=1) for c in color_labels],
+    	# 			isotope_labels,
+    	# 			loc='upper right',
+    	# 			ncol=2,
+    	# 			frameon=False
+		# 				)
+
 		self.bm = BlitManager(self.fig.canvas, self.artists)
 
 		self.interval = interval
@@ -216,14 +226,21 @@ class DataPlotter:
 		self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
 		self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
 
+		# 深度决定颜色
 		mask = (np.abs(f.r[:, 0]*self.dl)<50) & (np.abs(f.r[:, 1]*self.dl)<20)
-
 		# 归一化 y 值到 [0, 1]
 		norm = Normalize(vmin=np.min(f.r[mask, 1]), vmax=np.max(f.r[mask, 1]))
-
 		# 使用颜色映射（'RdBu'：小值蓝，大值红）
 		cmap = cm.RdBu
 		colors = cmap(norm(f.r[:, 1]))  # 转换为 RGBA 颜色数组
+
+		#颜色区分不同同位素
+		# colors = np.full(f.r.shape[0], 'r')
+		# colors[:100] = 'y' #133
+		# colors[100:200] = 'g' #134
+		# colors[200:300] = 'b' #136
+		# colors[300:400] = 'c' #137
+		# colors[400:500] = 'k' #138
 
 		self.artists[1].set_facecolor(colors)
 
@@ -238,6 +255,12 @@ class DataPlotter:
 
 		# if f.timestamp*self.dt >100 and not os.path.exists("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration))):
 		# 	np.save("./data_cache/%d/ion_pos/%dus.npy"%(f.r.shape[0], duration*int(f.timestamp*self.dt/duration)), f.r*self.dl)
+
+		# photos = 1
+		# n_photo = f.timestamp*self.dt // photos
+		# if not os.path.exists(f"./data_cache/10000/photos/{n_photo*photos:.10g}us.png"):
+		# 	self.fig.savefig(f"./data_cache/10000/photos/{n_photo*photos:.10g}us.png")
+
 
 		self.bm.update()
 

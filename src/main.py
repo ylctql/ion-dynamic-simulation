@@ -15,6 +15,8 @@ Parser.add_argument('--epochs',  type=int, default=10, help='number of optimizat
 Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
 Parser.add_argument('--plot', action='store_true', help='enable plotting')
 Parser.add_argument('--interval', type=float, help='the interval between 2 adjacent frames', default=1)
+Parser.add_argument('--g', type=float, help='cooling rate', default=0.1)
+Parser.add_argument('--isotope', type=str, help='isotope type', default="Ba135")
 Parser.add_argument('--save_final', action='store_true', help='enable saving the final configuration')
 Parser.add_argument('--save_traj', action='store_true', help='enable saving the trajectory')
 # Parser.add_argument('--save_final', type=bool, help='enable saving the final configuration', default=False)
@@ -53,12 +55,18 @@ if __name__ == "__main__":
     N = args.N  
     charge = np.ones(N) 
     mass = np.ones(N)
+    # #掺杂同位素离子
+    # mass[:100] = 133/135
+    # mass[100:200] = 134/135
+    # mass[200:300] = 136/135
+    # mass[300:400] = 137/135
+    # mass[400:500] = 138/135
     t_start = args.t0
     interval = args.interval
     config_name = args.config_name
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
-    configure = Configure(basis=basis, sym=sym)
+    configure = Configure(basis=basis, sym=sym, g=args.g, isotope=args.isotope)
     # configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0.01_1000.json"))
     configure.load_from_file(os.path.join(dirname, "../saves/%s.json"%config_name))  
     # configure.load_from_param(V_static, V_dynamic)
