@@ -88,17 +88,8 @@ class Data_Loader:
             print(er)
         if name is None:
             name = self.filename
-        if type(name) == str:
-            self.coordinate, self.coordinate_um, self.data = self.getData(name)
-        elif type(name) == list:
-            num_name = len(name)
-            coordinate_list, coordinate_um_list, data_list = [], [], []
-            for nam in name:
-                coordinate, coordinate_um, data = self.getData(nam)
-                coordinate_list.append(coordinate)
-                coordinate_um_list.append(coordinate_um)
-                data_list.append(data)
-            self.coordinate, self.coordinate_um, self.data = np.array(coordinate_list), np.array(coordinate_um_list), np.array(data_list)
+        self.coordinate, self.coordinate_um, self.data = self.getData(name)
+        self.x, self.y, self.z = self.coordinate
 
 
     def load_basis(self, key):  # 加载电势场名key的格点数据
@@ -108,10 +99,7 @@ class Data_Loader:
             components = self.basisGroup_map[key]
             outputs = self.load_basis(components)
         else:
-            if self.data.ndim == 2:
-                outputs = self.data[:, coln].reshape(len(self.x), len(self.y), len(self.z))
-            elif self.data.ndim == 3:
-                outputs = self.data[:, :, coln].reshape(len(self.x), len(self.y), len(self.z))
+            outputs = self.data[:, coln].reshape(len(self.x), len(self.y), len(self.z))
         
         if self.flag_smoothing and self.smoothing is not None:
             outputs = self.smoothing(outputs)
@@ -208,23 +196,12 @@ class Configure:
         return np.cos(2*t)
 
     def _gen_grids(self, potential_static):
-        if self.basis.coordinate.ndim == 2:
-            [x, y, z] = self.basis.coordinate
-            fieldx, fieldy, fieldz = np.gradient(-potential_static, x, y, z, edge_order=2)
-            grid_x = ionsim.Grid(x, y, z, value=fieldx)
-            grid_y = ionsim.Grid(x, y, z, value=fieldy)
-            grid_z = ionsim.Grid(x, y, z, value=fieldz)
-            return [grid_x, grid_y, grid_z]
-        elif self.basis.coordinate.ndim == 3:
-            grid_result = []
-            for coordinate_id in self.basis.coordinate.shape[0]:
-                [x, y, z] = self.basis.coordinate[coordinate_id]
-                fieldx, fieldy, fieldz = np.gradient(-potential_static[coordinate_id], x, y, z, edge_order=2)
-                grid_x = ionsim.Grid(x, y, z, value=fieldx)
-                grid_y = ionsim.Grid(x, y, z, value=fieldy)
-                grid_z = ionsim.Grid(x, y, z, value=fieldz)
-                grid_result.append([grid_x, grid_y, grid_z])
-            return grid_result
+        [x, y, z] = self.basis.coordinate
+        fieldx, fieldy, fieldz = np.gradient(-potential_static, x, y, z, edge_order=2)
+        grid_x = ionsim.Grid(x, y, z, value=fieldx)
+        grid_y = ionsim.Grid(x, y, z, value=fieldy)
+        grid_z = ionsim.Grid(x, y, z, value=fieldz)
+        return [grid_x, grid_y, grid_z]
     
     #-------Caculate the potential----------
     # def pseudo_potential(self):
@@ -266,33 +243,17 @@ class Configure:
 
     def calc_force(self, r: np.ndarray, v: np.ndarray, t: float):
         gamma = self.g#self.g#0.1/100 #g=1对应线频率~100MHz量级，使其落入物理可实现区域~10kHz量级
-        if self.basis.coordinate.ndim == 2:
-            bound_min = [np.min(self.basis.coordinate[i]) + 1e-9 for i in range(3)]
-            bound_max = [np.max(self.basis.coordinate[i]) - 1e-9 for i in range(3)]
-            mask = self.grids_dc[0].in_bounds(r)#大家都没出界吧？
-            if len(np.where(mask == False)[0]) > 0:
-            # print("警告出界")    
-                r = np.array([np.clip(r[:, i], bound_min[i], bound_max[i]) for i in range(3)]).T#如果出界，就按边界上的电场
-                mask =  self.grids_dc[0].in_bounds(r)
-        elif self.basis.coordinate.ndim == 3:
-            num_coo = self.basis.coordinate.shape[0]
-            mask = None
-            for coordinate_id in range(num_coo):
-                bounds_min = [np.min(self.basis.coordinate[coordinate_id, i]) + 1e-9 for i in range(3)]
-                bounds_max = [np.max(self.basis.coordinate[coordinate_id, i]) - 1e-9 for i in range(3)]
-                if mask == None:
-                    mask = self.grids_dc[coordinate_id, 0].in_bounds(r)
-                else:
-                    mask = mask | self.grids_dc[coordinate_id, 0].in_bounds(r)
-            if len(np.where(mask == False)[0]) > 0:
-            # print("警告出界")    
-                r = np.array([np.clip(r[:, i], bounds_min[i], bounds_max[i]) for i in range(3)]).T#如果出界，就按边界上的电场
-                mask =  self.grids_dc[-1, 0].in_bounds(r)
+        bound_min = [np.min(self.basis.coordinate[i]) + 1e-9 for i in range(3)]
+        bound_max = [np.max(self.basis.coordinate[i]) - 1e-9 for i in range(3)]
+        mask = self.grids_dc[0].in_bounds(r)#大家都没出界吧？
+        if len(np.where(mask == False)[0]) > 0:
+        # print("警告出界")    
+            r = np.array([np.clip(r[:, i], bound_min[i], bound_max[i]) for i in range(3)]).T#如果出界，就按边界上的电场
+            mask =  self.grids_dc[0].in_bounds(r)
         r_mask = r[mask].copy(order='F')
         f = np.zeros_like(r)
         # inside bounds
         coord = self.grids_dc[0].get_coord(r_mask)
-        print("coord shape:", coord.shape)
         f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in self.grids_dc])))#静电力
         for key, value in self.grids_rf.items():
             grids_rf = value[0]
@@ -306,7 +267,7 @@ class Configure:
         return f
 
     def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0, 
-                   t_start: float = 0.0, config_name: str = "flat_28", save_final: bool = False, save_traj: bool = False) -> tuple:
+                   t_start: float = 0.0, config_name: str = "flat_28", save_final: bool = False, save_traj: bool = False, bilayer: bool = False) -> tuple:
         
         backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, config_name=config_name, save_traj=save_traj, isotope=self.isotope)
 
@@ -325,6 +286,9 @@ class Configure:
             r0 = (np.random.rand(N, 3)-0.5) *ini_range 
             v0 = np.zeros((N, 3))
             r0[:, 1] *= 0.1
+            if bilayer:
+                r0[:N//2, 1] += 225/(self.dl*1e6)
+                r0[N//2:, 1] -= 225/(self.dl*1e6)
             # r0[:-100, 2] -= 350/(self.dl*1e6) # Large crystal site
             # r0[-100:, 2] += 700/(self.dl*1e6) # Small crystal site
         
@@ -337,7 +301,7 @@ class Configure:
 
         f = None
         if plotting:
-            plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=550, x_range=100, y_range=20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6)
+            plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=200, x_range=50, y_range=250 if bilayer else 20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6, bilayer=bilayer)
             f = plot.start()
             if not plot.is_alive():
                 q1.put(Message(CommandType.STOP))

@@ -123,7 +123,7 @@ class CalculationBackend:
 			v0 = v_list[-1]
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt: float = 1):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt: float = 1, bilayer: bool = False):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
@@ -134,47 +134,72 @@ class DataPlotter:
 		self.queue_out = queue_out
 		self.dl = dl
 		self.dt = dt
+		self.bilayer = bilayer
 
-		self.fig = plt.figure() 
+		self.fig = plt.figure(figsize=(30, 20)) 
 		# self.ax1 = plt.subplot2grid((3, 3), (0, 0), colspan=1, rowspan=1, fig=self.fig)
 		# self.ax2 = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=1, fig=self.fig)
 		# self.ax3 = plt.subplot2grid((3, 3), (1, 0), colspan=3, rowspan=2, fig=self.fig)
 
-		self.ax2 = plt.subplot2grid((6, 1), (0, 0), colspan=1, rowspan=1, fig=self.fig)
-		self.ax3 = plt.subplot2grid((6, 1), (1, 0), colspan=1, rowspan=5, fig=self.fig)
+		if self.bilayer:
+			# bilayer
+			self.ax2 = plt.subplot2grid((1, 6), (0, 0), colspan=1, rowspan=1, fig=self.fig)
+			self.ax3 = plt.subplot2grid((1, 6), (0, 2), colspan=4, rowspan=1, fig=self.fig)
 
-		# self.ax1.set_xlim(-x_range+x_bias, x_range+x_bias)
-		# self.ax1.set_ylim(-y_range+y_bias, y_range+y_bias)
-		# self.ax1.set_aspect('equal')
-		# self.ax1.set_xlabel('x/um', fontsize=14)
-		# self.ax1.set_ylabel('y/um', fontsize=14)
-		# self.ax1.tick_params(axis='x', labelsize=14)
-		# self.ax1.tick_params(axis='y', labelsize=14)
+			self.ax2.set_ylim(-z_range+z_bias, z_range+z_bias)
+			self.ax2.set_xlim(-x_range+x_bias, x_range+x_bias)
+			self.ax2.set_aspect('equal')
+			self.ax2.set_ylabel('z/um', fontsize=14)
+			self.ax2.set_xlabel('x/um', fontsize=14)
+			self.ax2.tick_params(axis='x', labelsize=14)
+			self.ax2.tick_params(axis='y', labelsize=14)
 
-		self.ax2.set_xlim(-z_range+z_bias, z_range+z_bias)
-		self.ax2.set_ylim(-y_range+y_bias, y_range+y_bias)
-		self.ax2.set_aspect('equal')
-		self.ax2.set_xlabel('z/um', fontsize=14)
-		self.ax2.set_ylabel('y/um', fontsize=14)
-		self.ax2.tick_params(axis='x', labelsize=14)
-		self.ax2.tick_params(axis='y', labelsize=14)
-
-		self.ax3.set_xlim(-z_range+z_bias, z_range+z_bias)
-		self.ax3.set_ylim(-x_range+x_bias, x_range+x_bias)
-		self.ax3.set_aspect('equal')
-		self.ax3.set_xlabel('z/um', fontsize=14)
-		self.ax3.set_ylabel('x/um', fontsize=14)
-		self.ax3.tick_params(axis='x', labelsize=14)
-		self.ax3.tick_params(axis='y', labelsize=14)
-
-		self.indices = np.arange(frame_init.r.shape[0])
-		self.artists = (
-
-			# self.ax1.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
-			self.ax2.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
-			self.ax3.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 0]*self.dl, 5, 'r'),
+			self.ax3.set_ylim(-z_range+z_bias, z_range+z_bias)
+			self.ax3.set_xlim(-y_range+y_bias, y_range+y_bias)
+			self.ax3.set_aspect('equal')
+			self.ax3.set_ylabel('z/um', fontsize=14)
+			self.ax3.set_xlabel('y/um', fontsize=14)
+			self.ax3.tick_params(axis='x', labelsize=14)
+			self.ax3.tick_params(axis='y', labelsize=14)
+			self.artists = (
+			self.ax2.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 5, 'r'),
+			self.ax3.scatter(frame_init.r[:, 1]*self.dl, frame_init.r[:, 2]*self.dl, 5, 'r'),
 			
 		)
+		else:
+			self.ax2 = plt.subplot2grid((6, 1), (0, 0), colspan=1, rowspan=1, fig=self.fig)
+			self.ax3 = plt.subplot2grid((6, 1), (1, 0), colspan=1, rowspan=5, fig=self.fig)
+
+			# self.ax1.set_xlim(-x_range+x_bias, x_range+x_bias)
+			# self.ax1.set_ylim(-y_range+y_bias, y_range+y_bias)
+			# self.ax1.set_aspect('equal')
+			# self.ax1.set_xlabel('x/um', fontsize=14)
+			# self.ax1.set_ylabel('y/um', fontsize=14)
+			# self.ax1.tick_params(axis='x', labelsize=14)
+			# self.ax1.tick_params(axis='y', labelsize=14)
+
+			self.ax2.set_xlim(-z_range+z_bias, z_range+z_bias)
+			self.ax2.set_ylim(-y_range+y_bias, y_range+y_bias)
+			self.ax2.set_aspect('equal')
+			self.ax2.set_xlabel('z/um', fontsize=14)
+			self.ax2.set_ylabel('y/um', fontsize=14)
+			self.ax2.tick_params(axis='x', labelsize=14)
+			self.ax2.tick_params(axis='y', labelsize=14)
+
+			self.ax3.set_xlim(-z_range+z_bias, z_range+z_bias)
+			self.ax3.set_ylim(-x_range+x_bias, x_range+x_bias)
+			self.ax3.set_aspect('equal')
+			self.ax3.set_xlabel('z/um', fontsize=14)
+			self.ax3.set_ylabel('x/um', fontsize=14)
+			self.ax3.tick_params(axis='x', labelsize=14)
+			self.ax3.tick_params(axis='y', labelsize=14)
+
+			# self.indices = np.arange(frame_init.r.shape[0])
+			self.artists = (
+				# self.ax1.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
+				self.ax2.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
+				self.ax3.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 0]*self.dl, 5, 'r'),
+			)
 
 		# isotope_labels = ['133', '134', '135', '136', '137', '138']
 		# color_labels = ['y', 'g', 'r', 'b', 'c', 'k']
@@ -223,25 +248,36 @@ class DataPlotter:
 		# self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
 		# self.artists[2].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
 
-		self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
-		self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
+		if self.bilayer:
+			# bilayer
+			self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
+			self.artists[1].set_offsets(np.vstack((f.r[:, 1]*self.dl, f.r[:, 2]*self.dl)).T)
+			# Bilayer: +为蓝色，-为红色
+			colors = np.full(f.r.shape[0], 'r')
+			colors[f.r[:,1]>0] = 'b'
+		else:
+			self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
+			self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
+			
+			# 深度决定颜色
+			mask = (np.abs(f.r[:, 0]*self.dl)<50) & (np.abs(f.r[:, 1]*self.dl)<20)
+			# 归一化 y 值到 [0, 1]
+			norm = Normalize(vmin=np.min(f.r[mask, 1]), vmax=np.max(f.r[mask, 1]))
+			# 使用颜色映射（'RdBu'：小值蓝，大值红）
+			cmap = cm.RdBu
+			colors = cmap(norm(f.r[:, 1]))  # 转换为 RGBA 颜色数组
 
-		# 深度决定颜色
-		mask = (np.abs(f.r[:, 0]*self.dl)<50) & (np.abs(f.r[:, 1]*self.dl)<20)
-		# 归一化 y 值到 [0, 1]
-		norm = Normalize(vmin=np.min(f.r[mask, 1]), vmax=np.max(f.r[mask, 1]))
-		# 使用颜色映射（'RdBu'：小值蓝，大值红）
-		cmap = cm.RdBu
-		colors = cmap(norm(f.r[:, 1]))  # 转换为 RGBA 颜色数组
+			#颜色区分不同同位素
+			# colors = np.full(f.r.shape[0], 'r')
+			# colors[:100] = 'y' #133
+			# colors[100:200] = 'g' #134
+			# colors[200:300] = 'b' #136
+			# colors[300:400] = 'c' #137
+			# colors[400:500] = 'k' #138
 
-		#颜色区分不同同位素
-		# colors = np.full(f.r.shape[0], 'r')
-		# colors[:100] = 'y' #133
-		# colors[100:200] = 'g' #134
-		# colors[200:300] = 'b' #136
-		# colors[300:400] = 'c' #137
-		# colors[400:500] = 'k' #138
-
+		
+		# colors = np.where(f.r.shape[:,1]>0, 'b', colors)
+		self.artists[0].set_facecolor(colors)
 		self.artists[1].set_facecolor(colors)
 
 		self.ax3.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
