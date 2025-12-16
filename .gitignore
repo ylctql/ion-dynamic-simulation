@@ -1,0 +1,106 @@
+*:Zone.Identifier
+# =========================
+# 操作系统生成的无关文件
+# =========================
+# Windows
+Thumbs.db
+Desktop.ini
+*.lnk
+*:Zone.Identifier
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# data_files
+*.npy
+*.csv
+
+# =========================
+# 编辑器 / IDE 配置缓存
+# =========================
+# VSCode
+.vscode/
+
+# JetBrains (PyCharm, IntelliJ, WebStorm 等)
+.idea/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+# Emacs 自动保存
+\#*\#
+
+# =========================
+# 编译 / 构建产物
+# =========================
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+
+# C/C++
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+
+# Java
+*.class
+target/
+
+# Node.js
+node_modules/
+
+# Go
+*.exe
+*.test
+*.out
+
+# Rust
+target/
+
+# =========================
+# 日志 / 临时文件
+# =========================
+*.log
+*.tmp
+*.temp
+*.bak
+*.old
+
+# =========================
+# 虚拟环境
+# =========================
+.venv/
+venv/
+env/
+
+# =========================
+# 敏感信息（不要提交到仓库）
+# =========================
+.env
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx

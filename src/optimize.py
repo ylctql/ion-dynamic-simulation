@@ -1,0 +1,45 @@
+import numpy as np
+from utils import *
+from dataplot import *    
+from configure import *
+import os
+import argparse
+
+Parser = argparse.ArgumentParser()
+Parser.add_argument('--N', type=int, help='number of ions', default=50)
+Parser.add_argument('--time', type=float, help='total simulation time in microseconds', default=10.0)
+Parser.add_argument('--epochs',  type=int, default=10, help='number of optimization epochs')
+Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
+
+dirname = os.path.dirname(__file__)
+
+flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
+filename=os.path.join(dirname, "../../../data/monolithic20241118.csv") #文件名：导入的电势场格点数据
+basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
+def oscillate(t):
+    return np.cos(2*t)
+
+if __name__ == "__main__":
+    args = Parser.parse_args()
+    device = 1 if args.CUDA else 0
+    print("Using %s for computation."%( "CUDA" if device==1 else "CPU"))
+    ini_range = np.random.randint(100, 200) #初始范围也随机，探索更多可能
+    N = args.N  #离子数
+    charge = np.ones(N) #每个离子带电荷量都是1个元电荷
+    mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
+    basis = Data_Loader(filename, basis_filename, flag_smoothing)
+    basis.loadData()
+    configure = Configure(V_static={"RF":-9, "U1":0, "U2":0, "U3":0, "U4":0, "U5":0, "U6":0, "U7":0, }, V_dynamic={"RF": 300}, basis=basis)#静态电压和动态电压
+    t = args.time
+    for i in range(args.epochs):
+        print("Processing epoch %d/%d"%(i+1, args.epochs))
+        configure.calc_gradient(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, h_dc=0.005, h_rf=0.01, r=0, sym=True, biside=False, cpu_parellel=True)
+        configure.update(lr_dc=0.001, lr_rf = 0.005, gamma = 0.95, epoch=i)
+        std_y, len_z, _ = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=False, alpha=1)
+        print("Estimated thickness: %.3f um; length: %.3f um at epoch %d"%(std_y, len_z, i+1))
+        print("Static Voltages:", configure.V_static)
+        print("Dynamic Voltages:", {k: v for k, v in configure.V_dynamic.items()})
+    configure.save(os.path.join(dirname, "saved_config_regression_0_10000_sym.json"))
+    print("Optimization completed. Final voltages:")
+    print("Static Voltages:", configure.V_static)
+    print("Dynamic Voltages:", {k: v for k, v in configure.V_dynamic.items()})
