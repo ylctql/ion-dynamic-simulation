@@ -204,28 +204,30 @@ class Configure:
         return [grid_x, grid_y, grid_z]
     
     #-------Caculate the potential----------
-    # def pseudo_potential(self):
-    #     V0 = self._interpret_voltage(self.V_dynamic["RF"])*self.basis.load_basis("RF")*self.ec*self.dV #此处统一使用国际单位制
-    #     [x, y, z] = self.basis.coordinate_um   #换算成国际单位制
-    #     Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
-    #     # Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=1) #尝试1阶
-    #     # print("using 1st order gradient for pseudo potential calculation")
-    #     # Potential symmetry -> z field asymmetry, xy symmetry
-    #     # Fx = 0.5*(Fx + Fx[:, :, ::-1]) if self.sym else Fx
-    #     # Fy = 0.5*(Fy + Fy[:, :, ::-1]) if self.sym else Fy
-    #     # Fz = 0.5*(Fz - Fz[:, :, ::-1]) if self.sym else Fz
-    #     # F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
-    #     V_pseudo_rf = (Fx**2 + Fy**2 + Fz**2)*1e12/(4*self.m*self.Omega**2*self.ec)
-    #     return V_pseudo_rf
+    def pseudo_potential(self, RF_keys=["RF"]):
+        V0 = 0
+        for key in RF_keys:
+            V0 += self._interpret_voltage(self.V_dynamic[key])*self.basis.load_basis(key)*self.ec*self.dV #此处统一使用国际单位制
+        [x, y, z] = self.basis.coordinate_um   #换算成国际单位制
+        Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
+        # Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=1) #尝试1阶
+        # print("using 1st order gradient for pseudo potential calculation")
+        # Potential symmetry -> z field asymmetry, xy symmetry
+        # Fx = 0.5*(Fx + Fx[:, :, ::-1]) if self.sym else Fx
+        # Fy = 0.5*(Fy + Fy[:, :, ::-1]) if self.sym else Fy
+        # Fz = 0.5*(Fz - Fz[:, :, ::-1]) if self.sym else Fz
+        # F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
+        V_pseudo_rf = (Fx**2 + Fy**2 + Fz**2)*1e12/(4*self.m*self.Omega**2*self.ec)
+        return V_pseudo_rf
     
-    # def static_potential(self):
-    #     potential_static = 0
-    #     for key, value in self.V_static.items():
-    #         potential_static += self.basis.load_basis(key) * self._interpret_voltage(value)
-    #     return potential_static*self.dV
+    def static_potential(self):
+        potential_static = 0
+        for key, value in self.V_static.items():
+            potential_static += self.basis.load_basis(key) * self._interpret_voltage(value)
+        return potential_static*self.dV
     
-    # def total_potential(self):
-    #     return self.static_potential() + self.pseudo_potential()
+    def total_potential(self, RF_keys=["RF"]):
+        return self.static_potential() + self.pseudo_potential(RF_keys)
      #-------End of Caculate the potential----------
 
     def calc_field(self) -> None:
@@ -287,8 +289,9 @@ class Configure:
             v0 = np.zeros((N, 3))
             r0[:, 1] *= 0.1
             if bilayer:
-                r0[:N//2, 1] += 225/(self.dl*1e6)
-                r0[N//2:, 1] -= 225/(self.dl*1e6)
+                r0[:, 1] += 225/(self.dl*1e6)
+                # r0[:N//2, 1] += 225/(self.dl*1e6)
+                # r0[N//2:, 1] -= 225/(self.dl*1e6)
             # r0[:-100, 2] -= 350/(self.dl*1e6) # Large crystal site
             # r0[-100:, 2] += 700/(self.dl*1e6) # Small crystal site
         

@@ -42,7 +42,7 @@ if __name__ == "__main__":
     flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
     if args.bilayer:
         #Using bilayer
-        filename=os.path.join(dirname, "../../data/bilayer_both_x50y250z200_dx2dy5dz5.csv")
+        filename=os.path.join(dirname, "../../data/bilayer_both_x50y250z200_dx2dy2dz5_err1e-4_fine.csv")
         basis_filename=os.path.join(dirname, "bilayer_basis.json")
         sym = False
         print("Bilayer...")
