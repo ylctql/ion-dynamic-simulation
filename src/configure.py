@@ -202,30 +202,35 @@ class Configure:
         grid_y = ionsim.Grid(x, y, z, value=fieldy)
         grid_z = ionsim.Grid(x, y, z, value=fieldz)
         return [grid_x, grid_y, grid_z]
+
+    def potential_grids(self, potential):
+        [x, y, z] = self.basis.coordinate
+        grid_V = ionsim.Grid(x, y, z, value=potential)
+        return grid_V
     
     #-------Caculate the potential----------
-    # def pseudo_potential(self):
-    #     V0 = self._interpret_voltage(self.V_dynamic["RF"])*self.basis.load_basis("RF")*self.ec*self.dV #此处统一使用国际单位制
-    #     [x, y, z] = self.basis.coordinate_um   #换算成国际单位制
-    #     Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
-    #     # Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=1) #尝试1阶
-    #     # print("using 1st order gradient for pseudo potential calculation")
-    #     # Potential symmetry -> z field asymmetry, xy symmetry
-    #     # Fx = 0.5*(Fx + Fx[:, :, ::-1]) if self.sym else Fx
-    #     # Fy = 0.5*(Fy + Fy[:, :, ::-1]) if self.sym else Fy
-    #     # Fz = 0.5*(Fz - Fz[:, :, ::-1]) if self.sym else Fz
-    #     # F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
-    #     V_pseudo_rf = (Fx**2 + Fy**2 + Fz**2)*1e12/(4*self.m*self.Omega**2*self.ec)
-    #     return V_pseudo_rf
+    def pseudo_potential(self):
+        V0 = self._interpret_voltage(self.V_dynamic["RF"])*self.basis.load_basis("RF")*self.ec*self.dV #此处统一使用国际单位制
+        [x, y, z] = self.basis.coordinate_um   #换算成国际单位制
+        Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
+        # Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=1) #尝试1阶
+        # print("using 1st order gradient for pseudo potential calculation")
+        # Potential symmetry -> z field asymmetry, xy symmetry
+        # Fx = 0.5*(Fx + Fx[:, :, ::-1]) if self.sym else Fx
+        # Fy = 0.5*(Fy + Fy[:, :, ::-1]) if self.sym else Fy
+        # Fz = 0.5*(Fz - Fz[:, :, ::-1]) if self.sym else Fz
+        # F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
+        V_pseudo_rf = (Fx**2 + Fy**2 + Fz**2)*1e12/(4*self.m*self.Omega**2*self.ec)
+        return V_pseudo_rf
     
-    # def static_potential(self):
-    #     potential_static = 0
-    #     for key, value in self.V_static.items():
-    #         potential_static += self.basis.load_basis(key) * self._interpret_voltage(value)
-    #     return potential_static*self.dV
+    def static_potential(self):
+        potential_static = 0
+        for key, value in self.V_static.items():
+            potential_static += self.basis.load_basis(key) * self._interpret_voltage(value)
+        return potential_static*self.dV
     
-    # def total_potential(self):
-    #     return self.static_potential() + self.pseudo_potential()
+    def total_potential(self):
+        return self.static_potential() + self.pseudo_potential()
      #-------End of Caculate the potential----------
 
     def calc_field(self) -> None:
@@ -269,7 +274,7 @@ class Configure:
     def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0, 
                    t_start: float = 0.0, config_name: str = "flat_28", save_final: bool = False, save_traj: bool = False, bilayer: bool = False) -> tuple:
         
-        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, config_name=config_name, save_traj=save_traj, isotope=self.isotope)
+        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, dV=self.dV, config_name=config_name, save_traj=save_traj, isotope=self.isotope)
 
         q1 = mp.Queue()
         q2 = mp.Queue(maxsize=50)
@@ -301,7 +306,7 @@ class Configure:
 
         f = None
         if plotting:
-            plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=200, x_range=50, y_range=250 if bilayer else 20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6, bilayer=bilayer)
+            plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=200 if bilayer else 550, x_range=50 if bilayer else 100, y_range=250 if bilayer else 20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6, bilayer=bilayer)
             f = plot.start()
             if not plot.is_alive():
                 q1.put(Message(CommandType.STOP))
@@ -312,24 +317,13 @@ class Configure:
                 proc.join()
             std_y = f.r[:, 1].std() * self.dl * 1e6
         else:
-            count = 0
-            std_y = 0.0
-            dominator = 0.0
-            flag = True
             while True:
                 new_f = q2.get()
                 if isinstance(new_f, bool) and not new_f:
                     break
                 f = new_f
-                if count>2000:  # From experience, about 200 data points
-                    std_y += f.r[:, 1].std() * self.dl * 1e6
-                    dominator += 1
-                count += 1
             proc.join()
-            # print("max count:", count)
-            std_y /= dominator
-            # print(std_y)
-        len_z = np.abs(f.r[:, 2].max() - f.r[:, 2].min()) * self.dl * 1e6
+        
         if save_final:
             if not os.path.exists(status_dir+"r/"):
                 os.makedirs(status_dir+"r/")
@@ -337,8 +331,15 @@ class Configure:
             np.save(status_dir + f"r/{f.timestamp*self.dt*1e6:.3f}us.npy", f.r*self.dl*1e6)
             np.save(status_dir + f"v/{f.timestamp*self.dt*1e6:.3f}us.npy", f.v*self.dl/self.dt)
         mask_final = (np.abs(f.r[:, 0]*self.dl*1e6)<100) & (np.abs(f.r[:, 1]*self.dl*1e6)<50) & (np.abs(f.r[:, 2]*self.dl*1e6)<1000)
+        std_y = f.r[mask_final, 1].std()*self.dl*1e6
+        len_z = np.abs(f.r[mask_final, 2].max() - f.r[mask_final, 2].min()) * self.dl * 1e6
         print("Lost ions: ", N-f.r[mask_final].shape[0])
-        return std_y, len_z, f.timestamp * self.dt * 1e6
+        if bilayer:
+            stdy_upper = (f.r[f.r[:,1]>0, 1]*self.dl*1e6).std()
+            stdy_lower = (f.r[f.r[:,1]<0, 1]*self.dl*1e6).std()
+            return stdy_upper, stdy_lower, len_z, f.timestamp * self.dt * 1e6
+        else:
+            return std_y, len_z, f.timestamp * self.dt * 1e6
     
     def single_grad(self, key_id, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h_dc: float = 0.01, h_rf: float = 0.1, r: float = 0.05, sym: bool = True, biside: bool = False) -> None:
         key = self.key_list[key_id]

@@ -78,5 +78,9 @@ if __name__ == "__main__":
     configure.load_from_file(os.path.join(dirname, "../saves/%s.json"%config_name))  
     # configure.load_from_param(V_static, V_dynamic)
     t = args.time
-    std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj, bilayer=args.bilayer)
-    # print("Estimated thickness: %.3f um at time %.3f us."%(std_y, simu_t))
+    if args.bilayer:
+        stdy_upper, stdy_lower, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj, bilayer=args.bilayer)
+        print("Estimated thickness: Upper %.3f um, Lower %.3f um at time %.3f us."%(stdy_upper, stdy_lower, simu_t))
+    else:
+        std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj, bilayer=args.bilayer)
+        print("Estimated thickness: %.3f um at time %.3f us."%(std_y, simu_t))

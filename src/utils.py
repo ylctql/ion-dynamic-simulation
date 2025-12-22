@@ -97,7 +97,7 @@ class Message:
 		command: CommandType,
 		r: np.ndarray | None = None, 
 		v: np.ndarray | None = None,
-		t_start: np.ndarray | None = None,
+		t_start: float | None = None,
 		charge: np.ndarray | None = None,
 		mass: np.ndarray | None = None,
 		force: Callable[[np.ndarray, np.ndarray, float], np.ndarray] | None = None

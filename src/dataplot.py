@@ -12,7 +12,7 @@ from utils import *
 
 # Data calculating backend
 class CalculationBackend:
-	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0, dt: float = 1.0, dl: float = 1.0, config_name: str = "flat_28", save_traj: bool = False, isotope: str = "Ba135"):
+	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0, dt: float = 1.0, dl: float = 1.0, dV: float = 1.0, config_name: str = "flat_28", save_traj: bool = False, isotope: str = "Ba135"):
 		"""
 		:param step: number of steps to calculate in an interval
 		:param interval: time interval between 2 adjacent frames
@@ -25,6 +25,7 @@ class CalculationBackend:
 		self.time = time
 		self.dt = dt
 		self.dl = dl
+		self.dV = dV
 		self.config_name = config_name
 		self.save_traj = save_traj
 		self.isotope = isotope
@@ -114,6 +115,7 @@ class CalculationBackend:
 					t
 				))
 				if self.save_traj:
+					coulombpotential = ionsim.calculate_coulomb(r_list[(i + 1) * self.step - 1], charge)*self.dV
 					traj_dir = f"./data_cache/{charge.shape[0]:d}/traj/{self.config_name}/{self.isotope}/"
 					np.save(traj_dir+f"r/{t*self.dt*1e6:.3f}us.npy", r_list[(i + 1) * self.step - 1]*self.dl*1e6)
 					np.save(traj_dir+f"v/{t*self.dt*1e6:.3f}us.npy", v_list[(i + 1) * self.step - 1]*self.dl/self.dt)
@@ -123,7 +125,7 @@ class CalculationBackend:
 			v0 = v_list[-1]
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt: float = 1, bilayer: bool = False):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, x_range: float=50, y_range: float=50, z_range: float=50, x_bias: float=0, y_bias: float=0, z_bias: float=0, dl=1, dt: float = 1, bilayer: bool = False):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
@@ -260,9 +262,10 @@ class DataPlotter:
 			self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
 			
 			# 深度决定颜色
-			mask = (np.abs(f.r[:, 0]*self.dl)<50) & (np.abs(f.r[:, 1]*self.dl)<20)
-			# 归一化 y 值到 [0, 1]
-			norm = Normalize(vmin=np.min(f.r[mask, 1]), vmax=np.max(f.r[mask, 1]))
+			# mask = (np.abs(f.r[:, 0]*self.dl)<50) & (np.abs(f.r[:, 1]*self.dl)<20)
+			# # 归一化 y 值到 [0, 1]
+			# norm = Normalize(vmin=np.min(f.r[mask, 1]), vmax=np.max(f.r[mask, 1]))
+			norm = Normalize(vmin=np.min(f.r[:, 1]), vmax=np.max(f.r[:, 1]))
 			# 使用颜色映射（'RdBu'：小值蓝，大值红）
 			cmap = cm.RdBu
 			colors = cmap(norm(f.r[:, 1]))  # 转换为 RGBA 颜色数组
@@ -282,7 +285,7 @@ class DataPlotter:
 
 		self.ax3.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 
-		print(f.timestamp, f.timestamp*self.dt)
+		print(f.timestamp, f.timestamp*self.dt, f.r)
 
 		# if not os.path.exists("./data_cache/%d/ion_pos"%f.r.shape[0]):
 		# 	os.makedirs("./data_cache/%d/ion_pos/"%f.r.shape[0])

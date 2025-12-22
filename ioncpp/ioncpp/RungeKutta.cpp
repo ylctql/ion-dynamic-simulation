@@ -14,13 +14,17 @@ constexpr int CUDA = 1;
 extern "C" void computeCoulombInteraction(
     const data_t* r, const data_t* charge, data_t* result, int N, int grid_size, int block_size);
 
+// extern "C" void computeCoulombPotential(
+//     const data_t* r, const data_t* charge, data_t* result, int N, int grid_size, int block_size);
+
+
 namespace ioncpp
 {
 
 using namespace std;
 using namespace std::literals;
 
-namespace
+namespace	//静态方案，内部链接，仅在本cpp文件内可见！
 {
 
 chrono::microseconds elapsed1 = 0us;
@@ -49,6 +53,16 @@ VecType CoulombInteractionCuda(
     int threadsPerBlock = 64;
     int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
     computeCoulombInteraction(d_r, d_charge, d_result, N, blocksPerGrid, threadsPerBlock);
+
+	cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel launch failed: " << cudaGetErrorString(err) << std::endl;
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel execution failed: " << cudaGetErrorString(err) << std::endl;
+    }
 
     cudaMemcpy(result.data(), d_result, N * DIM * sizeof(data_t), cudaMemcpyDeviceToHost);
 
@@ -99,6 +113,56 @@ VecType CoulombInteractionCpu(
 } 
 
 }
+
+// ArrayType CoulombPotentialCuda(
+//     CRef<VecType> r, 
+//     CRef<ArrayType>& charge
+// ) {
+//     auto begin = chrono::steady_clock::now();
+
+//     const auto N = r.rows();
+//     ArrayType result(N);
+//     result.setZero();
+
+//     data_t* d_r;
+//     data_t* d_charge;
+//     data_t* d_result;
+//     cudaMalloc(&d_r, N * DIM * sizeof(data_t));
+//     cudaMalloc(&d_charge, N * sizeof(data_t));
+//     cudaMalloc(&d_result, N * sizeof(data_t));
+
+//     cudaMemcpy(d_r, r.data(), N * DIM * sizeof(data_t), cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_charge, charge.data(), N * sizeof(data_t), cudaMemcpyHostToDevice);
+//     cudaMemset(d_result, 0, N * sizeof(data_t));
+
+//     int threadsPerBlock = 64;
+//     int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+//     computeCoulombPotential(d_r, d_charge, d_result, N, blocksPerGrid, threadsPerBlock);
+
+// 	cudaError_t err = cudaGetLastError();
+//     if (err != cudaSuccess) {
+//         std::cerr << "Kernel launch failed: " << cudaGetErrorString(err) << std::endl;
+//     }
+
+//     err = cudaDeviceSynchronize();
+//     if (err != cudaSuccess) {
+//         std::cerr << "Kernel execution failed: " << cudaGetErrorString(err) << std::endl;
+//     }
+
+
+//     cudaMemcpy(result.data(), d_result, N * sizeof(data_t), cudaMemcpyDeviceToHost);
+
+//     cudaFree(d_r);
+//     cudaFree(d_charge);
+//     cudaFree(d_result);
+
+//     auto end = std::chrono::steady_clock::now();
+//     elapsed1 += std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
+
+// 	std::cout<< "r" << r(1, 2)<< std::endl;
+
+//     return result;
+// }
 
 void saveArray(const VecType& arr, const std::string& filename)
 	{
@@ -220,13 +284,19 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
             v += (a + a_last) * (dt / 2.0);
             a_last = a;
         }
+		// std::cout<<"Coulomb:"<<CoulombInteractionCuda(r, charge)<<std::endl;
+		// std::cout<<"force:"<<force(r, v, t)<<std::endl;
+		// std::cout<<"total:"<<force(r, v, t)+CoulombInteractionCpu(r, charge)<<std::endl;
+		// std::cout<<"mass:"<<mass<<std::endl;
+		// std::cout<<"a:"<<a<<std::endl;
+		// std::cout<<"v:"<<v<<std::endl;
 
         elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
 
 		r_ret.push_back(r);
 		v_ret.push_back(v);
 	}
-
+	
 	auto end = chrono::steady_clock::now();
 
 	// std::cout << "Time elapsed in CoulombInteraction: " << elapsed1.count() << "[us]" << std::endl;
