@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import ionsim
+import matplotlib.cm as cm
 
 from utils import *
 
@@ -106,18 +107,19 @@ class CalculationBackend:
 					t
 				))
 				if self.save_traj:
-					if not os.path.exists(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/r/"):
-						os.makedirs(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/r/")
-						os.makedirs(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/v/")
-					np.save(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/r/{t*self.dt*1e6:.3f}us.npy", r_list[(i + 1) * self.step - 1]*self.dl*1e6)
-					np.save(f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/v/{t*self.dt*1e6:.3f}us.npy", v_list[(i + 1) * self.step - 1]*self.dl/self.dt)
+					dir_name = f"../data_cache/traj/N={charge.shape[0]:d},t0={self.t0:.3f},g={self.g:.10g}/"
+					if not os.path.exists(dir_name + "r/"):
+						os.makedirs(dir_name +"r/")
+						os.makedirs(dir_name +"v/")
+					np.save(dir_name+f"r/{t*self.dt*1e6:.3f}us.npy", r_list[(i + 1) * self.step - 1]*self.dl*1e6)
+					np.save(dir_name+f"v/{t*self.dt*1e6:.3f}us.npy", v_list[(i + 1) * self.step - 1]*self.dl/self.dt)
 
 			r0 = r_list[-1]
 			v0 = v_list[-1]
 
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, fig_num=2, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, fig_num=2, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1, photos=0, target_ion=0, isotope_ratio=0):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
@@ -131,6 +133,11 @@ class DataPlotter:
 		self.dl = dl
 		self.dt = dt
 		self.gamma = gamma
+		self.photos = photos
+		self.isotope_ratio = isotope_ratio
+
+		colors = np.full(frame_init.r.shape[0], 'b')
+		colors[target_ion] = 'r'
 
 		if self.fig_num == 2:
 			self.fig, self.ax = plt.subplots(1, 2, figsize=(10, 5))
@@ -154,8 +161,8 @@ class DataPlotter:
 			# self.indices = np.arange(frame_init.r.shape[0])
 			self.artists = (
 				
-				self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, 'r'),
-				self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 50, 'r'),
+				self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, colors),
+				self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 50, colors),
 			)
 		elif self.fig_num == 1:
 			self.fig, self.ax = plt.subplots(1, 1, figsize=(10, 5))
@@ -169,10 +176,33 @@ class DataPlotter:
 			self.ax.tick_params(axis='y', labelsize=14)
 
 			# self.indices = np.arange(frame_init.r.shape[0])
+			
 			self.artists = (
-				self.ax.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, 'r'),
+				self.ax.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, colors),
 			)
 			print("start time:", frame_init.timestamp*self.dt*1e6)
+		
+		# colorbar
+		# norm = Normalize(vmin=np.min(frame_init.r[:, 1]), vmax=np.max(frame_init.r[:, 1]))
+		# # 使用颜色映射（'RdBu'：小值蓝，大值红）
+		# cmap = cm.RdBu
+		# sm = ScalarMappable(cmap=cmap, norm=norm)
+		# sm.set_array([])  # 必须调用，否则可能报错
+		# self.cbar = self.fig.colorbar(sm, ax=self.ax[1])
+		# self.cbar.set_label('y/um', fontsize=14)
+
+		# 同位素的颜色标记
+		isotope_labels = ['133', '134', '135', '136', '137', '138']
+		color_labels = ['yellow', 'green', 'red', 'blue', 'purple', 'black']
+		ax_legend = self.ax[0] if self.fig_num == 2 else self.ax
+		ax_legend.legend([plt.Line2D([0], [0], color=c, lw=1) for c in color_labels],
+    				isotope_labels,
+    				loc='upper right',
+    				ncol=2,
+    				frameon=False
+						)
+
+		time.sleep(0.5)
 
 		self.bm = BlitManager(self.fig.canvas, self.artists)
 
@@ -205,6 +235,29 @@ class DataPlotter:
 		self.artists[0]._offsets = np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T
 		self.artists[1]._offsets = np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T'''
 
+		# 颜色表示y方向坐标
+		# norm = Normalize(vmin=np.min(f.r[:, 1]), vmax=np.max(f.r[:, 1]))
+		# # 使用颜色映射（'RdBu'：小值蓝，大值红）
+		# cmap = cm.RdBu
+		# colors = cmap(norm(f.r[:, 1]))  # 转换为 RGBA 颜色数组
+		# self.artists[0].set_facecolor(colors)
+		# self.artists[1].set_facecolor(colors)
+
+		# sm = ScalarMappable(cmap=cmap, norm=norm)
+		# sm.set_array([])  # 必须调用，否则可能报错
+		# self.cbar.update_normal(sm)
+
+		# 颜色表示同位素
+		N = f.r.shape[0]
+		colors = np.full(N, 'red', dtype=object) 
+		colors[:int(N*self.isotope_ratio)] = 'yellow'
+		colors[int(N*self.isotope_ratio):2*int(N*self.isotope_ratio)] = 'green'
+		colors[2*int(N*self.isotope_ratio):3*int(N*self.isotope_ratio)] = 'blue'
+		colors[3*int(N*self.isotope_ratio):4*int(N*self.isotope_ratio)] = 'purple'
+		colors[4*int(N*self.isotope_ratio):5*int(N*self.isotope_ratio)] = 'black'
+		self.artists[0].set_facecolor(colors)
+		self.artists[1].set_facecolor(colors)
+
 		if self.fig_num == 2:
 			self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
 			self.artists[1].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
@@ -215,6 +268,11 @@ class DataPlotter:
 			self.ax.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 		
 		np.save("../data_cache/r.npy", f.r*self.dl)
+
+		if self.photos > 0.01:
+			n_photo = f.timestamp*self.dt // self.photos
+			if not os.path.exists(f"../data_cache/photos/{f.r.shape[0]:d}/{n_photo*self.photos:.10g}us.png"):
+				self.fig.savefig(f"../data_cache/photos/{f.r.shape[0]:d}/{n_photo*self.photos:.10g}us.png")
 
 		self.bm.update()
 

@@ -8,6 +8,8 @@ Desktop.ini
 *.lnk
 *:Zone.Identifier
 
+data_cache/
+
 # macOS
 .DS_Store
 .AppleDouble

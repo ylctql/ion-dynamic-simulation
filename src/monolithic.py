@@ -9,6 +9,7 @@ import math,csv,traceback,json
 from scipy.constants import e
 from scipy.signal import savgol_filter
 import argparse
+import time
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
 filename="../../data/monolithic20241118.csv" #文件名：导入的电势场格点数据
 basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
@@ -17,9 +18,12 @@ Parser = argparse.ArgumentParser()
 Parser.add_argument('--N', type=int, help='number of ions', default=150)
 Parser.add_argument('--t0', type=float, help='the beginning of evolution', default=0.0)
 Parser.add_argument('--g', type=float, help='the cooling rate', default=0.1)
+Parser.add_argument('--target_ion', type=int, help='the ion we are tracking', default=0)
 Parser.add_argument('--interval', type=float, help='the interval between 2 adjacent frames', default=1)
+Parser.add_argument('--photos', type=float, help='During which a photo of crystals will be taken', default=0)
 Parser.add_argument('--save_final', action='store_true', help='enable saving the final configuration')
 Parser.add_argument('--save_traj', action='store_true', help='enable saving the trajectory')
+Parser.add_argument('--isotope_ratio', type=float, help='isotope ratio', default=0)
 args = Parser.parse_args()
 print("using ", filename)
 pi=math.pi
@@ -178,30 +182,7 @@ def saveConfig(config, fileName,):#工具函数
     with open(fileName, mode="w+",encoding='utf-8') as jf:
         jf.write(json.dumps(config,indent=4, ensure_ascii=False))
 
-def force(r: np.ndarray, v: np.ndarray, t: float):
-    gamma = args.g
 
-    f = np.zeros_like(r)
-    mask =  data_loader.grids_dc[0].in_bounds(r)#大家都没出界吧？
-    if len( np.where(mask==False)[0] )>0:
-        print("警告出界")    
-        r = np.array([np.clip(r[:,i],bound_min[i],bound_max[i]) for i in range(3)]).T#如果出界，就按边界上的电场
-        mask =  data_loader.grids_dc[0].in_bounds(r)
-    r_mask = r[mask].copy(order='F')
-    
-
-    # inside bounds
-    coord = data_loader.grids_dc[0].get_coord(r_mask)
-    f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
-    for key,value  in grids_dynamic_dict.items():
-        grids_rf=value[0]
-        fun_=value[1]
-        f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
-    f_in=f_in.transpose()
-    f[mask] =f_in
-    # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
-    f=f-gamma*v#Doppler cooling
-    return f
 data_loader=Data_Loader(filename)
 data_loader.loadData()
 
@@ -217,6 +198,7 @@ grids_dynamic_dict={}
 for key,value in V_dynamic.items():
     potential_dynamic_list.append(data_loader.load_basis(key)*interpret_voltage(value))
     grids_dynamic_dict[key]=[gen_grids(potential_dynamic_list[-1]),value] #含时的分开处理，时间因子不一样
+
 
 # calculate R^2
 def R2(x,y):
@@ -240,6 +222,33 @@ Vp = pseudo_potential()
 Vs = potential_static*dV
 shape = Vs.shape
 ls_label = ['x', 'y', 'z']
+Vpp_grid = gen_grids(Vp/dV)
+
+def force(r: np.ndarray, v: np.ndarray, t: float):
+    gamma = args.g
+
+    f = np.zeros_like(r)
+    mask =  data_loader.grids_dc[0].in_bounds(r)#大家都没出界吧？
+    if len( np.where(mask==False)[0] )>0:
+        print("警告出界")    
+        r = np.array([np.clip(r[:,i],bound_min[i],bound_max[i]) for i in range(3)]).T#如果出界，就按边界上的电场
+        mask =  data_loader.grids_dc[0].in_bounds(r)
+    r_mask = r[mask].copy(order='F')
+    
+
+    # inside bounds
+    coord = data_loader.grids_dc[0].get_coord(r_mask)
+    f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
+    # f_in +=  (np.vstack(tuple([grid.interpolate(coord) for grid in Vpp_grid])))#伪势能力
+    for key,value  in grids_dynamic_dict.items():
+        grids_rf=value[0]
+        fun_=value[1]
+        f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
+    f_in=f_in.transpose()
+    f[mask] =f_in
+    # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
+    f=f-gamma*v#Doppler cooling
+    return f
 
 sa, sb, sc = np.zeros(3), np.zeros(3), np.zeros(3)
 pa, pb, pc = np.zeros(3), np.zeros(3), np.zeros(3)
@@ -326,7 +335,7 @@ def plot_2D_potential(ax_id):
 # plot_2D_potential(2)
 
 # 绘制赝势
-def psudo_potential():
+# def psudo_potential():
     Vp = pseudo_potential()
     Vs = potential_static*dV
     shape = Vs.shape
@@ -398,7 +407,13 @@ if __name__ == "__main__":
     # r0 = np.loadtxt("./balance/balance.txt")/(1e6*dl) #从平衡位置开始演化
     if args.t0 > 0.1:
         r0 = np.load("../data_cache/status/%d/r/%.3fus.npy"%(N, args.t0))/(1e6*dl)
-        v0 = np.load("../data_cache/status/%d/v/%.3fus.npy"%(N, args.t0))*(dt/dl)
+        # v0 = np.load("../data_cache/status/%d/v/%.3fus.npy"%(N, args.t0))*(dt/dl)
+        v0 = np.zeros((N, 3))
+        v0[args.target_ion, 1] = 3/(dl/dt)  #初始在y方向有3m/s的速度
+    elif os.path.exists("../data_cache/req,N=%d.npy"%N):
+        # r0 = (np.random.rand(N, 3)-0.5) *ini_range
+        r0 = np.load("../data_cache/req,N=%d.npy"%N)/(1e6*dl)
+        v0 = np.zeros((N, 3))
     else:
         r0 = (np.random.rand(N, 3)-0.5) *ini_range
         v0 = np.zeros((N, 3))
@@ -406,10 +421,17 @@ if __name__ == "__main__":
     q1 = mp.Queue()
     q2 = mp.Queue(maxsize=50)
 
+    # 设置同位素
+    isotope_ratio = args.isotope_ratio  # 五种同位素的比例
+    mass[:int(N*isotope_ratio)] = 133/135
+    mass[int(N*isotope_ratio):2*int(N*isotope_ratio)] = 134/135
+    mass[2*int(N*isotope_ratio):3*int(N*isotope_ratio)] = 136/135
+    mass[3*int(N*isotope_ratio):4*int(N*isotope_ratio)] = 137/135
+    mass[4*int(N*isotope_ratio):5*int(N*isotope_ratio)] = 138/135
     q1.put(Message(CommandType.START, r0, v0, args.t0/(dt*1e6), charge, mass, force))
     q2.put(Frame(r0, v0, args.t0/(dt*1e6)))
 
-    plot = DataPlotter(q2, q1, Frame(r0, v0, args.t0/(dt*1e6)), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6)
+    plot = DataPlotter(q2, q1, Frame(r0, v0, args.t0/(dt*1e6)), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio)
     proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)
     
     proc.start()
@@ -426,7 +448,7 @@ if __name__ == "__main__":
     if args.save_final:
         f = f_last
         status_dir = "../data_cache/status/"
-        if not os.path.exists(status_dir):
+        if not os.path.exists(status_dir+"%d/r/"%N):
             os.makedirs(status_dir+"%d/r/"%N)
             os.makedirs(status_dir+"%d/v/"%N)
         np.save(status_dir + "%d/r/%.3fus"%(N, f.timestamp*dt*1e6), f.r*dl*1e6)
