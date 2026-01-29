@@ -12,7 +12,7 @@ import argparse
 import time
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
 filename="../../data/monolithic20241118.csv" #文件名：导入的电势场格点数据
-basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
+basis_filename="./electrode_basis_7.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 Parser = argparse.ArgumentParser()
 Parser.add_argument('--N', type=int, help='number of ions', default=150)
@@ -24,6 +24,7 @@ Parser.add_argument('--photos', type=float, help='During which a photo of crysta
 Parser.add_argument('--save_final', action='store_true', help='enable saving the final configuration')
 Parser.add_argument('--save_traj', action='store_true', help='enable saving the trajectory')
 Parser.add_argument('--isotope_ratio', type=float, help='isotope ratio', default=0)
+Parser.add_argument('--config', type=str, help='path to config.json file', default='./config.json')
 args = Parser.parse_args()
 print("using ", filename)
 pi=math.pi
@@ -31,10 +32,13 @@ N = args.N  #离子数
 interval = args.interval  #每两帧之间的时间间隔，单位为dt
 charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
-Vrf=550/2 #RF电压振幅
-freq_RF=35.28#27 #35.28 #RF射频频率@MHz
-Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
 
+# 默认配置值（向后兼容）
+default_Vrf = 550/2
+default_freq_RF = 35.28
+default_V_static = {"RF":-8, "U1":0, "U2":0, "U3":0, "U4":-1, "U5":0, "U6":0, "U7":0}
+
+# 时间函数定义（保留原有函数以保持兼容性）
 def oscillate_RF(t):#RF场的时间函数。单位时间为dt
     # return np.cos(Omega*t*1e-6*dt)
     return np.cos(2*t)
@@ -45,13 +49,124 @@ def expdecay(t):#时间函数：指数衰减
 def expramp(t):#时间函数
     return 1-expdecay(t)
 def cut(t):
-    if t*dt*1e6<1:
+    # 在运行时访问全局dt
+    global dt
+    if 'dt' in globals() and t*dt*1e6<1:
         return 1
     else:
         return 0
 
-V_static = {"RF":-8, "U1":0, "U2":0, "U3":0, "U4":-1, "U5":0, "U6":0, "U7":0}
-V_dynamic = {"RF":[Vrf,oscillate_RF]}# 含时动态电压设置{"basis的文件名":[该组电极施加电压(V),时间因子函数（最终相当于二者相乘）]}
+# 时间函数映射字典
+TIME_FUNCTION_MAP = {
+    "oscillate_RF": oscillate_RF,
+    "pushDC": pushDC,
+    "expdecay": expdecay,
+    "expramp": expramp,
+    "cut": cut
+}
+
+def create_time_function(func_config, dt_ref=None):
+    """
+    根据配置创建时间函数
+    func_config: 时间函数配置字典
+    dt_ref: dt的引用（用于某些需要dt的函数）
+    """
+    func_type = func_config.get("type", "")
+    params = func_config.get("params", {})
+    
+    if func_type == "cos":
+        frequency = func_config.get("frequency", 1.0)
+        def func(t):
+            return np.cos(frequency * t)
+        return func
+    elif func_type == "exp_decay":
+        tau = func_config.get("tau", 50.0)
+        def func(t):
+            return np.exp(-t/tau)
+        return func
+    elif func_type == "exp_ramp":
+        tau = func_config.get("tau", 50.0)
+        def func(t):
+            return 1 - np.exp(-t/tau)
+        return func
+    elif func_type == "cut":
+        cutoff_time = func_config.get("cutoff_time", 1.0)
+        def func(t):
+            # 在运行时访问全局dt
+            global dt
+            if 'dt' in globals() and t*dt*1e6 < cutoff_time:
+                return 1
+            else:
+                return 0
+        return func
+    else:
+        # 如果类型未知，尝试从映射中获取
+        func_name = func_config.get("name", "")
+        if func_name in TIME_FUNCTION_MAP:
+            return TIME_FUNCTION_MAP[func_name]
+        # 默认返回常数1
+        return lambda t: 1.0
+
+def load_electrode_config(config_path):
+    """
+    从配置文件加载电极电压配置
+    返回: (V_static, V_dynamic, Vrf, freq_RF)
+    """
+    try:
+        config = loadConfig(config_path)
+        if config == -1:
+            print(f"警告: 无法加载配置文件 {config_path}，使用默认配置")
+            return default_V_static, {"RF": [default_Vrf, oscillate_RF]}, default_Vrf, default_freq_RF
+        
+        # 读取RF设置
+        rf_settings = config.get("rf_settings", {})
+        Vrf = rf_settings.get("Vrf", default_Vrf)
+        freq_RF = rf_settings.get("freq_RF", default_freq_RF)
+        
+        # 读取电极电压配置
+        electrode_config = config.get("electrode_voltages", {})
+        V_static = electrode_config.get("static", default_V_static)
+        
+        # 读取动态电压配置
+        dynamic_config = electrode_config.get("dynamic", {})
+        V_dynamic = {}
+        time_functions_config = config.get("time_functions", {})
+        
+        for key, value in dynamic_config.items():
+            if isinstance(value, dict):
+                voltage = value.get("voltage", 0)
+                func_name = value.get("time_function", "")
+                
+                # 尝试从配置中创建函数
+                if func_name in time_functions_config:
+                    func_config = time_functions_config[func_name]
+                    # 如果函数名在映射中，优先使用映射中的函数（保持兼容性）
+                    if func_name in TIME_FUNCTION_MAP:
+                        time_func = TIME_FUNCTION_MAP[func_name]
+                    else:
+                        time_func = create_time_function(func_config)
+                elif func_name in TIME_FUNCTION_MAP:
+                    time_func = TIME_FUNCTION_MAP[func_name]
+                else:
+                    print(f"警告: 未找到时间函数 {func_name}，使用默认函数")
+                    time_func = lambda t: 1.0
+                
+                V_dynamic[key] = [voltage, time_func]
+            else:
+                # 兼容旧格式 [voltage, function_name]
+                V_dynamic[key] = value
+        
+        print(f"成功加载配置文件: {config_path}")
+        return V_static, V_dynamic, Vrf, freq_RF
+        
+    except Exception as e:
+        print(f"加载配置文件时出错: {e}")
+        print("使用默认配置")
+        return default_V_static, {"RF": [default_Vrf, oscillate_RF]}, default_Vrf, default_freq_RF
+
+# 加载电极配置
+V_static, V_dynamic, Vrf, freq_RF = load_electrode_config(args.config)
+Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
 
 epsl = 8.854*10**(-12)#真空介电常数@SI
 m = 2.239367e-25 # Ba135 #170.936*(1.66053904*10**(-27))#离子的质量 @SI #Yb171=170.936323；Yb174=173.938859
@@ -91,7 +206,7 @@ class Data_Loader:
             print(er)
         if name is None:
             name=self.filename
-        with open(name,encoding='utf-8',mode='r+') as file_read:
+        with open(name,encoding='utf-8',mode='r') as file_read:
             csvread = csv.reader(file_read)
             for i,row in enumerate(csvread):
                 if i>20:break

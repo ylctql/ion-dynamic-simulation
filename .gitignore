@@ -23,6 +23,7 @@ data_cache/
 # =========================
 # VSCode
 .vscode/
+.cursor/
 
 # JetBrains (PyCharm, IntelliJ, WebStorm 等)
 .idea/

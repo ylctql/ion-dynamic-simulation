@@ -17,6 +17,37 @@ namespace
 // NOLINTNEXTLINE
 chrono::microseconds elapsed1 = 0us;
 
+// 缓存可复用的矩阵（线程局部存储，避免多线程问题）
+struct CoulombCache {
+	Eigen::Matrix<data_t, 1, Eigen::Dynamic> ones_col;
+	Eigen::Matrix<data_t, Eigen::Dynamic, 1> ones_row;
+	Eigen::Array<data_t, Eigen::Dynamic, Eigen::Dynamic> charge_matrix;
+	size_t cached_N = 0;
+	const data_t* cached_charge_data = nullptr;
+	
+	void resize(size_t N) {
+		if (cached_N != N) {
+			ones_col = Eigen::Matrix<data_t, 1, Eigen::Dynamic>::Ones(1, N);
+			ones_row = Eigen::Matrix<data_t, Eigen::Dynamic, 1>::Ones(N, 1);
+			cached_N = N;
+			cached_charge_data = nullptr; // 强制重新计算电荷矩阵
+		}
+	}
+	
+	void updateChargeMatrix(CRef<ArrayType>& charge) {
+		// 如果 N 变化或 charge 数据指针变化，重新计算电荷矩阵
+		// 使用数据指针而不是引用指针，因为 CRef 是 Eigen::Ref 类型
+		const data_t* charge_data = charge.data();
+		if (cached_charge_data != charge_data || charge_matrix.rows() != cached_N) {
+			charge_matrix = (charge.matrix() * charge.transpose().matrix()).array();
+			cached_charge_data = charge_data;
+		}
+	}
+};
+
+// 使用线程局部存储，确保线程安全
+thread_local CoulombCache coulomb_cache;
+
 VecType CoulombInteraction(
 	CRef<VecType> r, 
 	CRef<ArrayType>& charge
@@ -25,22 +56,34 @@ VecType CoulombInteraction(
 	auto begin = chrono::steady_clock::now();
 
 	const auto N = r.rows();
-	Eigen::Matrix<data_t, 1, Eigen::Dynamic> ones_col = Eigen::Matrix<data_t, 1, Eigen::Dynamic>::Ones(1, N);
-	Eigen::Matrix<data_t, Eigen::Dynamic, 1> ones_row = Eigen::Matrix<data_t, Eigen::Dynamic, 1>::Ones(N, 1);
+	
+	// 更新缓存（如果需要）
+	coulomb_cache.resize(N);
+	coulomb_cache.updateChargeMatrix(charge);
+	
+	auto& ones_col = coulomb_cache.ones_col;
+	auto& ones_row = coulomb_cache.ones_row;
+	auto& charge_matrix = coulomb_cache.charge_matrix;
 
-	// Calculation of Coulomb interaction
+	// Calculation of Coulomb interaction - 优化距离矩阵计算
 	Eigen::Matrix<data_t, Eigen::Dynamic, Eigen::Dynamic> dist2 = 
 		r.rowwise().squaredNorm().matrix() * ones_col
 		+ ones_row * r.rowwise().squaredNorm().transpose().matrix()
 		- 2 * (r.matrix() * r.matrix().transpose());
 	dist2.diagonal() = ones_row;
 
+	// 预计算 dist2 的平方根和立方（避免在循环中重复计算）
+	Eigen::Array<data_t, Eigen::Dynamic, Eigen::Dynamic> dist2_array = dist2.array();
+	Eigen::Array<data_t, Eigen::Dynamic, Eigen::Dynamic> dist2_sqrt = dist2_array.sqrt();
+	Eigen::Array<data_t, Eigen::Dynamic, Eigen::Dynamic> dist2_cubed = dist2_sqrt * dist2_array;
+
 	VecType result(N, 3);
 	for (uint8_t i = 0; i < 3; i++)
 	{
+		// 使用预计算的电荷矩阵和距离矩阵（关键优化：电荷矩阵不再在循环内计算）
 		result.col(i) = (
 			(r.col(i).matrix() * ones_col - ones_row * r.col(i).transpose().matrix()).array()
-			/ (dist2.array().sqrt() * dist2.array()) * (charge.matrix() * charge.transpose().matrix()).array()
+			/ dist2_cubed * charge_matrix
 		).rowwise().sum();
 	}
 

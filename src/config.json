@@ -1,0 +1,59 @@
+{
+    "_comment": "电极电压配置文件 - 使用说明：",
+    "_usage": "1. static: 静态电极电压配置，单位为V（归一化后的单位）",
+    "_usage2": "2. dynamic: 动态电极电压配置，包含电压值和时间函数",
+    "_usage3": "3. rf_settings: RF射频设置，Vrf为电压振幅(V)，freq_RF为频率(MHz)",
+    "_usage4": "4. time_functions: 时间函数定义，支持cos、exp_decay、exp_ramp、cut等类型",
+    "_usage5": "使用方法: python monolithic.py --config ./config.json",
+    
+    "electrode_voltages": {
+        "static": {
+            "RF": -8,
+            "U1": 0,
+            "U2": 0,
+            "U3": 0,
+            "U4": -1,
+            "U5": 0,
+            "U6": 0,
+            "U7": 0
+        },
+        "dynamic": {
+            "RF": {
+                "voltage": 275,
+                "time_function": "oscillate_RF",
+                "params": {}
+            }
+        }
+    },
+    "rf_settings": {
+        "Vrf": 275,
+        "freq_RF": 35.28
+    },
+    "time_functions": {
+        "oscillate_RF": {
+            "type": "cos",
+            "frequency": 2,
+            "description": "RF场的时间函数，单位时间为dt"
+        },
+        "pushDC": {
+            "type": "cos",
+            "frequency": 0.04,
+            "description": "axial shuttling场的时间函数，单位时间为dt"
+        },
+        "expdecay": {
+            "type": "exp_decay",
+            "tau": 50,
+            "description": "指数衰减时间函数"
+        },
+        "expramp": {
+            "type": "exp_ramp",
+            "tau": 50,
+            "description": "指数上升时间函数"
+        },
+        "cut": {
+            "type": "cut",
+            "cutoff_time": 1,
+            "description": "时间截断函数，在cutoff_time(us)之前返回1，之后返回0"
+        }
+    }
+}
