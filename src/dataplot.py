@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import ionsim
+from scipy.spatial import Delaunay
 
 from utils import *
 
@@ -154,12 +155,20 @@ class DataPlotter:
 		self.ax3.tick_params(axis='y', labelsize=14)
 
 		self.indices = np.arange(frame_init.r.shape[0])
-		self.artists = (
+		# create scatter artists and keep references so we can update colors later
+		self.sc1 = self.ax1.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r')
+		self.sc2 = self.ax2.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r')
+		self.sc3 = self.ax3.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 0]*self.dl, 5, c=frame_init.r[:, 1]*self.dl, cmap='coolwarm')
+		# ensure the PathCollection has an array for the colorbar
+		self.sc3.set_array(frame_init.r[:, 1]*self.dl)
+		# add a colorbar for ax3
+		self.cbar3 = self.fig.colorbar(self.sc3, ax=self.ax3)
+		self.cbar3.set_label('y/um', fontsize=12)
 
-			self.ax1.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
-			self.ax2.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, 'r'),
-			self.ax3.scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 0]*self.dl, 5, 'r'),
-			
+		self.artists = (
+			self.sc1,
+			self.sc2,
+			self.sc3,
 		)
 
 		self.bm = BlitManager(self.fig.canvas, self.artists)
@@ -201,6 +210,17 @@ class DataPlotter:
 		self.artists[2].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
 
 		self.ax3.set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
+
+		# update the color values for the third scatter and refresh colorbar
+		try:
+			self.artists[2].set_array(f.r[:, 1]*self.dl)
+			vmin = float(np.min(f.r[:, 1]*self.dl)) if f.r.shape[0] > 0 else 0.0
+			vmax = float(np.max(f.r[:, 1]*self.dl)) if f.r.shape[0] > 0 else 1.0
+			self.artists[2].set_clim(vmin, vmax)
+			self.cbar3.update_normal(self.artists[2])
+		except Exception:
+			# fallback: ignore colorbar update errors
+			pass
 
 		self.bm.update()
 

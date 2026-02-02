@@ -7,14 +7,14 @@ import argparse
 
 Parser = argparse.ArgumentParser()
 Parser.add_argument('--N', type=int, help='number of ions', default=50)
-Parser.add_argument('--time', type=float, help='total simulation time in microseconds', default=10.0)
+Parser.add_argument('--time', type=float, default=10.0, help='total simulation time in microseconds')
 Parser.add_argument('--epochs',  type=int, default=10, help='number of optimization epochs')
 Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computation')
 
 dirname = os.path.dirname(__file__)
 
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
-filename=os.path.join(dirname, "../data/monolithic20241118.csv") #文件名：导入的电势场格点数据
+filename=os.path.join(dirname, "../../autodl-tmp/monolithic20241118.csv") #文件名：导入的电势场格点数据
 basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 def oscillate(t):
     return np.cos(2*t)
@@ -29,15 +29,18 @@ if __name__ == "__main__":
     mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
-    configure = Configure(V_static={"RF":-5.006910107928535, "U1":0, "U2":0, "U3":0, "U4":-0.09771459237434063, "U5":0, "U6":0, "U7":0, }, V_dynamic={"RF": 274.98096803557326}, basis=basis)#静态电压和动态电压
+    configure = Configure(basis=basis)#静态电压和动态电压
+    configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0.01_1000.json"))
     t = args.time
-    for i in range(args.epochs):
-        print("Processing epoch %d/%d"%(i+1, args.epochs))
-        configure.calc_gradient(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, h=0.1, r=0.01)
-        configure.update(lr=0.1)
-        std_y, len_z, _ = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=False)
-        print("Estimated thickness: %.3f um; length: %.3f um at epoch %d"%(std_y, len_z, i+1))
-    configure.save(os.path.join(dirname, "saved_config_regression_0.01_5000.json"))
+    with open(os.path.join(dirname, "../logs/saved_config_0.1equicell_5000.txt"), 'w', encoding='utf-8') as log_file:
+        for i in range(args.epochs):
+            print("Processing epoch %d/%d"%(i+1, args.epochs))
+            configure.calc_gradient(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, h=0.1, r=0.01)
+            configure.update(lr=0.1)
+            f = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=5, batch=50, t=t, device=device, plotting=False)
+            print("Epoch %d/%d done"%(i+1, args.epochs))
+            print("Estimated thickness: %.3f um; length: %.3f um; equi ratio: %.3f at epoch %d"%(f.std_y(), f.len_z(), f.equi_cell(), i+1), file=log_file)
+    configure.save(os.path.join(dirname, "../saves/saved_config_0.1equicell_5000.json"))
     print("Optimization completed. Final voltages:")
     print("Static Voltages:", configure.V_static)
     print("Dynamic Voltages:", {k: v for k, v in configure.V_dynamic.items()})

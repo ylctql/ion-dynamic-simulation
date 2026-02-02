@@ -18,17 +18,6 @@ class Data_Loader:
     :param smoothing: whether to apply smoothing to the potential data
     '''
 
-    pi = math.pi
-    Vrf = 550/2 #RF电压振幅
-    freq_RF = 35.28 #RF射频频率@MHz
-    Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
-    epsl = 8.854*10**(-12)#真空介电常数@SI
-    m = 170.936*(1.66053904*10**(-27))#离子的质量 @SI #Yb171=170.936323；Yb174=173.938859
-    ec = 1.6*10**(-19)#元电荷@SI
-    dt = 2/Omega#单位时间dt #dt*T*Omega=2pi ->  T=pi
-    dl = (( ec**2)/(4*pi*m*epsl*(Omega)**2))**(1/3)#单位长度dl
-    dV = m/ec*(dl/dt)**2 #单位电压dV
-
     def __init__(self, filename: str, basis_filename: str, smoothing: bool) -> None:
         self.filename = filename
         self.basis_filename = basis_filename
@@ -71,22 +60,27 @@ class Data_Loader:
                     break
         dat = pd.read_csv(name, comment='%', header=None)
         data = dat.to_numpy()
-        data[:, 3:] *= 1 / self.dV  # csv文件内的电势单位：V
-        data[:, 0:3] *= self.unit_l / self.dl  # csv文件内坐标的长度单位：mm
+        data[:, 3:] *= 1 / Const.dV  # csv文件内的电势单位：V
+        data[:, 0:3] *= self.unit_l / Const.dl  # csv文件内坐标的长度单位：mm
 
         data = data[np.lexsort([data[:, 2], data[:, 1], data[:, 0]])]  # index统一排序使得格点数据与文件内坐标顺序无关
         self.coordinate = [self.x, self.y, self.z] = [x, y, z] = [np.unique(data[:, i]) for i in range(3)]
-        self.coordinate_um = [temp / (1e-6 / self.dl) for temp in self.coordinate]
+        self.coordinate_um = [temp / (1e-6 / Const.dl) for temp in self.coordinate]
         self.data = data
 
     def load_basis(self, key):  # 加载电势场名key的格点数据
-        coln = self.getcol(key)
-
-        if coln is None:
-            components = self.basisGroup_map[key]
-            outputs = self.load_basis(components)
+        if type(key) == dict:
+            coln = None
+            outputs = np.zeros((len(self.x), len(self.y), len(self.z)))
+            for subkey, coeff in key.items():
+                outputs += coeff * self.load_basis(subkey)
         else:
-            outputs = self.data[:, coln].reshape(len(self.x), len(self.y), len(self.z))
+            coln = self.getcol(key)
+            if coln is None:
+                components = self.basisGroup_map[key]
+                outputs = self.load_basis(components)
+            else:
+                outputs = self.data[:, coln].reshape(len(self.x), len(self.y), len(self.z))
         
         if self.flag_smoothing and self.smoothing is not None:
             outputs = self.smoothing(outputs)
@@ -109,17 +103,6 @@ class Configure:
     :param V_dynamic: dictionary of dynamic voltages, key is electrode name, value is a list where the first element is amplitude in volts and the second element is a function of time
     :param basis: Data_Loader object containing electrode potential data and basis configuration
     """
-
-    pi = math.pi
-    Vrf = 550/2 #RF电压振幅
-    freq_RF = 35.28 #RF射频频率@MHz
-    Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
-    epsl = 8.854*10**(-12)#真空介电常数@SI
-    m = 170.936*(1.66053904*10**(-27))#离子的质量 @SI #Yb171=170.936323；Yb174=173.938859
-    ec = 1.6*10**(-19)#元电荷@SI
-    dt = 2/Omega#单位时间dt #dt*T*Omega=2pi ->  T=pi
-    dl = (( ec**2)/(4*pi*m*epsl*(Omega)**2))**(1/3)#单位长度dl
-    dV = m/ec*(dl/dt)**2 #单位电压dV
 
     def __init__(self, basis: Data_Loader, V_static: dict = {}, V_dynamic: dict = {}) -> None:
 
@@ -186,6 +169,7 @@ class Configure:
 
     def calc_force(self, r: np.ndarray, v: np.ndarray, t: float):
         gamma = 0.1
+        D = 0.0
         bound_min = [np.min(self.basis.coordinate[i]) + 1e-9 for i in range(3)]
         bound_max = [np.max(self.basis.coordinate[i]) - 1e-9 for i in range(3)]
 
@@ -207,16 +191,19 @@ class Configure:
         f[mask] = f_in
         # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
         f = f - gamma * v
+        f += D * np.random.normal(size=r.shape) * f
         return f
 
-    def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool) -> tuple:
+    def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, r_init = None) -> Frame:
 
-        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6))
+        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(Const.dt * 1e6))
 
         q1 = mp.Queue()
         q2 = mp.Queue(maxsize=50)
-
-        r0 = (np.random.rand(N, 3)-0.5) *ini_range
+        if r_init is None:
+            r0 = (np.random.rand(N, 3)-0.5) *ini_range
+        else:
+            r0 = r_init
         v0 = np.zeros((N, 3))
 
         q1.put(Message(CommandType.START, r0, v0, mass, charge, self.calc_force))
@@ -227,7 +214,7 @@ class Configure:
 
         f = None
         if plotting:
-            plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=200, x_range=60, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6)
+            plot = DataPlotter(q2, q1, Frame(r0, v0, 0), interval=0.04, z_range=600, x_range=60, z_bias=0, dl=Const.dl*1e6,dt=Const.dt*1e6)
             f = plot.start()
             if not plot.is_alive():
                 q1.put(Message(CommandType.STOP))
@@ -243,33 +230,39 @@ class Configure:
                     break
                 f = new_f
             proc.join()
-        std_y = f.r[:, 1].std() * self.dl * 1e6
-        len_z = np.abs(f.r[:, 2].max() - f.r[:, 2].min()) * self.dl * 1e6
-        return std_y, len_z, f.timestamp * self.dt * 1e6
+        return f
 
     def calc_gradient(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, h: float = 0.1, r: float = 0.05) -> None:
         for key in self.V_static.keys():
             original_value = self.V_static[key]
             self.V_static[key] = original_value + h
             self.calc_field()
-            std_plus, len_plus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            f_plus = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
             self.V_static[key] = original_value - h
             self.calc_field()
-            std_minus, len_minus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
-            grad = (std_plus - std_minus + r*len_plus - r*len_minus) / (2 * h)
+            f_minus = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            grad = (self.objective_function(f_plus) - self.objective_function(f_minus)) / (2 * h)
             self.grad_dc[key] = grad
             self.V_static[key] = original_value
         for key in self.V_dynamic.keys():
             original_value = self.V_dynamic[key]
             self.V_dynamic[key] = original_value + h
             self.calc_field()
-            std_plus, len_plus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            f_plus = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
             self.V_dynamic[key] = original_value - h
             self.calc_field()
-            std_minus, len_minus, _ = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
-            grad = (std_plus - std_minus + r*len_plus - r*len_minus) / (2 * h)
+            f_minus = self.simulation(N, ini_range, mass, charge, step, interval, batch, t, device, plotting=False)
+            grad = (self.objective_function(f_plus) - self.objective_function(f_minus)) / (2 * h)
             self.grad_rf[key] = grad
             self.V_dynamic[key] = original_value
+
+    def objective_function(self, f: Frame) -> float:
+        std_y = f.std_y()
+        len_z = f.len_z()
+        equi_cell = f.equi_cell()
+
+        obj_value = std_y + 0.1 * equi_cell
+        return obj_value
 
     def update(self, lr: float = 0.1):
         for key in self.grad_dc.keys():

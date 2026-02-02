@@ -1,8 +1,23 @@
 import numpy as np
 from enum import Enum
 from typing import Callable
+from scipy.spatial import Delaunay
+import math
 
 # For updating graphs
+
+class Const:
+	pi = math.pi
+	Vrf = 550/2 #RF电压振幅
+	freq_RF = 35.28 #RF射频频率@MHz
+	Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
+	epsl = 8.854*10**(-12)#真空介电常数@SI
+	m = 137.327*(1.66053904*10**(-27))#离子的质量 @SI #Yb171=170.936323；Yb174=173.938859; Ba135=137.327
+	ec = 1.6*10**(-19)#元电荷@SI
+	dt = 2/Omega#单位时间dt #dt*T*Omega=2pi ->  T=pi
+	dl = (( ec**2)/(4*pi*m*epsl*(Omega)**2))**(1/3)#单位长度dl
+	dV = m/ec*(dl/dt)**2 #单位电压dV
+
 class BlitManager:
 	def __init__(self, canvas, animated_artists=()):
 		"""
@@ -84,6 +99,26 @@ class Frame:
 
 	def kinetics(self):
 		return np.sum(np.square(self.v)) * 0.5
+	
+	def std_y(self):
+		return self.r[:, 1].std() * Const.dl * 1e6
+	
+	def len_z(self):
+		return np.abs(self.r[:, 2].max() - self.r[:, 2].min()) * Const.dl * 1e6
+	
+	def equi_cell(self) -> float:
+		points = np.array([self.r[:, 0], self.r[:, 2]]).T
+		delaunay = Delaunay(points)
+		edges = set([e for n in delaunay.simplices for e in [(n[0], n[1]), (n[1], n[2]), (n[2], n[0])]])
+		l_edges = [((points[e[0]][0] - points[e[1]][0]) ** 2 + (points[e[0]][1] - points[e[1]][1]) ** 2) ** 0.5 for e in edges]
+		mean_edge = np.mean(l_edges)
+		std_edge = np.std(l_edges)
+		ratio = std_edge / mean_edge
+
+		return float(ratio)
+	
+	def save_position(self, filename)->None:
+		np.save(filename, self.r * Const.dl * 1e3)
 	
 
 class CommandType(Enum):

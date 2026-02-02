@@ -4,25 +4,6 @@
 using data_t = double; 
 constexpr int DIM = 3;
 
-__global__ void TransposeKernel(data_t* src, data_t* dst, int rows, int cols) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    
-    if (i < rows && j < cols) {
-        // src: [rows][cols] 布局 -> src[i * cols + j]
-        // dst: [cols][rows] 布局 -> dst[j * rows + i]
-        dst[j * rows + i] = src[i * cols + j];
-    }
-}
-
-extern "C" void transposeGPU(data_t* src, data_t* dst, int rows, int cols) {
-    dim3 blockSize(16, 16);
-    dim3 gridSize((rows + 15) / 16, (cols + 15) / 16);
-    
-    TransposeKernel<<<gridSize, blockSize>>>(src, dst, rows, cols);
-    cudaDeviceSynchronize();
-}
-
 __global__ void computeCoulombInteractionKernel(
     data_t* r, data_t* charge, data_t* result, int N) {
 
