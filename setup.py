@@ -115,6 +115,31 @@ class CMakeBuild(build_ext):
         if not build_temp.exists():
             build_temp.mkdir(parents=True)
         
+        # Find CUDA compiler
+        cuda_paths = [
+            "/usr/local/cuda",
+            "/usr/local/cuda-11.8",
+            "/usr/local/cuda-12.8",
+            "/usr/local/cuda-11",
+        ]
+        nvcc_path = None
+        for cuda_path in cuda_paths:
+            nvcc_candidate = Path(cuda_path) / "bin" / "nvcc"
+            if nvcc_candidate.exists():
+                nvcc_path = str(nvcc_candidate)
+                cmake_args += [f"-DCMAKE_CUDA_COMPILER={nvcc_path}"]
+                print(f"Found CUDA compiler at: {nvcc_path}")
+                break
+        
+        if nvcc_path is None:
+            # Try to find nvcc in PATH
+            import shutil
+            nvcc_in_path = shutil.which("nvcc")
+            if nvcc_in_path:
+                cmake_args += [f"-DCMAKE_CUDA_COMPILER={nvcc_in_path}"]
+                print(f"Found CUDA compiler in PATH: {nvcc_in_path}")
+            else:
+                print("Warning: CUDA compiler not found. Build may fail.")
 
         cmake_args += [f"-DVERSION_INFO={self.distribution.get_version()}"]
         cmake_args += ["-DBUILD_MAIN=OFF"]

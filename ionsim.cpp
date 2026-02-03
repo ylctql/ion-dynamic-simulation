@@ -97,9 +97,18 @@ auto CalcTrajRK_wrapper(
 		}
 	);
 }
-// auto CoulombPotentialCuda_wrapper(const pybind11::EigenDRef<const VecType>& r, CRef<ArrayType>& charge){
-// 	return CoulombPotentialCuda(r, charge);
-// }
+auto CoulombPotentialCuda_wrapper(int device, const pybind11::EigenDRef<const VecType>& r, CRef<ArrayType>& charge){
+	if (device == 1){
+		return CoulombPotentialCuda(r, charge);
+	}
+	else if(device == 0){
+		return CoulombPotentialCpu(r, charge);
+	}
+	else{
+		throw std::invalid_argument("device error! Please select the right device");
+	}
+	
+}
 
 template<typename Callable>
 auto Vectorize_3D(pybind11::array_t<data_t>& xi, Callable&& f)
@@ -152,15 +161,16 @@ PYBIND11_MODULE(ionsim, m)
 		"time_end"_a,
 		"force"_a,
 		pybind11::return_value_policy::move
-	);
+	)
 
-	// m.def(
-	// 	"calculate_coulombpotential",
-	// 	&CoulombPotentialCuda_wrapper,
-	// 	"r"_a.noconvert(),
-	// 	"charge"_a.noconvert(),
-	// 	pybind11::return_value_policy::move
-	// );
+	.def(
+		"calculate_coulombpotential",
+		&CoulombPotentialCuda_wrapper,
+		"device"_a,
+		"r"_a.noconvert(),
+		"charge"_a.noconvert(),
+		pybind11::return_value_policy::move
+	);
 
 	PYBIND11_NUMPY_DTYPE(Grid::GridCoord, x, y, z, px, py, pz);
 	auto m_grid = pybind11::class_<Grid>(m, "Grid");

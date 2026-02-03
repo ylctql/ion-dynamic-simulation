@@ -24,8 +24,38 @@ set_target_properties(ioncpp PROPERTIES
     CUDA_STANDARD 14
 )
 
-include_directories(/usr/local/cuda-12.8/include)
-link_directories(/usr/local/cuda-12.8/lib64)
+# Find CUDA installation
+# Try modern CUDAToolkit first (CMake 3.18+)
+find_package(CUDAToolkit QUIET)
+if(CUDAToolkit_FOUND)
+    message(STATUS "Found CUDA Toolkit: ${CUDAToolkit_ROOT_DIR}")
+    include_directories(${CUDAToolkit_INCLUDE_DIRS})
+    link_directories(${CUDAToolkit_LIBRARY_DIR})
+else()
+    # Fallback: try legacy CUDA package
+    find_package(CUDA QUIET)
+    if(CUDA_FOUND)
+        message(STATUS "Found CUDA: ${CUDA_TOOLKIT_ROOT_DIR}")
+        include_directories(${CUDA_INCLUDE_DIRS})
+        link_directories(${CUDA_LIBRARY_DIRS})
+    else()
+        # Final fallback: try common CUDA paths
+        set(CUDA_PATHS
+            /usr/local/cuda
+            /usr/local/cuda-11.8
+            /usr/local/cuda-12.8
+            /usr/local/cuda-11
+        )
+        foreach(CUDA_PATH ${CUDA_PATHS})
+            if(EXISTS ${CUDA_PATH}/include/cuda.h)
+                message(STATUS "Found CUDA at: ${CUDA_PATH}")
+                include_directories(${CUDA_PATH}/include)
+                link_directories(${CUDA_PATH}/lib64)
+                break()
+            endif()
+        endforeach()
+    endif()
+endif()
 
 target_link_libraries(ioncpp PRIVATE cudart)
 

@@ -17,9 +17,11 @@ Parser.add_argument('--plot', action='store_true', help='enable plotting')
 Parser.add_argument('--interval', type=float, help='the interval between 2 adjacent frames', default=1)
 Parser.add_argument('--g', type=float, help='cooling rate', default=0.1)
 Parser.add_argument('--isotope', type=str, help='isotope type', default="Ba135")
+Parser.add_argument('--alpha', type=float, help='doping ratio', default=0.1)
 Parser.add_argument('--save_final', action='store_true', help='enable saving the final configuration')
 Parser.add_argument('--save_traj', action='store_true', help='enable saving the trajectory')
 Parser.add_argument('--bilayer', action='store_true', help='the trap is designed to trap 2 layers')
+Parser.add_argument('--save_final_image', type=str, help='path to save the final frame image', default=None)
 # Parser.add_argument('--save_final', type=bool, help='enable saving the final configuration', default=False)
 # Parser.add_argument('--save_traj', type=bool, help='enable saving the trajectory', default=False)
 
@@ -63,11 +65,15 @@ if __name__ == "__main__":
     charge = np.ones(N) 
     mass = np.ones(N)
     # #掺杂同位素离子
-    # mass[:100] = 133/135
-    # mass[100:200] = 134/135
-    # mass[200:300] = 136/135
-    # mass[300:400] = 137/135
-    # mass[400:500] = 138/135
+    # 参杂离子比例为alpha
+    # 分配方案：Ba133, Ba134, Ba136, Ba137, Ba138各占alpha比例，Ba135占据剩余位置（1-5*alpha比例）
+    alpha = args.alpha
+    mass[:int(N*alpha)] = 133/135  # Ba133
+    mass[int(N*alpha):int(2*N*alpha)] = 134/135  # Ba134
+    mass[int(2*N*alpha):int(N*(1-3*alpha))] = 1.0  # Ba135（占据剩余位置）
+    mass[int(N*(1-3*alpha)):int(N*(1-3*alpha)+N*alpha)] = 136/135  # Ba136
+    mass[int(N*(1-3*alpha)+N*alpha):int(N*(1-3*alpha)+2*N*alpha)] = 137/135  # Ba137
+    mass[int(N*(1-3*alpha)+2*N*alpha):N] = 138/135  # Ba138
     t_start = args.t0
     interval = args.interval
     config_name = args.config_name
@@ -79,8 +85,8 @@ if __name__ == "__main__":
     # configure.load_from_param(V_static, V_dynamic)
     t = args.time
     if args.bilayer:
-        stdy_upper, stdy_lower, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj, bilayer=args.bilayer)
+        stdy_upper, stdy_lower, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj, bilayer=args.bilayer, save_image_path=args.save_final_image)
         print("Estimated thickness: Upper %.3f um, Lower %.3f um at time %.3f us."%(stdy_upper, stdy_lower, simu_t))
     else:
-        std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj, bilayer=args.bilayer)
+        std_y, len_z, simu_t = configure.simulation(N=N, ini_range=ini_range, mass=mass, charge=charge, step=10, interval=interval, batch=50, t=t, device=device, plotting=args.plot, t_start=t_start, config_name=config_name, save_final=args.save_final, save_traj=args.save_traj, bilayer=args.bilayer, save_image_path=args.save_final_image)
         print("Estimated thickness: %.3f um at time %.3f us."%(std_y, simu_t))

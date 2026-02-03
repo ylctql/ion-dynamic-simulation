@@ -208,7 +208,7 @@ class Configure:
         grid_V = ionsim.Grid(x, y, z, value=potential)
         return grid_V
     
-    #-------Caculate the potential----------
+    #-------Caculate the potential of Grids----------
     def pseudo_potential(self):
         V0 = self._interpret_voltage(self.V_dynamic["RF"])*self.basis.load_basis("RF")*self.ec*self.dV #此处统一使用国际单位制
         [x, y, z] = self.basis.coordinate_um   #换算成国际单位制
@@ -229,9 +229,44 @@ class Configure:
             potential_static += self.basis.load_basis(key) * self._interpret_voltage(value)
         return potential_static*self.dV
     
+    # 注意区分pseudo_potential和RF_potential，后者只是求静态的RF势场分布
+    def RF_potential(self):
+        potential_rf = 0
+        for key, value in self.V_dynamic.items():
+            potential_rf += self.basis.load_basis(key) * self._interpret_voltage(value)
+        return potential_rf*self.dV
+    
     def total_potential(self):
         return self.static_potential() + self.pseudo_potential()
      #-------End of Caculate the potential----------
+
+     #-------Caculate the potential of ions----------
+    def static_potential_ions(self, r, potential):
+        r = r/(self.dl*1e6)
+        [x, y, z] = self.basis.coordinate
+        potential_grid = ionsim.Grid(x, y, z, potential)
+        coord = potential_grid.get_coord(r)
+        Vs = potential_grid.interpolate(coord)
+        return Vs
+
+    def pseudo_potential_ions(self, r, potential):
+        r = r/(self.dl*1e6)
+        [x, y, z] = self.basis.coordinate
+        potential_grid = ionsim.Grid(x, y, z, potential)
+        coord = potential_grid.get_coord(r)
+        Vpp = potential_grid.interpolate(coord)
+        return Vpp
+    
+    def RF_potential_ions(self, r, t):
+        r = r/(self.dl*1e6)
+        t = t/(self.dt*1e6)
+        potential = self.RF_potential() #SI
+        [x, y, z] = self.basis.coordinate
+        potential_grid = ionsim.Grid(x, y, z, potential)
+        coord = potential_grid.get_coord(r)
+        Vrf = potential_grid.interpolate(coord)*self._interpret_dynamic(t)
+        return Vrf
+    #-------End of Caculate the potential of ions----------
 
     def calc_field(self) -> None:
         potential_static = 0
@@ -272,9 +307,9 @@ class Configure:
         return f
 
     def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0, 
-                   t_start: float = 0.0, config_name: str = "flat_28", save_final: bool = False, save_traj: bool = False, bilayer: bool = False) -> tuple:
+                   t_start: float = 0.0, config_name: str = "flat_28", save_final: bool = False, save_traj: bool = False, bilayer: bool = False, save_image_path: str = None) -> tuple:
         
-        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, dV=self.dV, config_name=config_name, save_traj=save_traj, isotope=self.isotope)
+        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, dV=self.dV, config_name=config_name, save_traj=save_traj, isotope=self.isotope, g=self.g)
 
         q1 = mp.Queue()
         q2 = mp.Queue(maxsize=50)
@@ -283,8 +318,8 @@ class Configure:
 
         if t_start > 0.1 and os.path.exists(status_dir+f"r/{t_start:.3f}us.npy"):
             r0 = np.load(status_dir+f"r/{t_start:.3f}us.npy")/(self.dl*1e6)    # In Status dir r is in the unit of um
-            # v0 = np.load(status_dir+f"v/{t_start:.3f}us.npy")/(self.dl/self.dt)   # In Status dir v is in the unit of m/s
-            v0 = np.zeros((N, 3))
+            v0 = np.load(status_dir+f"v/{t_start:.3f}us.npy")/(self.dl/self.dt)   # In Status dir v is in the unit of m/s
+            # v0 = np.zeros((N, 3))
             print("using stored data")
 
         else:
@@ -306,8 +341,10 @@ class Configure:
 
         f = None
         if plotting:
-            plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=200 if bilayer else 550, x_range=50 if bilayer else 100, y_range=250 if bilayer else 20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6, bilayer=bilayer)
-            f = plot.start()
+            # 如果指定了保存路径，则不实时显示，只保存最后一帧
+            show_plot = save_image_path is None
+            plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=200 if bilayer else 550, x_range=50 if bilayer else 100, y_range=250 if bilayer else 20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6, bilayer=bilayer, mass=mass, show_plot=show_plot)
+            f = plot.start(save_path=save_image_path)
             if not plot.is_alive():
                 q1.put(Message(CommandType.STOP))
                 while True:
