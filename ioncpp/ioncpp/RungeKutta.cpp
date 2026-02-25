@@ -137,18 +137,18 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 
 	//RK4
 	
-	VecType r_tmp(init_r.rows(), DIM);
-	VecType v_tmp(init_r.rows(), DIM);
+	// VecType r_tmp(init_r.rows(), DIM);
+	// VecType v_tmp(init_r.rows(), DIM);
 
-	VecType r_k1(init_r.rows(), DIM);
-	VecType r_k2(init_r.rows(), DIM);
-	VecType r_k3(init_r.rows(), DIM);
-	VecType r_k4(init_r.rows(), DIM);
+	// VecType r_k1(init_r.rows(), DIM);
+	// VecType r_k2(init_r.rows(), DIM);
+	// VecType r_k3(init_r.rows(), DIM);
+	// VecType r_k4(init_r.rows(), DIM);
 
-	VecType v_k1(init_r.rows(), DIM);
-	VecType v_k2(init_r.rows(), DIM);
-	VecType v_k3(init_r.rows(), DIM);
-	VecType v_k4(init_r.rows(), DIM);
+	// VecType v_k1(init_r.rows(), DIM);
+	// VecType v_k2(init_r.rows(), DIM);
+	// VecType v_k3(init_r.rows(), DIM);
+	// VecType v_k4(init_r.rows(), DIM);
 	
 	
 	VecType a_last(init_r.rows(), DIM);
@@ -159,67 +159,88 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		
 		// RK4
 		
-		tmp = std::chrono::steady_clock::now();
-		v_k1 = (force(r, v, t)+ CoulombInteraction(r, charge)).colwise() / mass * dt;
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k1 = v * dt;
-		r_tmp = r + r_k1 / 2.0;
-		v_tmp = v + v_k1 / 2.0;
+		// tmp = std::chrono::steady_clock::now();
+		// v_k1 = (force(r, v, t)+ CoulombInteraction(r, charge)).colwise() / mass * dt;
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k1 = v * dt;
+		// r_tmp = r + r_k1 / 2.0;
+		// v_tmp = v + v_k1 / 2.0;
 
-		tmp = std::chrono::steady_clock::now();
-		v_k2 = (force(r_tmp, v_tmp, t + dt / 2.0)+ CoulombInteraction(r_tmp, charge)).colwise() / mass * dt;
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k2 = v_tmp * dt;
-		r_tmp = r + r_k2 / 2.0;
-		v_tmp = v + v_k2 / 2.0;
+		// tmp = std::chrono::steady_clock::now();
+		// v_k2 = (force(r_tmp, v_tmp, t + dt / 2.0)+ CoulombInteraction(r_tmp, charge)).colwise() / mass * dt;
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k2 = v_tmp * dt;
+		// r_tmp = r + r_k2 / 2.0;
+		// v_tmp = v + v_k2 / 2.0;
 
-		tmp = std::chrono::steady_clock::now();
-		v_k3 = (force(r_tmp, v_tmp, t + dt / 2.0)+ CoulombInteraction(r_tmp, charge)).colwise() / mass * dt;
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k3 = v_tmp * dt;
-		r_tmp = r + r_k3;
-		v_tmp = v + v_k3;
+		// tmp = std::chrono::steady_clock::now();
+		// v_k3 = (force(r_tmp, v_tmp, t + dt / 2.0)+ CoulombInteraction(r_tmp, charge)).colwise() / mass * dt;
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k3 = v_tmp * dt;
+		// r_tmp = r + r_k3;
+		// v_tmp = v + v_k3;
 
-		tmp = std::chrono::steady_clock::now();
-		v_k4 = (force(r_tmp, v_tmp, t + dt)+ CoulombInteraction(r_tmp, charge)).colwise() / mass * dt;
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k4 = v_tmp * dt;
-		v += v_k1 / 6.0 + v_k2 / 3.0 + v_k3 / 3.0 + v_k4 / 6.0;
-		r += r_k1 / 6.0 + r_k2 / 3.0 + r_k3 / 3.0 + r_k4 / 6.0;
+		// tmp = std::chrono::steady_clock::now();
+		// v_k4 = (force(r_tmp, v_tmp, t + dt)+ CoulombInteraction(r_tmp, charge)).colwise() / mass * dt;
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k4 = v_tmp * dt;
+		// v += v_k1 / 6.0 + v_k2 / 3.0 + v_k3 / 3.0 + v_k4 / 6.0;
+		// r += r_k1 / 6.0 + r_k2 / 3.0 + r_k3 / 3.0 + r_k4 / 6.0;
 
 		//End RK4
 		
 
 		// Velocity Verlet
-		/*
-		tmp = std::chrono::steady_clock::now();
-		std::filesystem::path a_file = "../data_cache/a.bin";
-		if (!std::filesystem::exists(a_file))
-		{
-			a = (force(r, v, t) + CoulombInteraction(r, charge)).colwise() / mass;
-			saveArray(a, a_file.string());
-			r += v * dt + a * (dt * dt / 2.0);
-			v += a * dt;
-		}
-		else{
-			loadArray(a_last, a_file.string());
-			r += v * dt + a_last * (dt * dt / 2.0);
-			a = (force(r, v, t + dt) + CoulombInteraction(r, charge)).colwise() / mass;
-			saveArray(a, a_file.string());
-			v += (a + a_last) * (dt / 2.0);
-		}
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		*/
+		
+		// tmp = std::chrono::steady_clock::now();
+		// std::filesystem::path a_file = "../data_cache/a.bin";
+		// if (!std::filesystem::exists(a_file))
+		// {
+		// 	a = (force(r, v, t) + CoulombInteraction(r, charge)).colwise() / mass;
+		// 	saveArray(a, a_file.string());
+		// 	r += v * dt + a * (dt * dt / 2.0);
+		// 	v += a * dt;
+		// }
+		// else{
+		// 	loadArray(a_last, a_file.string());
+		// 	r += v * dt + a_last * (dt * dt / 2.0);
+		// 	a = (force(r, v, t + dt) + CoulombInteraction(r, charge)).colwise() / mass;
+		// 	saveArray(a, a_file.string());
+		// 	v += (a + a_last) * (dt / 2.0);
+		// }
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		
 		//End Velocity Verlet
+
+		// // 优化 Velocity Verlet
+        static VecType a_last(init_r.rows(), DIM); // 使用静态变量缓存 a_last，避免频繁分配内存
+        static bool a_last_initialized = false;   // 标记是否已初始化 a_last
+
+        if (!a_last_initialized) {
+            
+            a = (force(r, v, t) + CoulombInteraction(r, charge)).colwise() / mass;
+            a_last = a; 
+            a_last_initialized = true;
+
+            r += v * dt + a * (dt * dt / 2.0);
+            v += a * dt;
+        } else {
+            r += v * dt + a_last * (dt * dt / 2.0);
+            a = (force(r, v, t) + CoulombInteraction(r, charge)).colwise() / mass;
+            v += (a + a_last) * (dt / 2.0);
+            a_last = a;
+        }
+		// end of 优化 Velocity Verlet
+
 		r_ret.push_back(r);
 		v_ret.push_back(v);
 	}
 
 	auto end = chrono::steady_clock::now();
 
-	std::cout << "Time elapsed in CoulombInteraction: " << elapsed1.count() << "[us]" << std::endl;
-	std::cout << "Time elapsed in force callback: " << elapsed2.count() - elapsed1.count() << "[us]" << std::endl;
-	std::cout << "Time elapsed in CalcTrajRK: " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[us]" << std::endl;
+	// std::cout << "Time elapsed in CoulombInteraction: " << elapsed1.count() << "[us]" << std::endl;
+	// std::cout << "Time elapsed in force callback: " << elapsed2.count() - elapsed1.count() << "[us]" << std::endl;
+	// std::cout << "Time elapsed in CalcTrajRK: " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[us]" << std::endl;
 
 	return {r_ret, v_ret};
 }
