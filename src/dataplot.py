@@ -27,6 +27,8 @@ class CalculationBackend:
 		self.dt = dt
 		self.dl = dl
 		self.save_traj = save_traj
+		self.last_print_time_us = None  # 上次输出时间（微秒）
+		self.print_interval_us = 10.0  # 输出间隔（微秒）
 
 	def run(self, queue_out: mp.Queue, queue_in: mp.Queue):
 		"""
@@ -97,10 +99,17 @@ class CalculationBackend:
 				force
 			)
 			end = time.process_time()
-			print(f't = {t}, dt = {self.interval * self.batch}, elapsed = {end - start}')
 
 			for i in range(self.batch):
 				t += self.interval
+				# 将时间转换为微秒
+				t_us = t * self.dt * 1e6
+				
+				# 检查是否需要输出（每10us输出一次）
+				if self.last_print_time_us is None or (t_us - self.last_print_time_us) >= self.print_interval_us:
+					print(f't = {t_us:.3f}us, elapsed = {end - start:.3f}s')
+					self.last_print_time_us = t_us
+				
 				queue_out.put(Frame(
 					r_list[(i + 1) * self.step - 1],
 					v_list[(i + 1) * self.step - 1],
@@ -119,12 +128,14 @@ class CalculationBackend:
 
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, fig_num=2, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1, photos=0, target_ion=0, isotope_ratio=0):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, fig_num=2, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1, photos=0, target_ion=0, isotope_ratio=0, save_final_image=None, target_time_dt=None):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
 		:param frame_init: initial frame
 		:param interval: plotting interval. Should match data generating speed to avoid stuttering
+		:param save_final_image: path to save the final frame image
+		:param target_time_dt: target evolution time in dt units, if None then run indefinitely
 		"""
 		self.queue_in = queue_in
 		self.queue_out = queue_out
@@ -135,34 +146,40 @@ class DataPlotter:
 		self.gamma = gamma
 		self.photos = photos
 		self.isotope_ratio = isotope_ratio
+		self.save_final_image = save_final_image
+		self.target_time_dt = target_time_dt
+		self.final_frame_saved = False
 
 		colors = np.full(frame_init.r.shape[0], 'b')
 		colors[target_ion] = 'r'
 
 		if self.fig_num == 2:
-			self.fig, self.ax = plt.subplots(1, 2, figsize=(10, 5))
+			# 改为上下布局 (2, 1) 而不是 (1, 2)
+			self.fig, self.ax = plt.subplots(2, 1, figsize=(10, 10))
 
-			self.ax[0].set_xlim(-x_range+x_bias, x_range+x_bias)
+			# 第一个子图：z-y视图，横坐标z轴，纵坐标y轴
+			self.ax[0].set_xlim(-z_range+z_bias, z_range+z_bias)
 			self.ax[0].set_ylim(-y_range+y_bias, y_range+y_bias)
 			self.ax[0].set_aspect('equal')
-			self.ax[0].set_xlabel('x/um', fontsize=14)
+			self.ax[0].set_xlabel('z/um', fontsize=14)
 			self.ax[0].set_ylabel('y/um', fontsize=14)
 			self.ax[0].tick_params(axis='x', labelsize=14)
 			self.ax[0].tick_params(axis='y', labelsize=14)
 
-			self.ax[1].set_xlim(-x_range+x_bias, x_range+x_bias)
-			self.ax[1].set_ylim(-z_range+z_bias, z_range+z_bias)
+			# 第二个子图：z-x视图，横坐标z轴，纵坐标x轴
+			self.ax[1].set_xlim(-z_range+z_bias, z_range+z_bias)
+			self.ax[1].set_ylim(-x_range+x_bias, x_range+x_bias)
 			self.ax[1].set_aspect('equal')
-			self.ax[1].set_xlabel('x/um', fontsize=14)
-			self.ax[1].set_ylabel('z/um', fontsize=14)
+			self.ax[1].set_xlabel('z/um', fontsize=14)
+			self.ax[1].set_ylabel('x/um', fontsize=14)
 			self.ax[1].tick_params(axis='x', labelsize=14)
 			self.ax[1].tick_params(axis='y', labelsize=14)
 
 			# self.indices = np.arange(frame_init.r.shape[0])
 			self.artists = (
 				
-				self.ax[0].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, colors),
-				self.ax[1].scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 2]*self.dl, 50, colors),
+				self.ax[0].scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 1]*self.dl, 5, colors),
+				self.ax[1].scatter(frame_init.r[:, 2]*self.dl, frame_init.r[:, 0]*self.dl, 5, colors),
 			)
 		elif self.fig_num == 1:
 			self.fig, self.ax = plt.subplots(1, 1, figsize=(10, 5))
@@ -178,7 +195,7 @@ class DataPlotter:
 			# self.indices = np.arange(frame_init.r.shape[0])
 			
 			self.artists = (
-				self.ax.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 50, colors),
+				self.ax.scatter(frame_init.r[:, 0]*self.dl, frame_init.r[:, 1]*self.dl, 5, colors),
 			)
 			print("start time:", frame_init.timestamp*self.dt*1e6)
 		
@@ -259,9 +276,13 @@ class DataPlotter:
 		self.artists[1].set_facecolor(colors)
 
 		if self.fig_num == 2:
-			self.artists[0].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 1]*self.dl)).T)
-			self.artists[1].set_offsets(np.vstack((f.r[:, 0]*self.dl, f.r[:, 2]*self.dl)).T)
+			# 第一个子图：z-y视图（横坐标z，纵坐标y）
+			self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 1]*self.dl)).T)
+			# 第二个子图：z-x视图（横坐标z，纵坐标x）
+			self.artists[1].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
 
+			# 上下布局时，两个子图都显示标题
+			self.ax[0].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 			self.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f.timestamp,f.timestamp*self.dt), fontsize=14)
 		elif self.fig_num == 1:
 			self.artists[0].set_offsets(np.vstack((f.r[:, 2]*self.dl, f.r[:, 0]*self.dl)).T)
@@ -274,6 +295,19 @@ class DataPlotter:
 			if not os.path.exists(f"../data_cache/photos/{f.r.shape[0]:d}/{n_photo*self.photos:.10g}us.png"):
 				self.fig.savefig(f"../data_cache/photos/{f.r.shape[0]:d}/{n_photo*self.photos:.10g}us.png")
 
+		# 检查是否达到目标时间，如果是则保存图片并停止
+		if self.target_time_dt is not None and f.timestamp >= self.target_time_dt and not self.final_frame_saved:
+			if self.save_final_image is not None:
+				# 确保目录存在
+				image_dir = os.path.dirname(self.save_final_image)
+				if image_dir:  # 如果路径包含目录
+					os.makedirs(image_dir, exist_ok=True)
+				self.fig.savefig(self.save_final_image, dpi=150, bbox_inches='tight')
+				print(f"已保存最后一帧图片到: {self.save_final_image}")
+				self.final_frame_saved = True
+			# 发送停止信号
+			self.queue_out.put(Message(CommandType.STOP))
+
 		self.bm.update()
 
 		return True
@@ -284,6 +318,18 @@ class DataPlotter:
 		while True:
 			if not self.plot():
 				break
+			# 如果已经保存了最终图片，等待一下确保图片保存完成，然后退出
+			if self.final_frame_saved:
+				plt.pause(0.1)  # 短暂暂停确保图片保存完成
+				break
 			plt.pause(self.interval)
+
+		# 如果设置了保存最终图片但还没保存，保存当前帧
+		if self.save_final_image is not None and not self.final_frame_saved:
+			image_dir = os.path.dirname(self.save_final_image)
+			if image_dir:  # 如果路径包含目录
+				os.makedirs(image_dir, exist_ok=True)
+			self.fig.savefig(self.save_final_image, dpi=150, bbox_inches='tight')
+			print(f"已保存最后一帧图片到: {self.save_final_image}")
 
 		print('stopping plotter...')

@@ -5,14 +5,14 @@ import pandas as pd
 import ionsim
 from utils import *
 from dataplot import *    
-import math,csv,traceback,json
+import math,csv,traceback,json,os
 from scipy.constants import e
 from scipy.signal import savgol_filter
 import argparse
 import time
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
 filename="../../data/monolithic20241118.csv" #文件名：导入的电势场格点数据
-basis_filename="./electrode_basis_7.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
+basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
 
 Parser = argparse.ArgumentParser()
 Parser.add_argument('--N', type=int, help='number of ions', default=150)
@@ -24,6 +24,10 @@ Parser.add_argument('--photos', type=float, help='During which a photo of crysta
 Parser.add_argument('--save_final', action='store_true', help='enable saving the final configuration')
 Parser.add_argument('--save_traj', action='store_true', help='enable saving the trajectory')
 Parser.add_argument('--isotope_ratio', type=float, help='isotope ratio', default=0)
+Parser.add_argument('--alpha', type=float, help='isotope doping ratio (alias for isotope_ratio)', default=None)
+Parser.add_argument('--time', type=float, help='evolution time in microseconds', default=None)
+Parser.add_argument('--save_final_image', type=str, help='path to save the final frame image', default=None)
+Parser.add_argument('--plot', action='store_true', help='enable real-time plotting')
 Parser.add_argument('--config', type=str, help='path to config.json file', default='./config.json')
 args = Parser.parse_args()
 print("using ", filename)
@@ -34,9 +38,9 @@ charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 
 # 默认配置值（向后兼容）
-default_Vrf = 550/2
+default_Vrf = 285
 default_freq_RF = 35.28
-default_V_static = {"RF":-8, "U1":0, "U2":0, "U3":0, "U4":-1, "U5":0, "U6":0, "U7":0}
+default_V_static = {"RF":-9.2, "U1":-0.2, "U2":-0.3, "U3":-0.2, "U4":-0.2, "U5":-0.2, "U6":-0.3, "U7":-0.2}
 
 # 时间函数定义（保留原有函数以保持兼容性）
 def oscillate_RF(t):#RF场的时间函数。单位时间为dt
@@ -107,6 +111,20 @@ def create_time_function(func_config, dt_ref=None):
         # 默认返回常数1
         return lambda t: 1.0
 
+def loadConfig(fileName):#工具函数
+    try:
+        with open(fileName, 'r',encoding='utf-8') as jf:
+            config = json.load(jf)
+        return config
+    except Exception as er:
+        # print("无法加载配置文件",fileName,er)         traceback.print_stack()
+        print(traceback.format_exc())
+        return -1
+
+def saveConfig(config, fileName,):#工具函数
+    with open(fileName, mode="w+",encoding='utf-8') as jf:
+        jf.write(json.dumps(config,indent=4, ensure_ascii=False))
+
 def load_electrode_config(config_path):
     """
     从配置文件加载电极电压配置
@@ -133,28 +151,32 @@ def load_electrode_config(config_path):
         time_functions_config = config.get("time_functions", {})
         
         for key, value in dynamic_config.items():
-            if isinstance(value, dict):
-                voltage = value.get("voltage", 0)
-                func_name = value.get("time_function", "")
+            if not isinstance(value, dict):
+                print(f"警告: 动态电极 {key} 的配置格式不正确，应为字典格式，跳过")
+                continue
                 
-                # 尝试从配置中创建函数
-                if func_name in time_functions_config:
-                    func_config = time_functions_config[func_name]
-                    # 如果函数名在映射中，优先使用映射中的函数（保持兼容性）
-                    if func_name in TIME_FUNCTION_MAP:
-                        time_func = TIME_FUNCTION_MAP[func_name]
-                    else:
-                        time_func = create_time_function(func_config)
-                elif func_name in TIME_FUNCTION_MAP:
+            # 对于RF，优先使用rf_settings中的Vrf，避免冗余
+            if key == "RF":
+                voltage = Vrf  # 使用rf_settings中的Vrf
+            else:
+                voltage = value.get("voltage", 0)
+            func_name = value.get("time_function", "")
+            
+            # 尝试从配置中创建函数
+            if func_name in time_functions_config:
+                func_config = time_functions_config[func_name]
+                # 如果函数名在映射中，优先使用映射中的函数（保持兼容性）
+                if func_name in TIME_FUNCTION_MAP:
                     time_func = TIME_FUNCTION_MAP[func_name]
                 else:
-                    print(f"警告: 未找到时间函数 {func_name}，使用默认函数")
-                    time_func = lambda t: 1.0
-                
-                V_dynamic[key] = [voltage, time_func]
+                    time_func = create_time_function(func_config)
+            elif func_name in TIME_FUNCTION_MAP:
+                time_func = TIME_FUNCTION_MAP[func_name]
             else:
-                # 兼容旧格式 [voltage, function_name]
-                V_dynamic[key] = value
+                print(f"警告: 未找到时间函数 {func_name}，使用默认函数")
+                time_func = lambda t: 1.0
+            
+            V_dynamic[key] = [voltage, time_func]
         
         print(f"成功加载配置文件: {config_path}")
         return V_static, V_dynamic, Vrf, freq_RF
@@ -283,19 +305,6 @@ def gen_grids(potential_static):#工具函数
     grid_y = ionsim.Grid(x, y, z, value=fieldy)
     grid_z = ionsim.Grid(x, y, z, value=fieldz)        
     return [grid_x,grid_y,grid_z]
-def loadConfig(fileName):#工具函数
-    try:
-        with open(fileName, 'r',encoding='utf-8') as jf:
-            config = json.load(jf)
-        return config
-    except Exception as er:
-        # print("无法加载配置文件",fileName,er)         traceback.print_stack()
-        print(traceback.format_exc())
-        return -1
-
-def saveConfig(config, fileName,):#工具函数
-    with open(fileName, mode="w+",encoding='utf-8') as jf:
-        jf.write(json.dumps(config,indent=4, ensure_ascii=False))
 
 
 data_loader=Data_Loader(filename)
@@ -520,46 +529,135 @@ if __name__ == "__main__":
 
     # r0 = r0[np.lexsort([r0[:, 1], r0[:, 0], r0[:, 2]])]  #依次按z-x-y从小到大排序
     # r0 = np.loadtxt("./balance/balance.txt")/(1e6*dl) #从平衡位置开始演化
-    if args.t0 > 0.1:
-        r0 = np.load("../data_cache/status/%d/r/%.3fus.npy"%(N, args.t0))/(1e6*dl)
-        # v0 = np.load("../data_cache/status/%d/v/%.3fus.npy"%(N, args.t0))*(dt/dl)
-        v0 = np.zeros((N, 3))
-        v0[args.target_ion, 1] = 3/(dl/dt)  #初始在y方向有3m/s的速度
-    elif os.path.exists("../data_cache/req,N=%d.npy"%N):
-        # r0 = (np.random.rand(N, 3)-0.5) *ini_range
-        r0 = np.load("../data_cache/req,N=%d.npy"%N)/(1e6*dl)
-        v0 = np.zeros((N, 3))
-    else:
-        r0 = (np.random.rand(N, 3)-0.5) *ini_range
-        v0 = np.zeros((N, 3))
+    # if args.t0 > 0.1:
+    #     r0 = np.load("../data_cache/status/%d/r/%.3fus.npy"%(N, args.t0))/(1e6*dl)
+    #     # v0 = np.load("../data_cache/status/%d/v/%.3fus.npy"%(N, args.t0))*(dt/dl)
+    #     v0 = np.zeros((N, 3))
+    #     v0[args.target_ion, 1] = 3/(dl/dt)  #初始在y方向有3m/s的速度
+    # elif os.path.exists("../data_cache/req,N=%d.npy"%N):
+    #     # r0 = (np.random.rand(N, 3)-0.5) *ini_range
+    #     r0 = np.load("../data_cache/req,N=%d.npy"%N)/(1e6*dl)
+    #     v0 = np.zeros((N, 3))
+    # else:
+    r0 = (np.random.rand(N, 3)-0.5) *ini_range
+    v0 = np.zeros((N, 3))
+    r0[:, 1] *= 0.1
+    print("using y0.1 initial condition")
 
     q1 = mp.Queue()
     q2 = mp.Queue(maxsize=50)
 
-    # 设置同位素
-    isotope_ratio = args.isotope_ratio  # 五种同位素的比例
-    mass[:int(N*isotope_ratio)] = 133/135
-    mass[int(N*isotope_ratio):2*int(N*isotope_ratio)] = 134/135
-    mass[2*int(N*isotope_ratio):3*int(N*isotope_ratio)] = 136/135
-    mass[3*int(N*isotope_ratio):4*int(N*isotope_ratio)] = 137/135
-    mass[4*int(N*isotope_ratio):5*int(N*isotope_ratio)] = 138/135
+    # 设置同位素 - 优先使用--alpha参数，如果没有则使用--isotope_ratio
+    isotope_ratio = args.alpha if args.alpha is not None else args.isotope_ratio  # 五种同位素的比例
+    if isotope_ratio > 0:
+        mass[:int(N*isotope_ratio)] = 10/135
+        mass[int(N*isotope_ratio):2*int(N*isotope_ratio)] = 134/135
+        mass[2*int(N*isotope_ratio):3*int(N*isotope_ratio)] = 136/135
+        mass[3*int(N*isotope_ratio):4*int(N*isotope_ratio)] = 137/135
+        mass[4*int(N*isotope_ratio):5*int(N*isotope_ratio)] = 1000/135
+    
+    # 计算目标演化时间（单位：dt）
+    target_time_dt = None
+    if args.time is not None:
+        target_time_dt = args.t0/(dt*1e6) + args.time/(dt*1e6)  # 转换为dt单位的时间戳
+    
     q1.put(Message(CommandType.START, r0, v0, args.t0/(dt*1e6), charge, mass, force))
     q2.put(Frame(r0, v0, args.t0/(dt*1e6)))
 
-    plot = DataPlotter(q2, q1, Frame(r0, v0, args.t0/(dt*1e6)), interval=0.04, z_range=100, z_bias=0, dl=dl*1e6,dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio)
     proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)
-    
     proc.start()
-    plot.start()#True表示只画图 #False表示只输出轨迹到/traj/文件夹# "both"表示二者都做
+    
+    if args.plot:
+        # 如果指定了--plot，则实时显示画图
+        plot = DataPlotter(q2, q1, Frame(r0, v0, args.t0/(dt*1e6)), interval=0.04, x_range=100, y_range=20, z_range=200, z_bias=0, dl=dl*1e6,dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio, save_final_image=args.save_final_image, target_time_dt=target_time_dt)
+        plot.start()#True表示只画图 #False表示只输出轨迹到/traj/文件夹# "both"表示二者都做
 
-    if proc.is_alive():
-        q1.put(Message(CommandType.STOP))
+        if proc.is_alive():
+            q1.put(Message(CommandType.STOP))
+            while True:
+                f = q2.get()
+                if isinstance(f, bool) and not f:
+                    break
+                f_last = f
+            proc.join()
+    else:
+        # 如果不画图，则只从队列中读取数据直到达到目标时间
+        print("画图已禁用，仅进行计算...")
+        f_last = None
         while True:
-            f = q2.get()
-            if isinstance(f, bool) and not f:
+            if proc.is_alive():
+                try:
+                    f = q2.get(timeout=0.1)
+                    if isinstance(f, bool) and not f:
+                        break
+                    f_last = f
+                    # 检查是否达到目标时间
+                    if target_time_dt is not None and f.timestamp >= target_time_dt:
+                        print(f"已达到目标时间 {args.time}us，停止计算")
+                        q1.put(Message(CommandType.STOP))
+                        # 继续读取直到收到停止确认
+                        while True:
+                            f = q2.get()
+                            if isinstance(f, bool) and not f:
+                                break
+                            f_last = f
+                        break
+                except:
+                    continue
+            else:
+                # 进程已结束，读取剩余数据
+                while not q2.empty():
+                    f = q2.get()
+                    if isinstance(f, bool) and not f:
+                        break
+                    f_last = f
                 break
-            f_last = f
-        proc.join()
+        
+        # 如果不画图但需要保存最终图片，需要手动处理
+        if args.save_final_image is not None and f_last is not None:
+            # 创建一个临时的plotter来保存图片（使用非交互式后端）
+            import matplotlib
+            matplotlib.use('Agg')  # 使用非交互式后端，必须在导入pyplot之前
+            import matplotlib.pyplot as plt
+            # 创建一个空的队列用于plotter（不需要实际数据）
+            empty_queue = mp.Queue()
+            temp_plot = DataPlotter(empty_queue, q1, f_last, interval=0.04, x_range=100, y_range=20, z_range=200, z_bias=0, dl=dl*1e6, dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio, save_final_image=args.save_final_image, target_time_dt=None)
+            
+            # 手动更新plotter的数据（模拟plot()方法的功能）
+            N = f_last.r.shape[0]
+            colors = np.full(N, 'red', dtype=object) 
+            colors[:int(N*isotope_ratio)] = 'yellow'
+            colors[int(N*isotope_ratio):2*int(N*isotope_ratio)] = 'green'
+            colors[2*int(N*isotope_ratio):3*int(N*isotope_ratio)] = 'blue'
+            colors[3*int(N*isotope_ratio):4*int(N*isotope_ratio)] = 'purple'
+            colors[4*int(N*isotope_ratio):5*int(N*isotope_ratio)] = 'black'
+            temp_plot.artists[0].set_facecolor(colors)
+            temp_plot.artists[1].set_facecolor(colors)
+            # 第一个子图：z-y视图（横坐标z，纵坐标y）
+            temp_plot.artists[0].set_offsets(np.vstack((f_last.r[:, 2]*dl*1e6, f_last.r[:, 1]*dl*1e6)).T)
+            # 第二个子图：z-x视图（横坐标z，纵坐标x）
+            temp_plot.artists[1].set_offsets(np.vstack((f_last.r[:, 2]*dl*1e6, f_last.r[:, 0]*dl*1e6)).T)
+            temp_plot.ax[0].set_title("timestamp=%.2f, t=%.3fus"%(f_last.timestamp, f_last.timestamp*dt*1e6), fontsize=14)
+            temp_plot.ax[1].set_title("timestamp=%.2f, t=%.3fus"%(f_last.timestamp, f_last.timestamp*dt*1e6), fontsize=14)
+            
+            # 确保目录存在
+            image_dir = os.path.dirname(args.save_final_image)
+            if image_dir:  # 如果路径包含目录
+                os.makedirs(image_dir, exist_ok=True)
+            
+            # 直接保存图片
+            temp_plot.fig.savefig(args.save_final_image, dpi=150, bbox_inches='tight')
+            plt.close(temp_plot.fig)
+            print(f"已保存最后一帧图片到: {args.save_final_image}")
+        
+        if proc.is_alive():
+            q1.put(Message(CommandType.STOP))
+            while True:
+                f = q2.get()
+                if isinstance(f, bool) and not f:
+                    break
+                f_last = f
+            proc.join()
     if args.save_final:
         f = f_last
         status_dir = "../data_cache/status/"

@@ -8,25 +8,24 @@
     
     "electrode_voltages": {
         "static": {
-            "RF": -8,
-            "U1": 0,
-            "U2": 0,
-            "U3": 0,
-            "U4": -1,
-            "U5": 0,
-            "U6": 0,
-            "U7": 0
+            "RF": -9.2,
+            "U1": -0.2,
+            "U2": -0.3,
+            "U3": -0.2,
+            "U4": -0.2,
+            "U5": -0.2,
+            "U6": -0.3,
+            "U7": -0.2
         },
         "dynamic": {
             "RF": {
-                "voltage": 275,
                 "time_function": "oscillate_RF",
                 "params": {}
             }
         }
     },
     "rf_settings": {
-        "Vrf": 275,
+        "Vrf": 285,
         "freq_RF": 35.28
     },
     "time_functions": {
