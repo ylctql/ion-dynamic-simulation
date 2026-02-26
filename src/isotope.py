@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 # 获取脚本所在目录
 script_dir = os.path.dirname(os.path.abspath(__file__))
-main_script = os.path.join(script_dir, "monolithic.py")
+main_script = os.path.join(script_dir, "main.py")
 
 # 离子数列表
 ion_numbers = [500]
@@ -33,7 +33,7 @@ with tqdm(total=total_tasks, desc="总体进度", unit="任务", ncols=100) as p
             # 生成文件名，包含离子数和参杂比例信息
             # 将参杂比例转换为字符串，去掉小数点
             alpha_str = str(alpha).replace('.', '')
-            filename = f"cpu,opt_VV,flat_28.png"
+            filename = f"cpu,opt_VV,cpu_28.png"
             save_path = os.path.join(output_dir, filename)
             
             # 更新进度条描述
@@ -51,6 +51,8 @@ with tqdm(total=total_tasks, desc="总体进度", unit="任务", ncols=100) as p
                 "--N", str(N),
                 "--alpha", str(alpha),
                 "--time", "1000",  # 演化1000us
+                "--config_name", "cpu_28",
+                "--electrodes", "28",
                 "--save_final_image", save_path,  # 保存最后一帧图片
                 "--plot",
             ]

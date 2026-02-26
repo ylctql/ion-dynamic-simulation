@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iterator>
 #include <vector>
+#include <tuple>
 
 namespace ioncpp
 {
@@ -67,6 +68,22 @@ data_t Grid::interpolate(const GridCoord& coord) const
 	+ this->_value[pos + stridex + 1] * (coord.px) * (1 - coord.py) * (coord.pz)
 	+ this->_value[pos + stridey + 1] * (1 - coord.px) * (coord.py) * (coord.pz)
 	+ this->_value[pos + stridex + stridey + 1] * (coord.px) * (coord.py) * (coord.pz);
+}
+
+
+std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>> Grid::get_state() const
+{
+    return std::make_tuple(this->_grid_x, this->_grid_y, this->_grid_z, this->_value);
+}
+
+Grid Grid::from_state(const std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>>& state)
+{
+    return Grid(
+        std::get<0>(state), // _grid_x
+        std::get<1>(state), // _grid_y
+        std::get<2>(state), // _grid_z
+        std::get<3>(state)  // _value
+    );
 }
 
 

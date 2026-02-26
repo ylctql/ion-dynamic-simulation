@@ -10,6 +10,7 @@ from scipy.constants import e
 from scipy.signal import savgol_filter
 import argparse
 import time
+from configure import Configure
 flag_smoothing=True #是否对导入的电势场格点数据做平滑化，如果True，那么平滑化函数默认按照下文def smoothing(data)
 filename="../../data/monolithic20241118.csv" #文件名：导入的电势场格点数据
 basis_filename="./electrode_basis.json"#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
@@ -38,7 +39,7 @@ charge = np.ones(N) #每个离子带电荷量都是1个元电荷
 mass = np.ones(N) #每个离子质量都是1m，具体大小见下面的m
 
 # 默认配置值（向后兼容）
-default_Vrf = 285
+default_Vrf = 0
 default_freq_RF = 35.28
 default_V_static = {"RF":-9.2, "U1":-0.2, "U2":-0.3, "U3":-0.2, "U4":-0.2, "U5":-0.2, "U6":-0.3, "U7":-0.2}
 
@@ -186,8 +187,36 @@ def load_electrode_config(config_path):
         print("使用默认配置")
         return default_V_static, {"RF": [default_Vrf, oscillate_RF]}, default_Vrf, default_freq_RF
 
-# 加载电极配置
-V_static, V_dynamic, Vrf, freq_RF = load_electrode_config(args.config)
+# 加载电极配置 - 使用与ism-cuda相同的方式
+# 首先尝试从ism-cuda格式的JSON文件加载（与ism-cuda/saves/目录下的格式相同）
+config_path_ism_cuda = args.config.replace('.json', '_ism_cuda.json')
+if os.path.exists(config_path_ism_cuda):
+    # 使用ism-cuda格式的配置文件
+    print(f"使用ism-cuda格式配置文件: {config_path_ism_cuda}")
+    # 先加载物理参数（从旧配置或默认值）
+    _, _, Vrf, freq_RF = load_electrode_config(args.config)
+else:
+    # 使用旧格式配置文件，转换为ism-cuda格式
+    print(f"使用旧格式配置文件: {args.config}，转换为ism-cuda格式")
+    V_static_old, V_dynamic_old, Vrf, freq_RF = load_electrode_config(args.config)
+    # 将旧格式转换为ism-cuda格式
+    V_static_new = V_static_old.copy()
+    V_dynamic_new = {}
+    for key, value in V_dynamic_old.items():
+        if isinstance(value, list) and len(value) >= 1:
+            V_dynamic_new[key] = value[0]  # 只取电压值，时间函数由Configure类内部处理
+        else:
+            V_dynamic_new[key] = Vrf if key == "RF" else 0
+    
+    # 保存为ism-cuda格式（可选，用于后续使用）
+    config_path_ism_cuda = args.config.replace('.json', '_ism_cuda.json')
+    with open(config_path_ism_cuda, 'w', encoding='utf-8') as f:
+        json.dump({
+            "V_static": V_static_new,
+            "V_dynamic": V_dynamic_new
+        }, f, indent=4)
+    print(f"已保存ism-cuda格式配置文件: {config_path_ism_cuda}")
+
 Omega = freq_RF*2*pi*10**6 #RF射频角频率@SI
 
 epsl = 8.854*10**(-12)#真空介电常数@SI
@@ -310,18 +339,19 @@ def gen_grids(potential_static):#工具函数
 data_loader=Data_Loader(filename)
 data_loader.loadData()
 
-# 加载静电势场
-potential_static=0
-for key,value in V_static.items():
-    potential_static=potential_static+data_loader.load_basis(key)*interpret_voltage(value) #静电场直接叠加
-data_loader.grids_dc=gen_grids(potential_static)
+# 使用Configure类加载电场参数（与ism-cuda相同的方式）
+configure = Configure(basis=data_loader, g=args.g, isotope_type="Ba135")
+configure.load_from_file(config_path_ism_cuda)
+configure.calc_field(dt=dt, dl=dl, dV=dV, Omega=Omega, m=m)
 
-#加载含时动态电势场
-potential_dynamic_list=[]
-grids_dynamic_dict={}
-for key,value in V_dynamic.items():
-    potential_dynamic_list.append(data_loader.load_basis(key)*interpret_voltage(value))
-    grids_dynamic_dict[key]=[gen_grids(potential_dynamic_list[-1]),value] #含时的分开处理，时间因子不一样
+# 为了向后兼容，保留一些旧变量（但使用configure中的值）
+V_static = configure.V_static
+V_dynamic = configure.V_dynamic
+data_loader.grids_dc = configure.grids_dc
+grids_dynamic_dict = configure.grids_rf
+potential_static = sum([data_loader.load_basis(key)*configure._interpret_voltage(value) for key, value in V_static.items()])
+# 确保Vrf变量可用（从configure中获取）
+Vrf = configure._interpret_voltage(configure.V_dynamic.get("RF", Vrf))
 
 
 # calculate R^2
@@ -334,7 +364,9 @@ def R2(x,y):
 
 # Using SI
 def pseudo_potential():
-    V0 = data_loader.load_basis("RF")*interpret_voltage(Vrf)*ec*dV #此处统一使用国际单位制
+    # 从configure获取RF电压值
+    Vrf_value = configure._interpret_voltage(configure.V_dynamic.get("RF", Vrf))
+    V0 = data_loader.load_basis("RF")*Vrf_value*ec*dV #此处统一使用国际单位制
     [x, y, z] = data_loader.coordinate_um   #换算成国际单位制
     Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
     F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6
@@ -349,30 +381,8 @@ ls_label = ['x', 'y', 'z']
 Vpp_grid = gen_grids(Vp/dV)
 
 def force(r: np.ndarray, v: np.ndarray, t: float):
-    gamma = args.g
-
-    f = np.zeros_like(r)
-    mask =  data_loader.grids_dc[0].in_bounds(r)#大家都没出界吧？
-    if len( np.where(mask==False)[0] )>0:
-        print("警告出界")    
-        r = np.array([np.clip(r[:,i],bound_min[i],bound_max[i]) for i in range(3)]).T#如果出界，就按边界上的电场
-        mask =  data_loader.grids_dc[0].in_bounds(r)
-    r_mask = r[mask].copy(order='F')
-    
-
-    # inside bounds
-    coord = data_loader.grids_dc[0].get_coord(r_mask)
-    f_in = (np.vstack(tuple([grid.interpolate(coord) for grid in data_loader.grids_dc])))#静电力
-    # f_in +=  (np.vstack(tuple([grid.interpolate(coord) for grid in Vpp_grid])))#伪势能力
-    for key,value  in grids_dynamic_dict.items():
-        grids_rf=value[0]
-        fun_=value[1]
-        f_in=f_in + np.vstack(tuple([grid.interpolate(coord) for grid in grids_rf]))*interpret_dynamic(fun_,t)#加上含时的力
-    f_in=f_in.transpose()
-    f[mask] =f_in
-    # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
-    f=f-gamma*v#Doppler cooling
-    return f
+    """使用Configure类的calc_force方法（与ism-cuda相同）"""
+    return configure.calc_force(r, v, t)
 
 sa, sb, sc = np.zeros(3), np.zeros(3), np.zeros(3)
 pa, pb, pc = np.zeros(3), np.zeros(3), np.zeros(3)
@@ -503,7 +513,9 @@ def plot_2D_potential(ax_id):
     plt.show()
 
 def save_potential():
-    V0 = data_loader.load_basis("RF")*interpret_voltage(Vrf)*ec*dV #此处统一使用国际单位制
+    # 从configure获取RF电压值
+    Vrf_value = configure._interpret_voltage(configure.V_dynamic.get("RF", Vrf))
+    V0 = data_loader.load_basis("RF")*Vrf_value*ec*dV #此处统一使用国际单位制
     [x, y, z] = data_loader.coordinate_um   #换算成国际单位制
     Fx, Fy, Fz = np.gradient(-V0, x, y, z, edge_order=2)   
     F0 = np.sqrt(Fx**2 + Fy**2 + Fz**2)*1e6 #因为距离单位为um，所以梯度要乘1e6

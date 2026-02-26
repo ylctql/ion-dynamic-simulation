@@ -240,7 +240,17 @@ PYBIND11_MODULE(ionsim, m)
 	"xi"_a.noconvert(),
 	pybind11::return_value_policy::move)
 
-	.def("interpolate", pybind11::overload_cast<const Grid::GridCoord&>(&Grid::interpolate, pybind11::const_), "coord"_a);
+	.def("interpolate", pybind11::overload_cast<const Grid::GridCoord&>(&Grid::interpolate, pybind11::const_), "coord"_a)
+
+	.def(pybind11::pickle(
+        [](const Grid &g) { // __getstate__
+            return g.get_state();
+        },
+        [](std::tuple<std::vector<data_t>, std::vector<data_t>, std::vector<data_t>, std::vector<data_t>> state) { // __setstate__
+            return Grid::from_state(state);
+        }
+    ))
+	;
 
 
 
