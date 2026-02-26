@@ -123,7 +123,7 @@ class Configure:
     :param basis: Data_Loader object containing electrode potential data and basis configuration
     """
 
-    def __init__(self, basis: Data_Loader, V_static: dict = {}, V_dynamic: dict = {}, sym: bool = False, g: float = 0.001, isotope: str = "Ba135") -> None:
+    def __init__(self, basis: Data_Loader, V_static: dict = {}, V_dynamic: dict = {}, sym: bool = False, g: float = 0.001, isotope_type: str = "Ba135") -> None:
 
         self.V_static = V_static
         self.V_dynamic = V_dynamic
@@ -142,12 +142,12 @@ class Configure:
         self.dl = dl
         self.sym = sym
         self.g = g
-        self.isotope = isotope
+        self.isotope_type = isotope_type
 
     def __reduce__(self):
         return (
             self.__class__, 
-            (self.basis, self.V_static, self.V_dynamic, self.sym, self.g, self.isotope), 
+            (self.basis, self.V_static, self.V_dynamic, self.sym, self.g, self.isotope_type), 
             {"grids_dc": self.grids_dc, "grids_rf": self.grids_rf}
         )
 
@@ -309,12 +309,12 @@ class Configure:
     def simulation(self, N: int, ini_range: int, mass: np.ndarray, charge: np.ndarray, step: int, interval: int, batch: int, t: float, device: bool, plotting: bool, alpha: float = 1.0, 
                    t_start: float = 0.0, config_name: str = "flat_28", save_final: bool = False, save_traj: bool = False, bilayer: bool = False, save_image_path: str = None) -> tuple:
         
-        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, dV=self.dV, config_name=config_name, save_traj=save_traj, isotope=self.isotope, g=self.g)
+        backend = CalculationBackend(device=device, step=step, interval=interval, batch=batch, time=t/(self.dt * 1e6), dt=self.dt, dl=self.dl, dV=self.dV, config_name=config_name, save_traj=save_traj, isotope_type=self.isotope_type, g=self.g)
 
         q1 = mp.Queue()
         q2 = mp.Queue(maxsize=50)
 
-        status_dir = f"./data_cache/{N:d}/status/{config_name}/{self.isotope}/"
+        status_dir = f"./data_cache/{N:d}/status/{config_name}/{self.isotope_type}/"
 
         if t_start > 0.1 and os.path.exists(status_dir+f"r/{t_start:.3f}us.npy"):
             r0 = np.load(status_dir+f"r/{t_start:.3f}us.npy")/(self.dl*1e6)    # In Status dir r is in the unit of um
@@ -326,6 +326,7 @@ class Configure:
             r0 = (np.random.rand(N, 3)-0.5) *ini_range 
             v0 = np.zeros((N, 3))
             r0[:, 1] *= 0.1
+            print("using y0.1 initial condition")
             if bilayer:
                 r0[:N//2, 1] += 225/(self.dl*1e6)
                 r0[N//2:, 1] -= 225/(self.dl*1e6)
@@ -341,8 +342,8 @@ class Configure:
 
         f = None
         if plotting:
-            # 如果指定了保存路径，则不实时显示，只保存最后一帧
-            show_plot = save_image_path is None
+           # 启用实时绘图显示（与保存图片功能可以同时使用）
+            show_plot = plotting
             plot = DataPlotter(q2, q1, Frame(r0, v0, t_start/(self.dt*1e6)), interval=0.04, z_range=200 if bilayer else 550, x_range=50 if bilayer else 100, y_range=250 if bilayer else 20, z_bias=0, dl=self.dl*1e6,dt=self.dt*1e6, bilayer=bilayer, mass=mass, show_plot=show_plot)
             f = plot.start(save_path=save_image_path)
             if not plot.is_alive():

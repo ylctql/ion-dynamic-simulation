@@ -13,13 +13,13 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 main_script = os.path.join(script_dir, "main.py")
 
 # 离子数列表
-ion_numbers = [500, 1000, 2000]
+ion_numbers = [500]
 
 # 参杂因子列表
-doping_ratios = [0.05, 0.02, 0.01, 0.1]
+doping_ratios = [0.05]
 
 # 创建输出目录
-output_dir = os.path.join(script_dir, "../data_cache/isotope(cpu,cpu_28)")
+output_dir = os.path.join(script_dir, "../data_cache/isotope/")
 os.makedirs(output_dir, exist_ok=True)
 
 # 计算总任务数
@@ -33,7 +33,7 @@ with tqdm(total=total_tasks, desc="总体进度", unit="任务", ncols=100) as p
             # 生成文件名，包含离子数和参杂比例信息
             # 将参杂比例转换为字符串，去掉小数点
             alpha_str = str(alpha).replace('.', '')
-            filename = f"N{N}_alpha{alpha_str}.png"
+            filename = f"cpu,VV,cpu_28,y1.png"
             save_path = os.path.join(output_dir, filename)
             
             # 更新进度条描述
@@ -50,7 +50,7 @@ with tqdm(total=total_tasks, desc="总体进度", unit="任务", ncols=100) as p
                 main_script,
                 "--N", str(N),
                 "--alpha", str(alpha),
-                "--time", "1000",  # 演化1000usd
+                "--time", "1000",  # 演化1000us
                 #"--CUDA",  # 使用GPU CUDA加速
                 "--plot",  # 显示画图
                 "--config_name", "cpu_28",

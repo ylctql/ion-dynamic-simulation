@@ -16,7 +16,7 @@ Parser.add_argument('--CUDA', action='store_true', help='use CUDA for computatio
 Parser.add_argument('--plot', action='store_true', help='enable plotting')
 Parser.add_argument('--interval', type=float, help='the interval between 2 adjacent frames', default=1)
 Parser.add_argument('--g', type=float, help='cooling rate', default=0.1)
-Parser.add_argument('--isotope', type=str, help='isotope type', default="Ba135")
+Parser.add_argument('--isotope_type', type=str, help='isotope type', default="Ba135")
 Parser.add_argument('--alpha', type=float, help='doping ratio', default=0.1)
 Parser.add_argument('--save_final', action='store_true', help='enable saving the final configuration')
 Parser.add_argument('--save_traj', action='store_true', help='enable saving the trajectory')
@@ -49,9 +49,9 @@ if __name__ == "__main__":
         sym = False
         print("Bilayer...")
     elif args.electrodes == 28:
-        filename=os.path.join(dirname, "../../../data/monolithic20241118.csv") #文件名：导入的电势场格点数据
+        filename=os.path.join(dirname, "../../data/monolithic20241118.csv") #文件名：导入的电势场格点数据
         # filename=os.path.join(dirname, "../../../data/28electrodes_x60y40z1000.csv") #文件名：导入的电势场格点数据
-        basis_filename=os.path.join(dirname, "electrode_basis.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
+        basis_filename=os.path.join(dirname, "electrode_basis_28.json")#文件名：自定义Basis设置 #可以理解为一种基矢变换，比如"U1"相当于电势场组合"esbe1"*0.5+"esbe1asy"*-0.5
         sym = False
     elif args.electrodes == 60:
         # filename=os.path.join(dirname, "../../../data/60electrodes_x50y20z1000_tiny.csv")
@@ -68,18 +68,18 @@ if __name__ == "__main__":
     # 参杂离子比例为alpha
     # 分配方案：Ba133, Ba134, Ba136, Ba137, Ba138各占alpha比例，Ba135占据剩余位置（1-5*alpha比例）
     alpha = args.alpha
-    mass[:int(N*alpha)] = 133/135  # Ba133
+    mass[:int(N*alpha)] = 10/135  # Ba133
     mass[int(N*alpha):int(2*N*alpha)] = 134/135  # Ba134
     mass[int(2*N*alpha):int(N*(1-3*alpha))] = 1.0  # Ba135（占据剩余位置）
     mass[int(N*(1-3*alpha)):int(N*(1-3*alpha)+N*alpha)] = 136/135  # Ba136
     mass[int(N*(1-3*alpha)+N*alpha):int(N*(1-3*alpha)+2*N*alpha)] = 137/135  # Ba137
-    mass[int(N*(1-3*alpha)+2*N*alpha):N] = 138/135  # Ba138
+    mass[int(N*(1-3*alpha)+2*N*alpha):N] = 1000/135  # Ba138
     t_start = args.t0
     interval = args.interval
     config_name = args.config_name
     basis = Data_Loader(filename, basis_filename, flag_smoothing)
     basis.loadData()
-    configure = Configure(basis=basis, sym=sym, g=args.g, isotope=args.isotope)
+    configure = Configure(basis=basis, sym=sym, g=args.g, isotope_type=args.isotope_type)
     # configure.load_from_file(os.path.join(dirname, "../saves/saved_config_regression_0.01_1000.json"))
     configure.load_from_file(os.path.join(dirname, "../saves/%s.json"%config_name))  
     # configure.load_from_param(V_static, V_dynamic)

@@ -18,6 +18,7 @@ Desktop.ini
 
 # data_files
 *.npy
+data_cache/
 
 # =========================
 # 编辑器 / IDE 配置缓存

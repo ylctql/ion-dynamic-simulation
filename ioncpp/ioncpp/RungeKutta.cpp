@@ -243,88 +243,87 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	VecType v_k2(init_r.rows(), DIM);
 	VecType v_k3(init_r.rows(), DIM);
 	VecType v_k4(init_r.rows(), DIM);
-	
-	
-	VecType a_last(init_r.rows(), DIM);
+
+	tmp = std::chrono::steady_clock::now();
+	static VecType a_last(init_r.rows(), DIM); // 使用静态变量缓存 a_last，避免频繁分配内存
+	static bool a_last_initialized = false;   // 标记是否已初始化 a_last
 
 	for (size_t i = 0; i < step; i++)
 	{
 		double t = time_start + dt * (double)i;
-		
+		 
 		// RK4
 		
-		tmp = std::chrono::steady_clock::now();
-		if (device == CUDA) {
-			v_k1 = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass * dt;
-		} else {
-			v_k1 = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass * dt;
-		}
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k1 = v * dt;
-		r_tmp = r + r_k1 / 2.0;
-		v_tmp = v + v_k1 / 2.0;
+		// tmp = std::chrono::steady_clock::now();
+		// if (device == CUDA) {
+		// 	v_k1 = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass * dt;
+		// } else {
+		// 	v_k1 = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass * dt;
+		// }
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k1 = v * dt;
+		// r_tmp = r + r_k1 / 2.0;
+		// v_tmp = v + v_k1 / 2.0;
 
-		tmp = std::chrono::steady_clock::now();
-		if (device == CUDA) {
-			v_k2 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCuda(r_tmp, charge)).colwise() / mass * dt;
-		} else {
-			v_k2 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCpu(r_tmp, charge)).colwise() / mass * dt;
-		}
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k2 = v_tmp * dt;
-		r_tmp = r + r_k2 / 2.0;
-		v_tmp = v + v_k2 / 2.0;
+		// tmp = std::chrono::steady_clock::now();
+		// if (device == CUDA) {
+		// 	v_k2 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCuda(r_tmp, charge)).colwise() / mass * dt;
+		// } else {
+		// 	v_k2 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCpu(r_tmp, charge)).colwise() / mass * dt;
+		// }
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k2 = v_tmp * dt;
+		// r_tmp = r + r_k2 / 2.0;
+		// v_tmp = v + v_k2 / 2.0;
 
-		tmp = std::chrono::steady_clock::now();
-		if (device == CUDA) {
-			v_k3 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCuda(r_tmp, charge)).colwise() / mass * dt;
-		} else {
-			v_k3 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCpu(r_tmp, charge)).colwise() / mass * dt;
-		}
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k3 = v_tmp * dt;
-		r_tmp = r + r_k3;
-		v_tmp = v + v_k3;
+		// tmp = std::chrono::steady_clock::now();
+		// if (device == CUDA) {
+		// 	v_k3 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCuda(r_tmp, charge)).colwise() / mass * dt;
+		// } else {
+		// 	v_k3 = (force(r_tmp, v_tmp, t + dt / 2.0) + CoulombInteractionCpu(r_tmp, charge)).colwise() / mass * dt;
+		// }
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k3 = v_tmp * dt;
+		// r_tmp = r + r_k3;
+		// v_tmp = v + v_k3;
 
-		tmp = std::chrono::steady_clock::now();
-		if (device == CUDA) {
-			v_k4 = (force(r_tmp, v_tmp, t + dt) + CoulombInteractionCuda(r_tmp, charge)).colwise() / mass * dt;
-		} else {
-			v_k4 = (force(r_tmp, v_tmp, t + dt) + CoulombInteractionCpu(r_tmp, charge)).colwise() / mass * dt;
-		}
-		elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
-		r_k4 = v_tmp * dt;
-		v += v_k1 / 6.0 + v_k2 / 3.0 + v_k3 / 3.0 + v_k4 / 6.0;
-		r += r_k1 / 6.0 + r_k2 / 3.0 + r_k3 / 3.0 + r_k4 / 6.0;
-		
+		// tmp = std::chrono::steady_clock::now();
+		// if (device == CUDA) {
+		// 	v_k4 = (force(r_tmp, v_tmp, t + dt) + CoulombInteractionCuda(r_tmp, charge)).colwise() / mass * dt;
+		// } else {
+		// 	v_k4 = (force(r_tmp, v_tmp, t + dt) + CoulombInteractionCpu(r_tmp, charge)).colwise() / mass * dt;
+		// }
+		// elapsed2 += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tmp);
+		// r_k4 = v_tmp * dt;
+		// v += v_k1 / 6.0 + v_k2 / 3.0 + v_k3 / 3.0 + v_k4 / 6.0;
+		// r += r_k1 / 6.0 + r_k2 / 3.0 + r_k3 / 3.0 + r_k4 / 6.0;
+		// End of RK4
 
 		// Velocity Verlet
-		// tmp = std::chrono::steady_clock::now();
 		// // 优化 Velocity Verlet
-        // static VecType a_last(init_r.rows(), DIM); // 使用静态变量缓存 a_last，避免频繁分配内存
-        // static bool a_last_initialized = false;   // 标记是否已初始化 a_last
+		
 
-        // if (!a_last_initialized) {
-        //     if (device == CUDA) {
-        //         a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;
-        //     } else {
-        //         a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;
-        //     }
-        //     a_last = a; 
-        //     a_last_initialized = true;
+        if (!a_last_initialized) {
+            if (device == CUDA) {
+                a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;
+            } else {
+                a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;
+            }
+            a_last = a; 
+            a_last_initialized = true;
 
-        //     r += v * dt + a * (dt * dt / 2.0);
-        //     v += a * dt;
-        // } else {
-        //     r += v * dt + a_last * (dt * dt / 2.0);
-        //     if (device == CUDA) {
-        //         a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;
-        //     } else {
-        //         a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;
-        //     }
-        //     v += (a + a_last) * (dt / 2.0);
-        //     a_last = a;
-        // }
+            r += v * dt + a * (dt * dt / 2.0);
+            v += a * dt;
+        } else {
+            r += v * dt + a_last * (dt * dt / 2.0);
+            if (device == CUDA) {
+                a = (force(r, v, t) + CoulombInteractionCuda(r, charge)).colwise() / mass;
+            } else {
+                a = (force(r, v, t) + CoulombInteractionCpu(r, charge)).colwise() / mass;
+            }
+            v += (a + a_last) * (dt / 2.0);
+            a_last = a;
+        }
 		// std::cout<<"Coulomb:"<<CoulombInteractionCuda(r, charge)<<std::endl;
 		// std::cout<<"force:"<<force(r, v, t)<<std::endl;
 		// std::cout<<"total:"<<force(r, v, t)+CoulombInteractionCpu(r, charge)<<std::endl;

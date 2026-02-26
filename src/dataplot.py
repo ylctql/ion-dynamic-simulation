@@ -10,7 +10,7 @@ from utils import *
 
 # Data calculating backend
 class CalculationBackend:
-	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0, dt: float = 1.0, dl: float = 1.0, dV: float = 1.0, config_name: str = "flat_28", save_traj: bool = False, isotope: str = "Ba135", g: float = 0.1):
+	def __init__(self, step: int = 1000, interval: float = 1, batch: int = 10, time: float = np.inf, device: int = 0, dt: float = 1.0, dl: float = 1.0, dV: float = 1.0, config_name: str = "flat_28", save_traj: bool = False, isotope_type: str = "Ba135", g: float = 0.1):
 		"""
 		:param step: number of steps to calculate in an interval
 		:param interval: time interval between 2 adjacent frames
@@ -26,7 +26,7 @@ class CalculationBackend:
 		self.dV = dV
 		self.config_name = config_name
 		self.save_traj = save_traj
-		self.isotope = isotope
+		self.isotope_type = isotope_type
 		self.g = g
 
 	def run(self, queue_out: mp.Queue, queue_in: mp.Queue):
@@ -114,7 +114,7 @@ class CalculationBackend:
 				))
 				if self.save_traj:
 					coulombpotential = ionsim.calculate_coulombpotential(self.device, r_list[(i + 1) * self.step - 1], charge)*self.dV
-					traj_dir = f"./data_cache/{charge.shape[0]:d}/traj/{self.config_name}/{self.isotope}/g={self.g:.6g}/"
+					traj_dir = f"./data_cache/{charge.shape[0]:d}/traj/{self.config_name}/{self.isotope_type}/g={self.g:.6g}/"
 					if not os.path.exists(traj_dir):
 						os.makedirs(traj_dir+"r")
 						os.makedirs(traj_dir+"v")
@@ -159,7 +159,7 @@ class DataPlotter:
 		else:
 			self.mass_indices = None
 
-		self.fig = plt.figure(figsize=(30, 20))
+		self.fig = plt.figure(figsize=(10, 10))
 
 		if self.bilayer:
 			# bilayer
