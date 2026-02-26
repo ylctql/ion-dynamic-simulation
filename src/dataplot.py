@@ -128,7 +128,7 @@ class CalculationBackend:
 
 # Result Plotter
 class DataPlotter:
-	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, fig_num=2, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1, photos=0, target_ion=0, isotope_ratio=0, save_final_image=None, target_time_dt=None):
+	def __init__(self, queue_in: mp.Queue, queue_out: mp.Queue, frame_init : Frame, interval: float, fig_num=2, gamma=0.1, x_range=50, y_range=50, z_range=50, x_bias=0, y_bias=0, z_bias=0, dl=1, dt=1, photos=0, target_ion=0, isotope_ratio=0, save_final_image=None, target_time_dt=None, mass: np.ndarray | None = None):
 		"""
 		:param queue_in: input channel for data
 		:param queue_out: not used (reserved)
@@ -136,6 +136,7 @@ class DataPlotter:
 		:param interval: plotting interval. Should match data generating speed to avoid stuttering
 		:param save_final_image: path to save the final frame image
 		:param target_time_dt: target evolution time in dt units, if None then run indefinitely
+		:param mass: 离子质量数组，用于同位素颜色映射
 		"""
 		self.queue_in = queue_in
 		self.queue_out = queue_out
@@ -149,6 +150,20 @@ class DataPlotter:
 		self.save_final_image = save_final_image
 		self.target_time_dt = target_time_dt
 		self.final_frame_saved = False
+		self.mass = mass
+		
+		# 定义同位素质量映射：与monolithic.py中的mass值对应
+		# Ba133: 10/135, Ba134: 134/135, Ba135: 1.0, Ba136: 136/135, Ba137: 137/135, Ba138: 1000/135
+		self.isotope_masses = np.array([10/135, 134/135, 1.0, 136/135, 137/135, 1000/135])
+		self.isotope_colors = ['yellow', 'lime', 'red', 'blue', 'purple', 'black']
+		self.isotope_labels = ['Ba133', 'Ba134', 'Ba135', 'Ba136', 'Ba137', 'Ba138']
+		
+		# 为每个质量值找到最接近的同位素类型
+		if self.mass is not None:
+			self.mass_indices = np.array([np.argmin(np.abs(self.isotope_masses - mass_val)) 
+				for mass_val in self.mass], dtype=int)
+		else:
+			self.mass_indices = None
 
 		colors = np.full(frame_init.r.shape[0], 'b')
 		colors[target_ion] = 'r'
@@ -208,16 +223,15 @@ class DataPlotter:
 		# self.cbar = self.fig.colorbar(sm, ax=self.ax[1])
 		# self.cbar.set_label('y/um', fontsize=14)
 
-		# 同位素的颜色标记
-		isotope_labels = ['133', '134', '135', '136', '137', '138']
-		color_labels = ['yellow', 'green', 'red', 'blue', 'purple', 'black']
-		ax_legend = self.ax[0] if self.fig_num == 2 else self.ax
-		ax_legend.legend([plt.Line2D([0], [0], color=c, lw=1) for c in color_labels],
-    				isotope_labels,
-    				loc='upper right',
-    				ncol=2,
-    				frameon=False
-						)
+		# 添加同位素图例（只显示实际存在的同位素类型）
+		if self.mass is not None and self.mass_indices is not None:
+			unique_indices = np.unique(self.mass_indices)
+			legend_labels = [self.isotope_labels[idx] for idx in unique_indices]
+			legend_colors = [self.isotope_colors[idx] for idx in unique_indices]
+			if legend_labels:
+				ax_legend = self.ax[1] if self.fig_num == 2 else self.ax
+				ax_legend.legend([plt.Line2D([0], [0], color=c, marker='o', linestyle='', markersize=8) 
+					for c in legend_colors], legend_labels, loc='upper right', ncol=1, frameon=True, fontsize=12)
 
 		time.sleep(0.5)
 
@@ -264,16 +278,25 @@ class DataPlotter:
 		# sm.set_array([])  # 必须调用，否则可能报错
 		# self.cbar.update_normal(sm)
 
-		# 颜色表示同位素
+		# 颜色表示同位素 - 基于mass值匹配
 		N = f.r.shape[0]
-		colors = np.full(N, 'red', dtype=object) 
-		colors[:int(N*self.isotope_ratio)] = 'yellow'
-		colors[int(N*self.isotope_ratio):2*int(N*self.isotope_ratio)] = 'green'
-		colors[2*int(N*self.isotope_ratio):3*int(N*self.isotope_ratio)] = 'blue'
-		colors[3*int(N*self.isotope_ratio):4*int(N*self.isotope_ratio)] = 'purple'
-		colors[4*int(N*self.isotope_ratio):5*int(N*self.isotope_ratio)] = 'black'
-		self.artists[0].set_facecolor(colors)
-		self.artists[1].set_facecolor(colors)
+		if self.mass is not None and self.mass_indices is not None and len(self.mass_indices) == N:
+			# 使用mass_indices来设置颜色
+			colors = np.array([self.isotope_colors[idx] for idx in self.mass_indices])
+		else:
+			# 回退到基于isotope_ratio的旧方法（向后兼容）
+			colors = np.full(N, 'red', dtype=object) 
+			colors[:int(N*self.isotope_ratio)] = 'yellow'
+			colors[int(N*self.isotope_ratio):2*int(N*self.isotope_ratio)] = 'green'
+			colors[2*int(N*self.isotope_ratio):3*int(N*self.isotope_ratio)] = 'blue'
+			colors[3*int(N*self.isotope_ratio):4*int(N*self.isotope_ratio)] = 'purple'
+			colors[4*int(N*self.isotope_ratio):5*int(N*self.isotope_ratio)] = 'black'
+		
+		if self.fig_num == 2:
+			self.artists[0].set_facecolor(colors)
+			self.artists[1].set_facecolor(colors)
+		else:
+			self.artists[0].set_facecolor(colors)
 
 		if self.fig_num == 2:
 			# 第一个子图：z-y视图（横坐标z，纵坐标y）

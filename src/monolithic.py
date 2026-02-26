@@ -292,11 +292,22 @@ def interpret_voltage(value):#工具函数
         return  value[0]
     return value
 def interpret_dynamic(value,t):#工具函数
-    if type(value)==list:
-        for i in range(len(value)):
-            if type(value[i])==type(interpret_voltage):
-                return value[i](t,*[value[j] for j in range(i+1,len(value))])
-    return value
+    """解释动态电压的时间函数"""
+    if isinstance(value, list):
+        # 查找列表中的函数对象
+        for i, item in enumerate(value):
+            if callable(item):  # 使用 callable() 检查是否为可调用对象
+                # 调用函数，传递后续参数
+                args = value[i+1:] if i+1 < len(value) else []
+                return item(t, *args)
+        # 如果没有找到函数，返回第一个元素（通常是电压值，作为静态场）
+        return value[0] if len(value) > 0 else 1.0
+    elif callable(value):
+        # 如果 value 本身就是函数，直接调用
+        return value(t)
+    else:
+        # 如果 value 是数字，直接返回（静态场）
+        return value
 def gen_grids(potential_static):#工具函数
     [x,y,z]=data_loader.coordinate
     fieldx, fieldy, fieldz = np.gradient(-potential_static, x, y, z, edge_order=2)
@@ -373,6 +384,7 @@ def force(r: np.ndarray, v: np.ndarray, t: float):
     # outside bounds# r_nmask = r[~mask].copy(order='F')# f[~mask] = np.zeros_like(r_nmask)#一般来说这里为空
     f=f-gamma*v#Doppler cooling
     return f
+
 
 sa, sb, sc = np.zeros(3), np.zeros(3), np.zeros(3)
 pa, pb, pc = np.zeros(3), np.zeros(3), np.zeros(3)
@@ -550,11 +562,18 @@ if __name__ == "__main__":
     # 设置同位素 - 优先使用--alpha参数，如果没有则使用--isotope_ratio
     isotope_ratio = args.alpha if args.alpha is not None else args.isotope_ratio  # 五种同位素的比例
     if isotope_ratio > 0:
-        mass[:int(N*isotope_ratio)] = 10/135
-        mass[int(N*isotope_ratio):2*int(N*isotope_ratio)] = 134/135
-        mass[2*int(N*isotope_ratio):3*int(N*isotope_ratio)] = 136/135
-        mass[3*int(N*isotope_ratio):4*int(N*isotope_ratio)] = 137/135
-        mass[4*int(N*isotope_ratio):5*int(N*isotope_ratio)] = 1000/135
+        # mass[:int(N*isotope_ratio)] = 10/135
+        # mass[int(N*isotope_ratio):2*int(N*isotope_ratio)] = 134/135
+        # mass[2*int(N*isotope_ratio):3*int(N*isotope_ratio)] = 136/135
+        # mass[3*int(N*isotope_ratio):4*int(N*isotope_ratio)] = 137/135
+        # mass[4*int(N*isotope_ratio):5*int(N*isotope_ratio)] = 1000/135
+
+        mass[:int(N*isotope_ratio)] = 10/135  # Ba133
+        mass[int(N*isotope_ratio):int(2*N*isotope_ratio)] = 134/135  # Ba134
+        mass[int(2*N*isotope_ratio):int(N*(1-3*isotope_ratio))] = 1.0  # Ba135（占据剩余位置）
+        mass[int(N*(1-3*isotope_ratio)):int(N*(1-3*isotope_ratio)+N*isotope_ratio)] = 136/135  # Ba136
+        mass[int(N*(1-3*isotope_ratio)+N*isotope_ratio):int(N*(1-3*isotope_ratio)+2*N*isotope_ratio)] = 137/135  # Ba137
+        mass[int(N*(1-3*isotope_ratio)+2*N*isotope_ratio):N] = 1000/135  # Ba138
     
     # 计算目标演化时间（单位：dt）
     target_time_dt = None
@@ -569,7 +588,7 @@ if __name__ == "__main__":
     
     if args.plot:
         # 如果指定了--plot，则实时显示画图
-        plot = DataPlotter(q2, q1, Frame(r0, v0, args.t0/(dt*1e6)), interval=0.04, x_range=100, y_range=20, z_range=200, z_bias=0, dl=dl*1e6,dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio, save_final_image=args.save_final_image, target_time_dt=target_time_dt)
+        plot = DataPlotter(q2, q1, Frame(r0, v0, args.t0/(dt*1e6)), interval=0.04, x_range=100, y_range=20, z_range=200, z_bias=0, dl=dl*1e6,dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio, save_final_image=args.save_final_image, target_time_dt=target_time_dt, mass=mass)
         plot.start()#True表示只画图 #False表示只输出轨迹到/traj/文件夹# "both"表示二者都做
 
         if proc.is_alive():
@@ -621,7 +640,7 @@ if __name__ == "__main__":
             import matplotlib.pyplot as plt
             # 创建一个空的队列用于plotter（不需要实际数据）
             empty_queue = mp.Queue()
-            temp_plot = DataPlotter(empty_queue, q1, f_last, interval=0.04, x_range=100, y_range=20, z_range=200, z_bias=0, dl=dl*1e6, dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio, save_final_image=args.save_final_image, target_time_dt=None)
+            temp_plot = DataPlotter(empty_queue, q1, f_last, interval=0.04, x_range=100, y_range=20, z_range=200, z_bias=0, dl=dl*1e6, dt=dt*1e6, photos=args.photos, target_ion=args.target_ion, isotope_ratio=isotope_ratio, save_final_image=args.save_final_image, target_time_dt=None, mass=mass)
             
             # 手动更新plotter的数据（模拟plot()方法的功能）
             N = f_last.r.shape[0]

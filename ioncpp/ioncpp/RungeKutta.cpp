@@ -97,18 +97,6 @@ VecType CoulombInteraction(
 
 }
 
-void saveArray(const VecType& arr, const std::string& filename)
-	{
-		std::ofstream ofs(filename, std::ios::binary);
-		ofs.write(reinterpret_cast<const char*>(arr.data()), arr.size() * sizeof(data_t));
-	}
-
-void loadArray(VecType& arr, const std::string& filename)
-	{
-		std::ifstream ifs(filename, std::ios::binary);
-		ifs.read(reinterpret_cast<char*>(arr.data()), arr.size() * sizeof(data_t));
-	}
-
 std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	CRef<VecType>& init_r,
 	CRef<VecType>& init_v,
@@ -151,7 +139,8 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 	// VecType v_k4(init_r.rows(), DIM);
 	
 	
-	VecType a_last(init_r.rows(), DIM);
+	static VecType a_last(init_r.rows(), DIM); // 使用静态变量缓存 a_last，避免频繁分配内存
+	static bool a_last_initialized = false;   // 标记是否已初始化 a_last
 
 	for (size_t i = 0; i < step; i++)
 	{
@@ -213,8 +202,7 @@ std::pair<std::vector<VecType>, std::vector<VecType>> CalcTrajRK(
 		//End Velocity Verlet
 
 		// // 优化 Velocity Verlet
-        static VecType a_last(init_r.rows(), DIM); // 使用静态变量缓存 a_last，避免频繁分配内存
-        static bool a_last_initialized = false;   // 标记是否已初始化 a_last
+        
 
         if (!a_last_initialized) {
             
