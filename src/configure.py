@@ -333,7 +333,7 @@ class Configure:
             # r0[:-100, 2] -= 350/(self.dl*1e6) # Large crystal site
             # r0[-100:, 2] += 700/(self.dl*1e6) # Small crystal site
         
-        q1.put(Message(CommandType.START, r0, v0, t_start/(self.dt*1e6), mass, charge, self.calc_force))
+        q1.put(Message(CommandType.START, r0, v0, t_start/(self.dt*1e6), charge, mass, self.calc_force))
         q2.put(Frame(r0, v0, t_start/(self.dt*1e6)))
 
         proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)   

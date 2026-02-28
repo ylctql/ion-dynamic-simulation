@@ -297,7 +297,7 @@ if __name__ == "__main__":
     q1 = mp.Queue()
     q2 = mp.Queue(maxsize=50)
 
-    q1.put(Message(CommandType.START, r0, v0, mass, charge, force))
+    q1.put(Message(CommandType.START, r0, v0, 0, charge, mass, force))
     q2.put(Frame(r0, v0, 0))
 
     proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)   
