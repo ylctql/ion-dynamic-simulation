@@ -259,7 +259,7 @@ class Configure:
                 r0[:N//2, 1] += 225/(self.dl*1e6)
                 r0[N//2:, 1] -= 225/(self.dl*1e6)
         
-        q1.put(Message(CommandType.START, r0, v0, t_start/(self.dt*1e6), mass, charge, self.calc_force))
+        q1.put(Message(CommandType.START, r0, v0, t_start/(self.dt*1e6), charge, mass, self.calc_force))
         q2.put(Frame(r0, v0, t_start/(self.dt*1e6)))
 
         proc = mp.Process(target=backend.run, args=(q2, q1,), daemon=True)   
