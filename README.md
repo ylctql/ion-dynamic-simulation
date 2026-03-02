@@ -106,6 +106,7 @@ ism-main-v1.0/
 ├── FieldParser/       # CSV reader, field interpolation, force
 ├── ComputeKernel/     # C++ ionsim, Python backend
 ├── Plotter/           # Real-time visualization
+├── data/              # Electric field grid CSV (default: data/monolithic20241118.csv)
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```

@@ -106,6 +106,7 @@ ism-main-v1.0/
 ├── FieldParser/       # CSV 解析、场插值、外场力函数
 ├── ComputeKernel/     # C++ ionsim、Python 后端
 ├── Plotter/           # 实时绘图
+├── data/              # 电场格点 CSV（默认 data/monolithic20241118.csv）
 ├── main.py            # 入口
 └── setup_path.py      # ionsim 路径配置
 ```
