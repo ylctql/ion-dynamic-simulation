@@ -1,0 +1,49 @@
+#开发大纲
+outline.md
+
+# 构建产物
+build/
+*.so
+*.a
+*.o
+*.d
+
+#日志文件
+*.log
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+dist/
+*.manifest
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 数据与输出
+data/
+data_cache/
+*.npy
