@@ -43,6 +43,8 @@ python build.py
 
 By default CUDA is enabled when available; otherwise CPU-only. Use `--device cpu` or `--device cuda` at runtime. Force CPU-only build: `python build.py --no-cuda`.
 
+**Offline build**: Place Eigen and pybind11 in an `externals/` directory (e.g. `externals/eigen-4.3.0`, `externals/pybind11`), or use `python build.py --local /path/to/externals` to avoid network fetch.
+
 See [BUILD.md](BUILD.md) for more build options.
 
 ### 3. Run simulation
@@ -107,6 +109,7 @@ ism-main-v1.0/
 ├── ComputeKernel/     # C++ ionsim, Python backend
 ├── Plotter/           # Real-time visualization
 ├── data/              # Electric field grid CSV (default: data/monolithic20241118.csv)
+├── externals/         # Local Eigen, pybind11 (optional, for offline build)
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```

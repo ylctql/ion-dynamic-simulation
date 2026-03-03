@@ -11,6 +11,9 @@ build/
 #日志文件
 *.log
 
+# Windows 系统生成的无关文件
+*.Identifier
+
 # CMake
 CMakeCache.txt
 CMakeFiles/

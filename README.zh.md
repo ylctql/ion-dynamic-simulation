@@ -43,6 +43,8 @@ python build.py
 
 默认会尝试启用 CUDA（若已安装），不可用时自动回退为 CPU-only。构建后通过 `--device cpu` 或 `--device cuda` 选择计算设备。强制仅 CPU 构建：`python build.py --no-cuda`。
 
+**离线构建**：将 Eigen 和 pybind11 放入 `externals/` 目录（如 `externals/eigen-4.3.0`、`externals/pybind11`），或使用 `python build.py --local /path/to/externals`，可避免联网下载。
+
 更多构建选项见 [BUILD.md](BUILD.md)。
 
 ### 3. 运行
@@ -107,6 +109,7 @@ ism-main-v1.0/
 ├── ComputeKernel/     # C++ ionsim、Python 后端
 ├── Plotter/           # 实时绘图
 ├── data/              # 电场格点 CSV（默认 data/monolithic20241118.csv）
+├── externals/         # 本地 Eigen、pybind11（可选，用于离线构建）
 ├── main.py            # 入口
 └── setup_path.py      # ionsim 路径配置
 ```

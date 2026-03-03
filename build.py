@@ -29,9 +29,9 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python build.py              # 默认尝试 CUDA，不可用时回退 CPU-only
+  python build.py              # 默认尝试 CUDA；若存在 externals 则优先使用本地依赖
   python build.py --no-cuda   # 强制仅 CPU 构建
-  python build.py --local ../ism-hybrid/externals  # 使用本地依赖
+  python build.py --local DIR # 指定 externals 目录（覆盖自动检测）
 
 构建后通过 main.py 的 --device cpu 或 --device cuda 选择计算设备。
         """,
@@ -45,7 +45,7 @@ def main() -> int:
         "--local",
         type=str,
         metavar="DIR",
-        help="ism-hybrid externals 目录，用于 EIGEN_LOCAL_PATH 和 PYBIND11_LOCAL_PATH",
+        help="指定 externals 目录（覆盖自动检测，用于 EIGEN_LOCAL_PATH 和 PYBIND11_LOCAL_PATH）",
     )
     parser.add_argument(
         "--clean",
@@ -66,6 +66,14 @@ def main() -> int:
         print(f"清理 {BUILD_DIR}...")
         shutil.rmtree(BUILD_DIR)
 
+    # 确定本地依赖目录：--local 指定 > 项目根 externals 目录
+    local_base: Path | None = None
+    if args.local:
+        local_base = Path(args.local).resolve()
+    elif (_ROOT / "externals").is_dir():
+        local_base = _ROOT / "externals"
+        print(f"检测到 externals 目录，优先使用本地 pybind11 和 Eigen")
+
     # CMake 配置
     def make_cmake_args(use_cuda: bool) -> list[str]:
         args_list = [
@@ -75,16 +83,15 @@ def main() -> int:
             "-DCMAKE_BUILD_TYPE=Release",
             "-DUSE_CUDA=ON" if use_cuda else "-DUSE_CUDA=OFF",
         ]
-        if args.local:
-            local = Path(args.local).resolve()
-            for base in [local, local / "externals"]:
+        if local_base:
+            for base in [local_base, local_base / "externals"]:
                 eigen = base / "eigen-4.3.0"
                 if not eigen.exists():
                     eigen = base / "eigen"
                 if (eigen / "Eigen").exists():
                     args_list.append(f"-DEIGEN_LOCAL_PATH={eigen}")
                     break
-            for base in [local, local / "externals"]:
+            for base in [local_base, local_base / "externals"]:
                 pybind = base / "pybind11"
                 if (pybind / "CMakeLists.txt").exists():
                     args_list.append(f"-DPYBIND11_LOCAL_PATH={pybind}")

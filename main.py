@@ -70,12 +70,15 @@ def _consume_queue_until_done(
     proc: mp.Process,
     *,
     target_time_dt: float | None = None,
+    dt_si: float | None = None,
 ) -> Frame | None:
     """
     消费 queue_data 直到收到 False。
     若 target_time_dt 非 None 且某帧 timestamp >= target_time_dt，则发送 STOP 后继续消费至结束。
+    dt_si: 单位时间 (s)，提供时每 10 μs 输出 Simulation Time 日志。
     """
     f_last = None
+    last_output_time_us = -10.0  # 确保首帧可输出
     while True:
         item = _get_from_queue(queue_data, proc)
         if item is None:
@@ -83,9 +86,17 @@ def _consume_queue_until_done(
         if item is False:
             break
         f_last = item
+        if dt_si is not None:
+            time_us = f_last.timestamp * dt_si * 1e6
+            if time_us - last_output_time_us >= 10.0:
+                logger.info("Simulation Time: %.3f μs", time_us)
+                last_output_time_us = time_us
         if target_time_dt is not None and f_last.timestamp >= target_time_dt:
             queue_control.put(Message(CommandType.STOP))
-            f_last = _consume_queue_until_done(queue_data, queue_control, proc)
+            f_last = _consume_queue_until_done(
+                queue_data, queue_control, proc,
+                target_time_dt=target_time_dt, dt_si=dt_si,
+            )
             break
     return f_last
 
@@ -245,9 +256,13 @@ def run(parsed: ParsedRun) -> Frame | None:
     else:
         logger.info("绘图已禁用，仅进行计算...")
         f_last = _consume_queue_until_done(
-            queue_data, queue_control, proc, target_time_dt=target_time_dt
+            queue_data, queue_control, proc,
+            target_time_dt=target_time_dt, dt_si=cfg.dt,
         )
         proc.join()
+
+        if f_last is not None:
+            logger.info("Simulation Time: %.3f μs", f_last.timestamp * cfg.dt * 1e6)
 
         if parsed.vision.save_final_image and f_last is not None:
             _save_final_image(
