@@ -52,3 +52,6 @@ Thumbs.db
 data/
 data_cache/
 *.npy
+
+# 保存的结果
+saves/

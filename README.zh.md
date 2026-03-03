@@ -93,6 +93,8 @@ python main.py [options]
 | `--y_range` | 20 | y 方向显示半宽 (μm) |
 | `--z_range` | 200 | z 方向显示半宽 (μm) |
 | `--save_final_image` | - | 最后一帧保存路径 |
+| `--save_times_us` | - | 需保存轨迹图的时刻 (μs)，逗号分隔如 10,20,30；无窗口，仅保存图片 |
+| `--save_fig_dir` | saves/images/traj | 轨迹帧保存根目录，结构为 `{dir}/{离子数}/t{时间}us.png` |
 
 ### 环境变量
 

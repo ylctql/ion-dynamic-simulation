@@ -57,7 +57,8 @@ class DataPlotter:
         dl: float = 1.0,
         dt: float = 1.0,
         mass: np.ndarray | None = None,
-        save_fig: list[float] | None = None,
+        save_times_us: list[float] | None = None,
+        save_fig_dir: str = "saves/images/traj",
         save_final_image: str | None = None,
         target_time_dt: float | None = None,
         show_plot: bool = True,
@@ -87,8 +88,10 @@ class DataPlotter:
             单位长度、单位时间（SI）
         mass : np.ndarray
             质量，isotope 模式需要
-        save_fig : list[float] | None
-            需保存的时刻（dt 单位）；None 不保存；[] 仅保存最后一帧
+        save_times_us : list[float] | None
+            需保存的时刻（μs）；None 不保存；[] 仅保存最后一帧
+        save_fig_dir : str
+            save_times_us 保存的根目录，结构为 {save_fig_dir}/{离子数}/t{时间}us.png
         save_final_image : str | None
             最后一帧保存路径
         target_time_dt : float | None
@@ -112,7 +115,8 @@ class DataPlotter:
         self.dl = dl
         self.dt = dt
         self.mass = mass
-        self.save_fig = save_fig
+        self.save_times_us = save_times_us
+        self.save_fig_dir = save_fig_dir
         self.save_final_image = save_final_image
         self.target_time_dt = target_time_dt
         self.show_plot = show_plot
@@ -256,11 +260,15 @@ class DataPlotter:
             logger.info("Simulation Time: %.3f μs", time_us)
             self.last_output_time_us = time_us
 
-        # 保存指定时刻（save_fig 为需保存的时刻列表，dt 单位）
-        if self.save_fig is not None:
-            for t_save in self.save_fig:
-                if abs(f.timestamp - t_save) < 0.5 * self.interval:
-                    path = f"frame_t{f.timestamp*self._dt_us:.1f}us.png"
+        # 保存指定时刻（save_times_us 为需保存的时刻列表，μs）
+        if self.save_times_us is not None:
+            tolerance_us = max(0.5 * self._dt_us, 0.01)
+            for t_save_us in self.save_times_us:
+                if abs(time_us - t_save_us) < tolerance_us:
+                    n_ions = len(f.r)
+                    out_dir = os.path.join(self.save_fig_dir, str(n_ions))
+                    os.makedirs(out_dir, exist_ok=True)
+                    path = os.path.join(out_dir, f"t{time_us:.1f}us.png")
                     self.fig.savefig(path, dpi=150, bbox_inches="tight")
                     logger.info("已保存: %s", path)
                     break

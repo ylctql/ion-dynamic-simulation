@@ -18,13 +18,15 @@ class Vision:
     """
 
     # ----- 保存选项 -----
-    save_fig: list[float] | None = None
+    save_times_us: list[float] | None = None
     """
-    需保存的时刻（dt 单位）
+    需保存轨迹图的时刻（国际单位制，μs）
     - None: 不保存
     - []: 仅保存最后一帧
-    - [t1, t2, ...]: 保存指定时刻的帧
+    - [t1, t2, ...]: 在指定时刻（μs）保存帧，如 [10.0, 50.0, 100.0]
     """
+    save_fig_dir: str = "saves/images/traj"
+    """save_times_us 保存的根目录，结构为 {save_fig_dir}/{离子数}/t{时间}us.png"""
 
     # ----- 绘图开关与视角 -----
     plot_fig: list[PlotFig] | None = field(default_factory=lambda: ["zoy", "zox"])
@@ -34,6 +36,8 @@ class Vision:
     - ["zoy", "zox"]: 两子图，z-y 与 z-x 视图
     - ["xoy"], ["zox"] 等: 单子图
     """
+    show_plot: bool | None = None
+    """是否弹出窗口实时显示；None 时由 plot_fig 推导（plot_fig 非空则为 True）"""
 
     # ----- 离子显示 -----
     ion_size: float = 5.0  # 散点大小
@@ -74,11 +78,12 @@ class Vision:
             "x0_plot": self.x0_plot,
             "y0_plot": self.y0_plot,
             "z0_plot": self.z0_plot,
-            "save_fig": self.save_fig,
+            "save_times_us": self.save_times_us,
+            "save_fig_dir": self.save_fig_dir,
             "save_final_image": self.save_final_image,
             "interval": self.plot_interval,
             "dl": dl,
             "dt": dt,
             "mass": mass,
-            "show_plot": self.plot_fig is not None,
+            "show_plot": self.show_plot if self.show_plot is not None else (self.plot_fig is not None),
         }

@@ -240,6 +240,9 @@ def run(parsed: ParsedRun) -> Frame | None:
     if parsed.vision.plot_fig is not None:
         plotter_kwargs = parsed.vision.to_dataplot_kwargs(cfg.dl, cfg.dt, mass)
         plotter_kwargs["target_time_dt"] = target_time_dt
+        if not plotter_kwargs.get("show_plot", True):
+            import matplotlib
+            matplotlib.use("Agg")
         plotter = DataPlotter(
             queue_data,
             queue_control,

@@ -85,6 +85,18 @@ def create_parser() -> argparse.ArgumentParser:
         help="电极电压配置 JSON 路径，默认 FieldConfiguration/default.json，可设 ISM_DEFAULT_CONFIG 覆盖",
     )
     parser.add_argument("--save_final_image", type=str, default=None, help="最后一帧保存路径")
+    parser.add_argument(
+        "--save_times_us",
+        type=str,
+        default=None,
+        help="需保存轨迹图的时刻 (μs)，逗号分隔如 10,20,30；无窗口，仅保存图片",
+    )
+    parser.add_argument(
+        "--save_fig_dir",
+        type=str,
+        default="saves/images/traj",
+        help="轨迹帧保存根目录，结构为 {dir}/{离子数}/t{时间}us.png",
+    )
     # 绘图选项
     parser.add_argument(
         "--color_mode",
@@ -201,17 +213,34 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         filtered = [v for v in raw if v in valid_views] or ["zoy", "zox"]
         plot_fig = cast(list[PlotFig], filtered)
     else:
-        plot_fig = cast(list[PlotFig], ["zoy", "zox"]) if args.plot else None
+        # save_times_us 需 plotter 才能保存，指定时启用 plot_fig（无窗口模式）
+        plot_fig = cast(list[PlotFig], ["zoy", "zox"]) if (args.plot or args.save_times_us) else None
 
-    # 7. 构建 Vision
+    # show_plot：仅 --plot 时弹窗；仅 save_times_us 时无窗口
+    show_plot = args.plot
+
+    # 7. 解析 save_times_us
+    save_times_us: list[float] | None = None
+    if args.save_times_us:
+        try:
+            save_times_us = [float(s.strip()) for s in args.save_times_us.split(",") if s.strip()]
+        except ValueError:
+            raise ValueError(
+                f"--save_times_us 须为逗号分隔的浮点数，如 10,20,30，当前: {args.save_times_us!r}"
+            ) from None
+
+    # 8. 构建 Vision
     vision = Vision(
         plot_fig=plot_fig,
+        show_plot=show_plot if plot_fig is not None else None,
         color_mode=color_mode,
         ion_size=args.ion_size,
         xm_plot=args.x_range,
         ym_plot=args.y_range,
         zm_plot=args.z_range,
         save_final_image=args.save_final_image,
+        save_times_us=save_times_us,
+        save_fig_dir=args.save_fig_dir,
     )
 
     return ParsedRun(
