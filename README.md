@@ -65,7 +65,7 @@ python main.py [options]
 |--------|---------|-------------|
 | `--N` | 50 | Number of ions |
 | `--t0` | 0 | Start time (μs) |
-| `--time` | ∞ | Simulation duration (μs); omit for infinite |
+| `--time` | ∞ | Duration to run from t0 (μs); omit for infinite |
 | `--alpha` | 0 | Isotope doping ratio |
 | `--device` | cpu | Compute device: cpu / cuda |
 | `--calc_method` | VV | Integration method: RK4 / VV |
@@ -79,7 +79,7 @@ python main.py [options]
 |--------|---------|-------------|
 | `--csv` | data/monolithic20241118.csv | Electric field grid CSV path |
 | `--config` | FieldConfiguration/default.json | Electrode voltage config JSON |
-| `--init_file` | - | Path to .npz with initial r0/v0; must contain 'r'(μm), 'v'(m/s), shape (N,3) |
+| `--init_file` | - | Path to .npz with initial r0/v0; must contain 'r'(μm), 'v'(m/s), shape (N,3); if filename is t{time}us.npz, evolution starts from that time |
 
 ### Plotting
 
@@ -95,6 +95,8 @@ python main.py [options]
 | `--save_final_image` | - | Path to save the last frame |
 | `--save_times_us` | - | Times (μs) to save trajectory frames, comma-separated e.g. 10,20,30; headless, no live window |
 | `--save_fig_dir` | saves/images/traj | Root dir for trajectory frames; structure: `{dir}/{n_ions}/t{time}us.png` |
+| `--save_rv_traj_dir` [DIR] | - | Save r/v at save_times_us to DIR; default saves/rv/traj when specified without value; requires --save_times_us |
+| `--save_rv_status_dir` [DIR] | - | Save last-frame r/v to DIR; default saves/rv/status when specified without value; named by timestamp |
 
 ### Environment Variables
 

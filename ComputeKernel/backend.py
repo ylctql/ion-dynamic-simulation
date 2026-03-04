@@ -5,7 +5,9 @@ Python 后端计算接口
 """
 import multiprocessing as mp
 import os
+import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Callable
 
@@ -97,7 +99,7 @@ class CalculationBackend:
         batch : int
             每次计算输出的帧数
         time : float
-            总模拟时间 (dt 单位)，np.inf 表示无限
+            演化结束时间 (dt 单位)，达到后停止；np.inf 表示无限
         device : str
             "cpu" 或 "cuda"
         calc_method : str
@@ -132,6 +134,19 @@ class CalculationBackend:
         queue_control : mp.Queue
             控制通道，接收 Message
         """
+        try:
+            self._run_impl(queue_data, queue_control)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            raise
+
+    def _run_impl(
+        self,
+        queue_data: mp.Queue,
+        queue_control: mp.Queue,
+    ) -> None:
+        """后端主循环实现"""
         # 等待 START 信号
         m: Message = queue_control.get()
         while m.command != CommandType.START:

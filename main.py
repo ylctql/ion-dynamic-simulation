@@ -57,9 +57,15 @@ def _get_from_queue(
         return queue_data.get(timeout=_QUEUE_GET_TIMEOUT)
     except queue.Empty:
         if not proc.is_alive():
-            exitcode = proc.exitcode or -1
+            exitcode = proc.exitcode if proc.exitcode is not None else -1
+            hint = ""
+            if exitcode == -1:
+                hint = "（可能为 C++ 段错误或信号终止）可尝试：SKIP_FORCE_CALLBACK=1 排除 force 回调；python -X faulthandler main.py 定位崩溃点"
+            elif exitcode < 0:
+                sig = -exitcode
+                hint = f"（可能被信号 {sig} 终止）"
             raise RuntimeError(
-                f"Backend 子进程异常退出 (exitcode={exitcode})，请检查上述错误信息"
+                f"Backend 子进程异常退出 (exitcode={exitcode})，请检查上述错误信息。{hint}"
             ) from None
         return None  # 超时但进程存活，调用方需重试
 
@@ -150,11 +156,13 @@ def _create_backend_and_start(
     queue_control = mp.Queue()
     queue_data = mp.Queue(maxsize=50)
 
+    # time 为演化结束时间 (dt 单位)，= t0 + duration，使 --time 表示从 t0 起继续运行的时长
+    time_end_dt = t0 + duration if np.isfinite(duration) else np.inf
     backend = CalculationBackend(
         step=parsed.step,
         interval=parsed.interval,
         batch=parsed.batch,
-        time=duration,
+        time=time_end_dt,
         device=p.device,
         calc_method=p.calc_method,
         dt=cfg.dt,
@@ -174,6 +182,20 @@ def _create_backend_and_start(
     return proc, frame_init, queue_control, queue_data
 
 
+def _save_rv_only(vision: Vision, f_last: Frame, cfg) -> None:
+    """仅保存 r/v 数据（无绘图），用于无 plotter 时最后一帧，以时间命名"""
+    if not vision.save_rv_status_dir:
+        return
+    r_um = np.asarray(f_last.r, dtype=np.float64) * cfg.dl * 1e6
+    v_m_s = np.asarray(f_last.v, dtype=np.float64) * cfg.dl / cfg.dt
+    time_us = f_last.timestamp * cfg.dt * 1e6
+    dir_path = os.path.join(vision.save_rv_status_dir, str(len(f_last.r)))
+    os.makedirs(dir_path, exist_ok=True)
+    path = os.path.join(dir_path, f"t{time_us:.1f}us.npz")
+    np.savez(path, r=r_um, v=v_m_s)
+    logger.info("已保存 r/v: %s", path)
+
+
 def _save_final_image(
     vision: Vision,
     f_last: Frame,
@@ -182,7 +204,7 @@ def _save_final_image(
     cfg,
     mass: np.ndarray,
 ) -> None:
-    """保存最后一帧到 vision.save_final_image"""
+    """保存最后一帧到 vision.save_final_image，若 save_rv_final 则同时保存 r/v"""
     save_path = vision.save_final_image
     if not save_path:
         return
@@ -200,6 +222,9 @@ def _save_final_image(
         bbox_inches="tight",
     )
     logger.info("已保存最后一帧: %s", save_path)
+    if vision.save_rv_status_dir:
+        time_us = f_last.timestamp * cfg.dt * 1e6
+        plotter._save_rv(f_last, len(f_last.r), vision.save_rv_status_dir, f"t{time_us:.1f}us")
 
 
 def run(parsed: ParsedRun) -> Frame | None:
@@ -271,6 +296,8 @@ def run(parsed: ParsedRun) -> Frame | None:
             _save_final_image(
                 parsed.vision, f_last, queue_data, queue_control, cfg, mass
             )
+        elif parsed.vision.save_rv_status_dir and f_last is not None:
+            _save_rv_only(parsed.vision, f_last, cfg)
 
         _drain_queue_after_stop(queue_data, queue_control, proc)
         proc.join()

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -46,7 +47,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="离子阱动力学模拟")
     parser.add_argument("--N", type=int, default=50, help="离子数")
     parser.add_argument("--t0", type=float, default=0.0, help="起始时间 (μs)")
-    parser.add_argument("--time", type=float, default=None, help="演化时间 (μs)，默认无限")
+    parser.add_argument("--time", type=float, default=None, help="从 t0 起继续运行的时长 (μs)，默认无限")
     parser.add_argument("--plot", action="store_true", help="启用实时绘图")
     parser.add_argument("--interval", type=float, default=1.0, help="帧间隔 (dt 单位)")
     parser.add_argument("--step", type=int, default=10, help="每帧积分步数")
@@ -96,6 +97,24 @@ def create_parser() -> argparse.ArgumentParser:
         type=str,
         default="saves/images/traj",
         help="轨迹帧保存根目录，结构为 {dir}/{离子数}/t{时间}us.png",
+    )
+    parser.add_argument(
+        "--save_rv_traj_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        const="saves/rv/traj",
+        metavar="DIR",
+        help="指定时刻 r/v 保存根目录；指定但未传参时默认 saves/rv/traj；需 --save_times_us；不指定则不保存",
+    )
+    parser.add_argument(
+        "--save_rv_status_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        const="saves/rv/status",
+        metavar="DIR",
+        help="最后一帧 r/v 保存根目录；指定但未传参时默认 saves/rv/status；不指定则不保存",
     )
     # 绘图选项
     parser.add_argument(
@@ -164,6 +183,14 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         params.r0 = (r_um * 1e-6 / cfg.dl).astype(float, order="C")
         params.v0 = (v_si * cfg.dt / cfg.dl).astype(float, order="C")
 
+        # 若文件名以时间命名（如 t10.0us.npz），则用该时间作为演化起点；否则沿用 --t0
+        m = re.match(r"t(\d+(?:\.\d+)?)us\.npz$", init_path.name, re.IGNORECASE)
+        if m is not None:
+            t0_us = float(m.group(1))
+            params.t0 = t0_us / (cfg.dt * 1e6)
+            logger.info("init_file 以时间命名，演化起点设为 t0 = %.3f μs", t0_us)
+        # 否则 params.t0 已由 from_argparse 根据 --t0 设置（默认 0）
+
     # 4. 构建 FieldSettings
     csv_path = args.csv or str(root / DEFAULT_CSV_PATH)
     if not Path(csv_path).is_absolute():
@@ -229,7 +256,15 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
                 f"--save_times_us 须为逗号分隔的浮点数，如 10,20,30，当前: {args.save_times_us!r}"
             ) from None
 
-    # 8. 构建 Vision
+    # 8. 解析 save_rv 相关（指定但未传参时 nargs='?' 的 const 已生效）
+    save_rv_traj_dir: str | None = (args.save_rv_traj_dir or "").strip() or None
+    if save_rv_traj_dir == "":
+        save_rv_traj_dir = None
+    save_rv_status_dir: str | None = (args.save_rv_status_dir or "").strip() or None
+    if save_rv_status_dir == "":
+        save_rv_status_dir = None
+
+    # 9. 构建 Vision
     vision = Vision(
         plot_fig=plot_fig,
         show_plot=show_plot if plot_fig is not None else None,
@@ -241,6 +276,8 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         save_final_image=args.save_final_image,
         save_times_us=save_times_us,
         save_fig_dir=args.save_fig_dir,
+        save_rv_traj_dir=save_rv_traj_dir,
+        save_rv_status_dir=save_rv_status_dir,
     )
 
     return ParsedRun(

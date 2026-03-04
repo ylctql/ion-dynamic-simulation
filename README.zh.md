@@ -65,7 +65,7 @@ python main.py [options]
 |------|------|------|
 | `--N` | 50 | 离子数量 |
 | `--t0` | 0 | 起始时间 (μs) |
-| `--time` | ∞ | 模拟时长 (μs)，不传则无限 |
+| `--time` | ∞ | 从 t0 起继续运行的时长 (μs)，不传则无限 |
 | `--alpha` | 0 | 同位素参杂比例 |
 | `--device` | cpu | 计算设备：cpu / cuda |
 | `--calc_method` | VV | 积分算法：RK4 / VV |
@@ -79,7 +79,7 @@ python main.py [options]
 |------|------|------|
 | `--csv` | data/monolithic20241118.csv | 电场格点 CSV 路径 |
 | `--config` | FieldConfiguration/default.json | 电极电压配置 JSON |
-| `--init_file` | - | 初始 r0/v0 的 .npz 文件路径，须含 'r'(μm)、'v'(m/s)，形状 (N,3) |
+| `--init_file` | - | 初始 r0/v0 的 .npz 文件路径，须含 'r'(μm)、'v'(m/s)，形状 (N,3)；若文件名为 t{时间}us.npz 则从该时刻继续演化，否则从 --t0 开始 |
 
 ### 绘图
 
@@ -95,6 +95,8 @@ python main.py [options]
 | `--save_final_image` | - | 最后一帧保存路径 |
 | `--save_times_us` | - | 需保存轨迹图的时刻 (μs)，逗号分隔如 10,20,30；无窗口，仅保存图片 |
 | `--save_fig_dir` | saves/images/traj | 轨迹帧保存根目录，结构为 `{dir}/{离子数}/t{时间}us.png` |
+| `--save_rv_traj_dir` [DIR] | - | 指定时刻 r/v 保存根目录；指定但未传参时默认 saves/rv/traj；需 --save_times_us；不指定则不保存 |
+| `--save_rv_status_dir` [DIR] | - | 最后一帧 r/v 保存根目录；指定但未传参时默认 saves/rv/status；以最后一帧时间命名；不指定则不保存 |
 
 ### 环境变量
 

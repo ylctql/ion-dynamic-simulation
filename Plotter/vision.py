@@ -28,6 +28,19 @@ class Vision:
     save_fig_dir: str = "saves/images/traj"
     """save_times_us 保存的根目录，结构为 {save_fig_dir}/{离子数}/t{时间}us.png"""
 
+    save_rv_traj_dir: str | None = None
+    """
+    指定时刻 r/v 保存根目录；None 不保存
+    指定该变量但未传参时默认 saves/rv/traj；结构为 {dir}/{离子数}/t{时间}us.npz
+    需同时设置 save_times_us
+    """
+    save_rv_status_dir: str | None = None
+    """
+    最后一帧 r/v 保存根目录；None 不保存
+    指定该变量但未传参时默认 saves/rv/status；结构为 {dir}/{离子数}/t{时间}us.npz（以最后一帧时间命名）
+    不要求保存最后一帧图片
+    """
+
     # ----- 绘图开关与视角 -----
     plot_fig: list[PlotFig] | None = field(default_factory=lambda: ["zoy", "zox"])
     """
@@ -80,6 +93,8 @@ class Vision:
             "z0_plot": self.z0_plot,
             "save_times_us": self.save_times_us,
             "save_fig_dir": self.save_fig_dir,
+            "save_rv_traj_dir": self.save_rv_traj_dir,
+            "save_rv_status_dir": self.save_rv_status_dir,
             "save_final_image": self.save_final_image,
             "interval": self.plot_interval,
             "dl": dl,

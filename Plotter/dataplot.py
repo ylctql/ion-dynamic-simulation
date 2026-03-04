@@ -59,6 +59,8 @@ class DataPlotter:
         mass: np.ndarray | None = None,
         save_times_us: list[float] | None = None,
         save_fig_dir: str = "saves/images/traj",
+        save_rv_traj_dir: str | None = None,
+        save_rv_status_dir: str | None = None,
         save_final_image: str | None = None,
         target_time_dt: float | None = None,
         show_plot: bool = True,
@@ -92,6 +94,10 @@ class DataPlotter:
             需保存的时刻（μs）；None 不保存；[] 仅保存最后一帧
         save_fig_dir : str
             save_times_us 保存的根目录，结构为 {save_fig_dir}/{离子数}/t{时间}us.png
+        save_rv_traj_dir : str | None
+            指定时刻 r/v 保存根目录
+        save_rv_status_dir : str | None
+            最后一帧 r/v 保存根目录
         save_final_image : str | None
             最后一帧保存路径
         target_time_dt : float | None
@@ -117,6 +123,8 @@ class DataPlotter:
         self.mass = mass
         self.save_times_us = save_times_us
         self.save_fig_dir = save_fig_dir
+        self.save_rv_traj_dir = save_rv_traj_dir
+        self.save_rv_status_dir = save_rv_status_dir
         self.save_final_image = save_final_image
         self.target_time_dt = target_time_dt
         self.show_plot = show_plot
@@ -196,6 +204,16 @@ class DataPlotter:
             ax.set_xlabel("z (μm)", fontsize=14)
             ax.set_ylabel("x (μm)", fontsize=14)
 
+    def _save_rv(self, f: Frame, n_ions: int, out_dir: str, basename: str) -> None:
+        """保存 r(μm)、v(m/s) 到 npz 文件"""
+        r_um = np.asarray(f.r, dtype=np.float64) * self._dl_um
+        v_m_s = np.asarray(f.v, dtype=np.float64) * self.dl / self.dt
+        dir_path = os.path.join(out_dir, str(n_ions))
+        os.makedirs(dir_path, exist_ok=True)
+        path = os.path.join(dir_path, f"{basename}.npz")
+        np.savez(path, r=r_um, v=v_m_s)
+        logger.info("已保存 r/v: %s", path)
+
     def _add_isotope_legend(self, ax) -> None:
         """添加同位素图例"""
         if self.mass_indices is None:
@@ -271,6 +289,8 @@ class DataPlotter:
                     path = os.path.join(out_dir, f"t{time_us:.1f}us.png")
                     self.fig.savefig(path, dpi=150, bbox_inches="tight")
                     logger.info("已保存: %s", path)
+                    if self.save_rv_traj_dir:
+                        self._save_rv(f, n_ions, self.save_rv_traj_dir, f"t{time_us:.1f}us")
                     break
 
         # 达到目标时间：保存最后一帧并停止
@@ -346,4 +366,7 @@ class DataPlotter:
             )
             self.fig.savefig(save_path, dpi=150, bbox_inches="tight")
             logger.info("Saved final frame to %s", save_path)
+        if self.save_rv_status_dir and f is not None:
+            time_us = f.timestamp * self._dt_us
+            self._save_rv(f, len(f.r), self.save_rv_status_dir, f"t{time_us:.1f}us")
         return f
