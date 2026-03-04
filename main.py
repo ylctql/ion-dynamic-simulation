@@ -225,10 +225,10 @@ def _save_final_image(
         bbox_inches="tight",
     )
     logger.info("已保存最后一帧: %s", save_path)
-        if vision.save_rv_status_dir:
-            time_us = f_last.timestamp * cfg.dt * 1e6
-            rv_dir = os.path.join(vision.save_rv_status_dir, device)
-            plotter._save_rv(f_last, len(f_last.r), rv_dir, f"t{time_us:.1f}us")
+    if vision.save_rv_status_dir:
+        time_us = f_last.timestamp * cfg.dt * 1e6
+        rv_dir = os.path.join(vision.save_rv_status_dir, device)
+        plotter._save_rv(f_last, len(f_last.r), rv_dir, f"t{time_us:.1f}us")
 
 
 def run(parsed: ParsedRun) -> Frame | None:
