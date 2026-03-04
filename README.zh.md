@@ -112,11 +112,39 @@ ism-main-v1.0/
 ├── FieldParser/       # CSV 解析、场插值、外场力函数
 ├── ComputeKernel/     # C++ ionsim、Python 后端
 ├── Plotter/           # 实时绘图
+├── benchmark/         # 性能测试
 ├── data/              # 电场格点 CSV（默认 data/monolithic20241118.csv）
 ├── externals/         # 本地 Eigen、pybind11（可选，用于离线构建）
 ├── main.py            # 入口
 └── setup_path.py      # ionsim 路径配置
 ```
+
+## 性能测试 (Benchmark)
+
+性能测试测量每 10 μs 的模拟耗时（每组 100 μs 取平均）。结果保存至 `benchmark/benchmark_results/`（CSV 与 PNG）。
+
+### Plot 对照（有/无 plot）
+
+使用 CUDA。对比启用与不启用实时绘图时的运行时间。
+
+```bash
+python -m benchmark.plot_compare
+```
+
+### Device 对照（CPU vs CUDA）
+
+不启用绘图。对比不同离子数下 CPU 与 CUDA 的性能。
+
+```bash
+python -m benchmark.device_compare
+```
+
+### 输出文件
+
+| 脚本 | CSV | 图表 |
+|------|-----|------|
+| `plot_compare` | `benchmark/benchmark_results/benchmark_plot_performance.csv` | `benchmark/benchmark_results/benchmark_plot_performance.png` |
+| `device_compare` | `benchmark/benchmark_results/benchmark_device_compare.csv` | `benchmark/benchmark_results/benchmark_device_compare.png` |
 
 ## 测试
 

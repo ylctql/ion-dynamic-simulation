@@ -112,11 +112,39 @@ ism-main-v1.0/
 ├── FieldParser/       # CSV reader, field interpolation, force
 ├── ComputeKernel/     # C++ ionsim, Python backend
 ├── Plotter/           # Real-time visualization
+├── benchmark/         # Performance benchmarks
 ├── data/              # Electric field grid CSV (default: data/monolithic20241118.csv)
 ├── externals/         # Local Eigen, pybind11 (optional, for offline build)
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```
+
+## Benchmark
+
+Performance benchmarks measure simulation time per 10 μs (averaged over 100 μs runs). Results are saved to `benchmark/benchmark_results/` (CSV and PNG).
+
+### Plot comparison (with vs without plot)
+
+Uses CUDA. Compares runtime with and without real-time plotting.
+
+```bash
+python -m benchmark.plot_compare
+```
+
+### Device comparison (CPU vs CUDA)
+
+No plotting. Compares CPU and CUDA performance across ion counts.
+
+```bash
+python -m benchmark.device_compare
+```
+
+### Output
+
+| Script | CSV | Figure |
+|--------|-----|--------|
+| `plot_compare` | `benchmark/benchmark_results/benchmark_plot_performance.csv` | `benchmark/benchmark_results/benchmark_plot_performance.png` |
+| `device_compare` | `benchmark/benchmark_results/benchmark_device_compare.csv` | `benchmark/benchmark_results/benchmark_device_compare.png` |
 
 ## Tests
 
