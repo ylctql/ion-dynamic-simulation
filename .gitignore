@@ -55,3 +55,6 @@ data_cache/
 
 # 保存的结果
 saves/
+
+# 性能测试结果
+benchmark_results/
