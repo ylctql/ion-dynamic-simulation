@@ -94,9 +94,9 @@ python main.py [options]
 | `--z_range` | 200 | z-axis display half-width (μm) |
 | `--save_final_image` | - | Path to save the last frame |
 | `--save_times_us` | - | Times (μs) to save trajectory frames, comma-separated e.g. 10,20,30; headless, no live window |
-| `--save_fig_dir` | saves/images/traj | Root dir for trajectory frames; structure: `{dir}/{n_ions}/t{time}us.png` |
-| `--save_rv_traj_dir` [DIR] | - | Save r/v at save_times_us to DIR; default saves/rv/traj when specified without value; requires --save_times_us |
-| `--save_rv_status_dir` [DIR] | - | Save last-frame r/v to DIR; default saves/rv/status when specified without value; named by timestamp |
+| `--save_fig_dir` | saves/images/traj | Root dir for trajectory frames; structure: `{dir}/{device}/{n_ions}/t{time}us.png` |
+| `--save_rv_traj_dir` [DIR] | - | Save r/v at save_times_us to DIR; default saves/rv/traj when specified without value; structure: `{dir}/{device}/{n_ions}/`; requires --save_times_us |
+| `--save_rv_status_dir` [DIR] | - | Save last-frame r/v to DIR; default saves/rv/status when specified without value; structure: `{dir}/{device}/{n_ions}/`; named by timestamp |
 
 ### Environment Variables
 

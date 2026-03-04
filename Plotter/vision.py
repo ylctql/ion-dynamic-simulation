@@ -26,18 +26,18 @@ class Vision:
     - [t1, t2, ...]: 在指定时刻（μs）保存帧，如 [10.0, 50.0, 100.0]
     """
     save_fig_dir: str = "saves/images/traj"
-    """save_times_us 保存的根目录，结构为 {save_fig_dir}/{离子数}/t{时间}us.png"""
+    """save_times_us 保存的根目录，结构为 {save_fig_dir}/{device}/{离子数}/t{时间}us.png"""
 
     save_rv_traj_dir: str | None = None
     """
     指定时刻 r/v 保存根目录；None 不保存
-    指定该变量但未传参时默认 saves/rv/traj；结构为 {dir}/{离子数}/t{时间}us.npz
+    指定该变量但未传参时默认 saves/rv/traj；结构为 {dir}/{device}/{离子数}/t{时间}us.npz
     需同时设置 save_times_us
     """
     save_rv_status_dir: str | None = None
     """
     最后一帧 r/v 保存根目录；None 不保存
-    指定该变量但未传参时默认 saves/rv/status；结构为 {dir}/{离子数}/t{时间}us.npz（以最后一帧时间命名）
+    指定该变量但未传参时默认 saves/rv/status；结构为 {dir}/{device}/{离子数}/t{时间}us.npz（以最后一帧时间命名）
     不要求保存最后一帧图片
     """
 

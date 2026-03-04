@@ -182,14 +182,14 @@ def _create_backend_and_start(
     return proc, frame_init, queue_control, queue_data
 
 
-def _save_rv_only(vision: Vision, f_last: Frame, cfg) -> None:
+def _save_rv_only(vision: Vision, f_last: Frame, cfg, device: str) -> None:
     """仅保存 r/v 数据（无绘图），用于无 plotter 时最后一帧，以时间命名"""
     if not vision.save_rv_status_dir:
         return
     r_um = np.asarray(f_last.r, dtype=np.float64) * cfg.dl * 1e6
     v_m_s = np.asarray(f_last.v, dtype=np.float64) * cfg.dl / cfg.dt
     time_us = f_last.timestamp * cfg.dt * 1e6
-    dir_path = os.path.join(vision.save_rv_status_dir, str(len(f_last.r)))
+    dir_path = os.path.join(vision.save_rv_status_dir, device, str(len(f_last.r)))
     os.makedirs(dir_path, exist_ok=True)
     path = os.path.join(dir_path, f"t{time_us:.1f}us.npz")
     np.savez(path, r=r_um, v=v_m_s)
@@ -203,6 +203,8 @@ def _save_final_image(
     queue_control: mp.Queue,
     cfg,
     mass: np.ndarray,
+    *,
+    device: str = "cpu",
 ) -> None:
     """保存最后一帧到 vision.save_final_image，若 save_rv_final 则同时保存 r/v"""
     save_path = vision.save_final_image
@@ -213,6 +215,7 @@ def _save_final_image(
     matplotlib.use("Agg")
     plotter_kwargs = vision.to_dataplot_kwargs(cfg.dl, cfg.dt, mass)
     plotter_kwargs["show_plot"] = False
+    plotter_kwargs["device"] = device
     plotter = DataPlotter(queue_data, queue_control, f_last, **plotter_kwargs)
     plotter.plot(frame=f_last)
     os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
@@ -222,9 +225,10 @@ def _save_final_image(
         bbox_inches="tight",
     )
     logger.info("已保存最后一帧: %s", save_path)
-    if vision.save_rv_status_dir:
-        time_us = f_last.timestamp * cfg.dt * 1e6
-        plotter._save_rv(f_last, len(f_last.r), vision.save_rv_status_dir, f"t{time_us:.1f}us")
+        if vision.save_rv_status_dir:
+            time_us = f_last.timestamp * cfg.dt * 1e6
+            rv_dir = os.path.join(vision.save_rv_status_dir, device)
+            plotter._save_rv(f_last, len(f_last.r), rv_dir, f"t{time_us:.1f}us")
 
 
 def run(parsed: ParsedRun) -> Frame | None:
@@ -265,6 +269,7 @@ def run(parsed: ParsedRun) -> Frame | None:
     if parsed.vision.plot_fig is not None:
         plotter_kwargs = parsed.vision.to_dataplot_kwargs(cfg.dl, cfg.dt, mass)
         plotter_kwargs["target_time_dt"] = target_time_dt
+        plotter_kwargs["device"] = actual_device
         if not plotter_kwargs.get("show_plot", True):
             import matplotlib
             matplotlib.use("Agg")
@@ -294,10 +299,11 @@ def run(parsed: ParsedRun) -> Frame | None:
 
         if parsed.vision.save_final_image and f_last is not None:
             _save_final_image(
-                parsed.vision, f_last, queue_data, queue_control, cfg, mass
+                parsed.vision, f_last, queue_data, queue_control, cfg, mass,
+                device=actual_device,
             )
         elif parsed.vision.save_rv_status_dir and f_last is not None:
-            _save_rv_only(parsed.vision, f_last, cfg)
+            _save_rv_only(parsed.vision, f_last, cfg, actual_device)
 
         _drain_queue_after_stop(queue_data, queue_control, proc)
         proc.join()

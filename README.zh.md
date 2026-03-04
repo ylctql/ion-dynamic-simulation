@@ -94,9 +94,9 @@ python main.py [options]
 | `--z_range` | 200 | z 方向显示半宽 (μm) |
 | `--save_final_image` | - | 最后一帧保存路径 |
 | `--save_times_us` | - | 需保存轨迹图的时刻 (μs)，逗号分隔如 10,20,30；无窗口，仅保存图片 |
-| `--save_fig_dir` | saves/images/traj | 轨迹帧保存根目录，结构为 `{dir}/{离子数}/t{时间}us.png` |
-| `--save_rv_traj_dir` [DIR] | - | 指定时刻 r/v 保存根目录；指定但未传参时默认 saves/rv/traj；需 --save_times_us；不指定则不保存 |
-| `--save_rv_status_dir` [DIR] | - | 最后一帧 r/v 保存根目录；指定但未传参时默认 saves/rv/status；以最后一帧时间命名；不指定则不保存 |
+| `--save_fig_dir` | saves/images/traj | 轨迹帧保存根目录，结构为 `{dir}/{device}/{离子数}/t{时间}us.png` |
+| `--save_rv_traj_dir` [DIR] | - | 指定时刻 r/v 保存根目录；指定但未传参时默认 saves/rv/traj；结构为 `{dir}/{device}/{离子数}/`；需 --save_times_us；不指定则不保存 |
+| `--save_rv_status_dir` [DIR] | - | 最后一帧 r/v 保存根目录；指定但未传参时默认 saves/rv/status；结构为 `{dir}/{device}/{离子数}/`；以最后一帧时间命名；不指定则不保存 |
 
 ### 环境变量
 

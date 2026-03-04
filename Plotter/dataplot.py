@@ -64,6 +64,7 @@ class DataPlotter:
         save_final_image: str | None = None,
         target_time_dt: float | None = None,
         show_plot: bool = True,
+        device: str = "cpu",
     ):
         """
         Parameters
@@ -93,7 +94,7 @@ class DataPlotter:
         save_times_us : list[float] | None
             需保存的时刻（μs）；None 不保存；[] 仅保存最后一帧
         save_fig_dir : str
-            save_times_us 保存的根目录，结构为 {save_fig_dir}/{离子数}/t{时间}us.png
+            save_times_us 保存的根目录，结构为 {save_fig_dir}/{device}/{离子数}/t{时间}us.png
         save_rv_traj_dir : str | None
             指定时刻 r/v 保存根目录
         save_rv_status_dir : str | None
@@ -125,6 +126,7 @@ class DataPlotter:
         self.save_fig_dir = save_fig_dir
         self.save_rv_traj_dir = save_rv_traj_dir
         self.save_rv_status_dir = save_rv_status_dir
+        self.device = device
         self.save_final_image = save_final_image
         self.target_time_dt = target_time_dt
         self.show_plot = show_plot
@@ -284,13 +286,14 @@ class DataPlotter:
             for t_save_us in self.save_times_us:
                 if abs(time_us - t_save_us) < tolerance_us:
                     n_ions = len(f.r)
-                    out_dir = os.path.join(self.save_fig_dir, str(n_ions))
+                    out_dir = os.path.join(self.save_fig_dir, self.device, str(n_ions))
                     os.makedirs(out_dir, exist_ok=True)
                     path = os.path.join(out_dir, f"t{time_us:.1f}us.png")
                     self.fig.savefig(path, dpi=150, bbox_inches="tight")
                     logger.info("已保存: %s", path)
                     if self.save_rv_traj_dir:
-                        self._save_rv(f, n_ions, self.save_rv_traj_dir, f"t{time_us:.1f}us")
+                        rv_dir = os.path.join(self.save_rv_traj_dir, self.device)
+                        self._save_rv(f, n_ions, rv_dir, f"t{time_us:.1f}us")
                     break
 
         # 达到目标时间：保存最后一帧并停止
@@ -368,5 +371,6 @@ class DataPlotter:
             logger.info("Saved final frame to %s", save_path)
         if self.save_rv_status_dir and f is not None:
             time_us = f.timestamp * self._dt_us
-            self._save_rv(f, len(f.r), self.save_rv_status_dir, f"t{time_us:.1f}us")
+            rv_dir = os.path.join(self.save_rv_status_dir, self.device)
+            self._save_rv(f, len(f.r), rv_dir, f"t{time_us:.1f}us")
         return f
