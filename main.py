@@ -58,6 +58,9 @@ def _get_from_queue(
     except queue.Empty:
         if not proc.is_alive():
             exitcode = proc.exitcode if proc.exitcode is not None else -1
+            if exitcode == 0:
+                # 正常退出，队列已空，drain 完成
+                return False
             hint = ""
             if exitcode == -1:
                 hint = "（可能为 C++ 段错误或信号终止）可尝试：SKIP_FORCE_CALLBACK=1 排除 force 回调；python -X faulthandler main.py 定位崩溃点"

@@ -77,8 +77,8 @@ python main.py [options]
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--csv` | data/monolithic20241118.csv | Electric field grid CSV path |
-| `--config` | FieldConfiguration/default.json | Electrode voltage config JSON |
+| `--csv` | data/monolithic20241118.csv | Electric field CSV; pass filename only (e.g. monolithic20241118.csv) to look in data/ |
+| `--config` | FieldConfiguration/default.json | Voltage config JSON; pass filename only (e.g. default.json) to look in FieldConfiguration/ |
 | `--init_file` | - | Path to .npz with initial r0/v0; must contain 'r'(μm), 'v'(m/s), shape (N,3); if filename is t{time}us.npz, evolution starts from that time |
 
 ### Plotting
@@ -101,6 +101,7 @@ python main.py [options]
 ### Environment Variables
 
 - `ISM_DEFAULT_CONFIG`, `ISM_DEFAULT_CSV`: Override default config paths
+- `ISM_DEFAULT_SAVE_FIG_DIR`: Override default save_fig_dir (saves/images/traj)
 - `ISM_LOG_LEVEL`: Log level (DEBUG / INFO / WARNING / ERROR)
 
 ## Project Structure

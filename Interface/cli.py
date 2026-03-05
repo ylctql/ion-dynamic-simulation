@@ -21,9 +21,13 @@ from Plotter.vision import PlotFig, Vision
 
 logger = logging.getLogger(__name__)
 
-# 默认路径，可通过环境变量 ISM_DEFAULT_CONFIG / ISM_DEFAULT_CSV 覆盖
+# 默认路径，可通过环境变量覆盖
 DEFAULT_CONFIG_PATH = os.environ.get("ISM_DEFAULT_CONFIG", "FieldConfiguration/default.json")
 DEFAULT_CSV_PATH = os.environ.get("ISM_DEFAULT_CSV", "data/monolithic20241118.csv")
+DEFAULT_SAVE_FIG_DIR = os.environ.get("ISM_DEFAULT_SAVE_FIG_DIR", "saves/images/traj")
+# 仅传文件名时使用的默认目录（写死，便于日常只传文件名）
+DEFAULT_CSV_DIR = "data"
+DEFAULT_CONFIG_DIR = "FieldConfiguration"
 
 if TYPE_CHECKING:
     from Interface.parameters import Parameters
@@ -77,13 +81,13 @@ def create_parser() -> argparse.ArgumentParser:
         "--csv",
         type=str,
         default="",
-        help="电场 CSV 路径，默认 data/monolithic20241118.csv，可设 ISM_DEFAULT_CSV 覆盖",
+        help="电场 CSV；可仅传文件名(如 monolithic20241118.csv)则自动在 data/ 下查找；可设 ISM_DEFAULT_CSV 覆盖默认",
     )
     parser.add_argument(
         "--config",
         type=str,
         default="",
-        help="电极电压配置 JSON 路径，默认 FieldConfiguration/default.json，可设 ISM_DEFAULT_CONFIG 覆盖",
+        help="电极电压 JSON；可仅传文件名(如 default.json)则自动在 FieldConfiguration/ 下查找；可设 ISM_DEFAULT_CONFIG 覆盖默认",
     )
     parser.add_argument("--save_final_image", type=str, default=None, help="最后一帧保存路径")
     parser.add_argument(
@@ -95,8 +99,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--save_fig_dir",
         type=str,
-        default="saves/images/traj",
-        help="轨迹帧保存根目录，结构为 {dir}/{离子数}/t{时间}us.png",
+        default="",
+        help="轨迹帧保存根目录，结构为 {dir}/{离子数}/t{时间}us.png；可设 ISM_DEFAULT_SAVE_FIG_DIR 覆盖默认",
     )
     parser.add_argument(
         "--save_rv_traj_dir",
@@ -141,10 +145,16 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
     """
     根据 args 构造 Parameters、FieldSettings、Vision，并返回 ParsedRun。
     """
-    # 1. 解析路径并加载配置
-    config_path = args.config or str(root / DEFAULT_CONFIG_PATH)
-    if not Path(config_path).is_absolute():
-        config_path = str(root / config_path)
+    # 1. 解析路径并加载配置（仅传文件名时用默认目录）
+    def _resolve_path(arg: str, default_full: str, default_dir: str) -> str:
+        if not arg:
+            return str(root / default_full)
+        p = Path(arg)
+        if not p.is_absolute() and "/" not in arg and "\\" not in arg:
+            return str(root / default_dir / arg)
+        return str(root / arg) if not p.is_absolute() else arg
+
+    config_path = _resolve_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
     cfg, _ = init_from_config(config_path)
 
     # 2. 构建 Parameters
@@ -192,9 +202,7 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         # 否则 params.t0 已由 from_argparse 根据 --t0 设置（默认 0）
 
     # 4. 构建 FieldSettings
-    csv_path = args.csv or str(root / DEFAULT_CSV_PATH)
-    if not Path(csv_path).is_absolute():
-        csv_path = str(root / csv_path)
+    csv_path = _resolve_path(args.csv, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
     csv_exists = Path(csv_path).exists()
 
     if csv_exists:
@@ -256,7 +264,10 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
                 f"--save_times_us 须为逗号分隔的浮点数，如 10,20,30，当前: {args.save_times_us!r}"
             ) from None
 
-    # 8. 解析 save_rv 相关（指定但未传参时 nargs='?' 的 const 已生效）
+    # 8. 解析 save_fig_dir（未指定时用环境变量或默认）
+    save_fig_dir = args.save_fig_dir or DEFAULT_SAVE_FIG_DIR
+
+    # 9. 解析 save_rv 相关（指定但未传参时 nargs='?' 的 const 已生效）
     save_rv_traj_dir: str | None = (args.save_rv_traj_dir or "").strip() or None
     if save_rv_traj_dir == "":
         save_rv_traj_dir = None
@@ -264,7 +275,7 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
     if save_rv_status_dir == "":
         save_rv_status_dir = None
 
-    # 9. 构建 Vision
+    # 10. 构建 Vision
     vision = Vision(
         plot_fig=plot_fig,
         show_plot=show_plot if plot_fig is not None else None,
@@ -275,7 +286,7 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         zm_plot=args.z_range,
         save_final_image=args.save_final_image,
         save_times_us=save_times_us,
-        save_fig_dir=args.save_fig_dir,
+        save_fig_dir=save_fig_dir,
         save_rv_traj_dir=save_rv_traj_dir,
         save_rv_status_dir=save_rv_status_dir,
     )

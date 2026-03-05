@@ -77,8 +77,8 @@ python main.py [options]
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--csv` | data/monolithic20241118.csv | 电场格点 CSV 路径 |
-| `--config` | FieldConfiguration/default.json | 电极电压配置 JSON |
+| `--csv` | data/monolithic20241118.csv | 电场 CSV；可仅传文件名(如 monolithic20241118.csv)，自动在 data/ 下查找 |
+| `--config` | FieldConfiguration/default.json | 电极电压 JSON；可仅传文件名(如 default.json)，自动在 FieldConfiguration/ 下查找 |
 | `--init_file` | - | 初始 r0/v0 的 .npz 文件路径，须含 'r'(μm)、'v'(m/s)，形状 (N,3)；若文件名为 t{时间}us.npz 则从该时刻继续演化，否则从 --t0 开始 |
 
 ### 绘图
@@ -101,6 +101,7 @@ python main.py [options]
 ### 环境变量
 
 - `ISM_DEFAULT_CONFIG`、`ISM_DEFAULT_CSV`：覆盖默认配置路径
+- `ISM_DEFAULT_SAVE_FIG_DIR`：覆盖 save_fig_dir 默认值（saves/images/traj）
 - `ISM_LOG_LEVEL`：日志级别，DEBUG / INFO / WARNING / ERROR
 
 ## 项目结构
