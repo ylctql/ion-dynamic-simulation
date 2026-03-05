@@ -12,6 +12,7 @@ Ion trap dynamics simulation with modular architecture. Simulates ion crystal dy
 - **RK4 & Velocity Verlet**: Configurable integration methods
 - **CPU / CUDA**: Optional GPU acceleration for Coulomb force
 - **Real-time plotting**: Live visualization with matplotlib
+- **Field visualization**: Standalone tool for electric potential distribution (static, RF pseudopotential, total) in 1D or 2D (heatmap / 3D surface)
 
 ## Requirements
 
@@ -52,6 +53,51 @@ See [BUILD.md](BUILD.md) for more build options.
 ```bash
 python main.py --N 50 --time 10 --plot
 ```
+
+## Field Visualization
+
+The `field_visualize.py` script visualizes electric potential distributions (static potential, RF pseudopotential, total potential) from the field CSV and voltage config. Supports 1D (single-axis) and 2D (heatmap or 3D surface) plots.
+
+```bash
+python field_visualize.py [options]
+```
+
+### Usage examples
+
+```bash
+# 1D potential along x-axis (default)
+python field_visualize.py
+
+# 2D heatmap in x-y plane
+python field_visualize.py --vary x,y --mode heatmap
+
+# 2D 3D surface plot
+python field_visualize.py --vary x,y --mode 3d
+
+# Custom range and output (use = for negative values)
+python field_visualize.py --vary x,y --x_range=-100,100 --y_range=-50,50 --out output.png
+
+# With offset and RF amplitude
+python field_visualize.py --vary x,y --offset --show-rf-amp
+```
+
+### Field visualization options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--csv` | data/monolithic20241118.csv | Electric field CSV path |
+| `--config` | FieldConfiguration/default.json | Voltage config JSON path |
+| `--vary` | x | Varying axes: single (x/y/z) for 1D; comma-separated (e.g. x,y) for 2D |
+| `--x_range` | -100,100 | Range for primary axis (μm), comma-separated |
+| `--y_range` | -100,100 | Range for second axis in 2D (μm) |
+| `--const` | 0,0,0 | Fixed coordinates x,y,z (μm), comma-separated |
+| `--mode` | heatmap | 2D mode: heatmap or 3d |
+| `--n_pts` | - | 1D: single integer (e.g. 500); 2D: comma-separated (e.g. 100,100) |
+| `--out` | - | Output image path |
+| `--offset` | - | Subtract min from each potential (total = offset DC + offset pseudopotential) |
+| `--show-rf-amp` | - | Show RF amplitude plot (default: off) |
+
+**Note**: When passing negative values (e.g. `--x_range=-100,100`), use `=` to attach the value to the option; otherwise the parser may interpret `-100` as a new flag.
 
 ## Command-line Options
 
@@ -116,6 +162,7 @@ ism-main-v1.0/
 ├── benchmark/         # Performance benchmarks
 ├── data/              # Electric field grid CSV (default: data/monolithic20241118.csv)
 ├── externals/         # Local Eigen, pybind11 (optional, for offline build)
+├── field_visualize.py # Electric potential field visualization (standalone)
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```

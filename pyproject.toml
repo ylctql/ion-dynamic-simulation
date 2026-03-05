@@ -21,13 +21,14 @@ dev = [
 
 [project.scripts]
 ism-main = "main:main"
+field-visualize = "field_visualize:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["Interface*", "FieldConfiguration*", "FieldParser*", "ComputeKernel*", "Plotter*"]
 
 [tool.setuptools]
-py-modules = ["utils", "setup_path"]
+py-modules = ["utils", "setup_path", "field_visualize"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

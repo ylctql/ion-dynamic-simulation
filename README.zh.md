@@ -12,6 +12,7 @@
 - **积分算法**：支持 RK4 和 Velocity Verlet
 - **GPU 加速**：库仑力可选用 CUDA 加速
 - **实时绘图**：基于 matplotlib 的实时可视化
+- **电势场可视化**：独立工具，可绘制静电势、RF 赝势、总电势的 1D 或 2D（热力图/三维曲面）分布
 
 ## 环境要求
 
@@ -52,6 +53,51 @@ python build.py
 ```bash
 python main.py --N 50 --time 10 --plot
 ```
+
+## 电势场可视化
+
+`field_visualize.py` 用于可视化电场 CSV 与电压配置下的电势分布（静电势、RF 赝势、总电势），支持 1D（单坐标）与 2D（热力图或三维曲面）绘图。
+
+```bash
+python field_visualize.py [options]
+```
+
+### 使用示例
+
+```bash
+# 1D 沿 x 轴电势（默认）
+python field_visualize.py
+
+# 2D x-y 平面热力图
+python field_visualize.py --vary x,y --mode heatmap
+
+# 2D 三维曲面
+python field_visualize.py --vary x,y --mode 3d
+
+# 自定义范围并输出（负数参数需用 = 连接）
+python field_visualize.py --vary x,y --x_range=-100,100 --y_range=-50,50 --out output.png
+
+# 启用偏置与 RF 幅度图
+python field_visualize.py --vary x,y --offset --show-rf-amp
+```
+
+### 电势场可视化参数
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--csv` | data/monolithic20241118.csv | 电场 CSV 路径 |
+| `--config` | FieldConfiguration/default.json | 电压配置 JSON 路径 |
+| `--vary` | x | 变化坐标：单坐标 (x/y/z) 为 1D；逗号分隔 (如 x,y) 为 2D |
+| `--x_range` | -100,100 | 主变化方向范围 (μm)，逗号分隔 |
+| `--y_range` | -100,100 | 2D 时第二坐标范围 (μm) |
+| `--const` | 0,0,0 | 固定坐标 x,y,z (μm)，逗号分隔 |
+| `--mode` | heatmap | 2D 模式：heatmap 或 3d |
+| `--n_pts` | - | 1D：单个整数 (如 500)；2D：逗号分隔 (如 100,100) |
+| `--out` | - | 输出图片路径 |
+| `--offset` | - | 各电势减去最小值作为偏置（总电势 = 偏置后静电势 + 偏置后赝势） |
+| `--show-rf-amp` | - | 显示 RF 幅度图（默认不显示） |
+
+**注意**：传入负数时（如 `--x_range=-100,100`）需使用 `=` 将值与参数相连，否则解析器可能将 `-100` 识别为新选项。
 
 ## 命令行参数
 
@@ -116,6 +162,7 @@ ism-main-v1.0/
 ├── benchmark/         # 性能测试
 ├── data/              # 电场格点 CSV（默认 data/monolithic20241118.csv）
 ├── externals/         # 本地 Eigen、pybind11（可选，用于离线构建）
+├── field_visualize.py # 电势场可视化（独立脚本）
 ├── main.py            # 入口
 └── setup_path.py      # ionsim 路径配置
 ```

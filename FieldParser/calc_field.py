@@ -81,3 +81,54 @@ def calc_field(
         field_interps.append(make_field(interp_x, interp_y, interp_z))
 
     return field_interps
+
+
+def calc_potential(
+    grid_coord: np.ndarray,
+    grid_voltage: np.ndarray,
+    *,
+    method: str = "linear",
+    bounds_error: bool = False,
+    fill_value: float = np.nan,
+) -> list[Callable[[np.ndarray], np.ndarray]]:
+    """
+    对每组电势基建立三维线性插值函数
+
+    Parameters
+    ----------
+    grid_coord : np.ndarray, shape (N, 3)
+        格点坐标 (x, y, z)
+    grid_voltage : np.ndarray, shape (N, n_basis)
+        势场值，每列对应一组基
+    method, bounds_error, fill_value
+        同 calc_field
+
+    Returns
+    -------
+    potential_interps : list[Callable]
+        每组基对应的电势插值函数 f(r) -> 标量或 (M,)
+    """
+    x = np.unique(grid_coord[:, 0])
+    y = np.unique(grid_coord[:, 1])
+    z = np.unique(grid_coord[:, 2])
+    nx, ny, nz = len(x), len(y), len(z)
+    if grid_coord.shape[0] != nx * ny * nz:
+        raise ValueError(
+            f"格点非规则网格: 共 {grid_coord.shape[0]} 点，"
+            f"但 unique(x,y,z) 得 {nx}×{ny}×{nz}={nx*ny*nz}"
+        )
+    n_basis = grid_voltage.shape[1]
+    potential_interps: list[Callable[[np.ndarray], np.ndarray]] = []
+    for i in range(n_basis):
+        V = grid_voltage[:, i].reshape(nx, ny, nz, order="C")
+        interp = RegularGridInterpolator(
+            (x, y, z), V, method=method, bounds_error=bounds_error, fill_value=fill_value
+        )
+        def make_pot(interp_v):
+            def pot_at_r(r: np.ndarray) -> np.ndarray:
+                r = np.atleast_2d(r)
+                v = interp_v(r)
+                return np.atleast_1d(v.squeeze())
+            return pot_at_r
+        potential_interps.append(make_pot(interp))
+    return potential_interps
