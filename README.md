@@ -56,10 +56,12 @@ python main.py --N 50 --time 10 --plot
 
 ## Field Visualization
 
-The `field_visualize.py` script visualizes electric potential distributions (static potential, RF pseudopotential, total potential) from the field CSV and voltage config. Supports 1D (single-axis) and 2D (heatmap or 3D surface) plots.
+The `field_visualize` tool visualizes electric potential distributions (static potential, RF pseudopotential, total potential) from the field CSV and voltage config. Supports 1D (single-axis) and 2D (heatmap or 3D surface) plots, plus trap frequency computation and scanning.
 
 ```bash
 python field_visualize.py [options]
+# or
+python -m field_visualize [options]
 ```
 
 ### Usage examples
@@ -87,6 +89,11 @@ python field_visualize.py --vary z --fit 4
 # Compute trap frequencies f_x, f_y, f_z (MHz)
 python field_visualize.py --freq
 python field_visualize.py --freq --const 0,0,50 --freq-fit-degree 4
+
+# Trap frequency scan along axis (no potential plot, freq distribution only)
+python field_visualize.py --freq-scan z --freq-scan-n 50
+python field_visualize.py --freq-scan x,y --freq-scan-n 30,30 --mode heatmap
+python field_visualize.py --freq-scan x,y --mode 3d --out freq_2d.png
 ```
 
 ### Field visualization options
@@ -108,7 +115,9 @@ python field_visualize.py --freq --const 0,0,50 --freq-fit-degree 4
 | `--freq` | - | Compute and print trap frequencies f_x, f_y, f_z (MHz) at --const point |
 | `--z_range` | -100,100 | z-axis fit range (μm) when using --freq |
 | `--freq-fit-degree` | 2 | Fit degree (2 or 4) for --freq |
-| `--freq-n-pts` | 200 | Sample points per axis for --freq |
+| `--freq-n-pts` | 200 | Fit sample points per axis for --freq |
+| `--freq-scan` | - | Trap freq scan: single axis (x/y/z) for curve; two axes (e.g. x,y) for heatmap/3d; skips potential plot |
+| `--freq-scan-n` | 50 | --freq-scan points: 1D=int, 2D=comma-separated (e.g. 30,30) |
 
 **Note**: When passing negative values (e.g. `--x_range=-100,100`), use `=` to attach the value to the option; otherwise the parser may interpret `-100` as a new flag.
 
@@ -175,7 +184,12 @@ ism-main-v1.0/
 ├── benchmark/         # Performance benchmarks
 ├── data/              # Electric field grid CSV (default: data/monolithic20241118.csv)
 ├── externals/         # Local Eigen, pybind11 (optional, for offline build)
-├── field_visualize.py # Electric potential field visualization (standalone)
+├── field_visualize.py # Field visualization entry script
+├── field_visualize/   # Field visualization package
+│   ├── core.py        # Unit conversion, potential computation, grid building
+│   ├── trap_freq.py   # Trap frequency computation
+│   ├── plots.py       # Potential and freq-scan plotting
+│   └── cli.py         # Argument parsing and main flow
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```

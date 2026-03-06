@@ -56,10 +56,12 @@ python main.py --N 50 --time 10 --plot
 
 ## 电势场可视化
 
-`field_visualize.py` 用于可视化电场 CSV 与电压配置下的电势分布（静电势、RF 赝势、总电势），支持 1D（单坐标）与 2D（热力图或三维曲面）绘图。
+`field_visualize` 用于可视化电场 CSV 与电压配置下的电势分布（静电势、RF 赝势、总电势），支持 1D（单坐标）与 2D（热力图或三维曲面）绘图，以及阱频计算与扫描。
 
 ```bash
 python field_visualize.py [options]
+# 或
+python -m field_visualize [options]
 ```
 
 ### 使用示例
@@ -87,6 +89,11 @@ python field_visualize.py --vary z --fit 4
 # 计算阱频分布 f_x, f_y, f_z (MHz)
 python field_visualize.py --freq
 python field_visualize.py --freq --const 0,0,50 --freq-fit-degree 4
+
+# 阱频沿轴扫描（不绘势场，仅绘阱频分布）
+python field_visualize.py --freq-scan z --freq-scan-n 50
+python field_visualize.py --freq-scan x,y --freq-scan-n 30,30 --mode heatmap
+python field_visualize.py --freq-scan x,y --mode 3d --out freq_2d.png
 ```
 
 ### 电势场可视化参数
@@ -108,7 +115,9 @@ python field_visualize.py --freq --const 0,0,50 --freq-fit-degree 4
 | `--freq` | - | 计算并输出阱频 f_x, f_y, f_z (MHz)，在 --const 点沿各轴拟合总势 |
 | `--z_range` | -100,100 | --freq 时 z 轴拟合范围 (μm) |
 | `--freq-fit-degree` | 2 | --freq 时拟合阶数：2 或 4 |
-| `--freq-n-pts` | 200 | --freq 时每轴采样点数 |
+| `--freq-n-pts` | 200 | --freq 时每轴拟合采样点数 |
+| `--freq-scan` | - | 阱频沿轴扫描：单轴 (x/y/z) 绘曲线；双轴 (如 x,y) 绘 heatmap/3d；指定后不绘势场 |
+| `--freq-scan-n` | 50 | --freq-scan 扫描点数：1D 为整数；2D 为逗号分隔 (如 30,30) |
 
 **注意**：传入负数时（如 `--x_range=-100,100`）需使用 `=` 将值与参数相连，否则解析器可能将 `-100` 识别为新选项。
 
@@ -175,7 +184,12 @@ ism-main-v1.0/
 ├── benchmark/         # 性能测试
 ├── data/              # 电场格点 CSV（默认 data/monolithic20241118.csv）
 ├── externals/         # 本地 Eigen、pybind11（可选，用于离线构建）
-├── field_visualize.py # 电势场可视化（独立脚本）
+├── field_visualize.py # 电势场可视化入口脚本
+├── field_visualize/   # 电势场可视化包
+│   ├── core.py        # 单位换算、电势计算、网格构建
+│   ├── trap_freq.py   # 阱频计算
+│   ├── plots.py       # 势场与阱频扫描绘图
+│   └── cli.py         # 参数解析与主流程
 ├── main.py            # 入口
 └── setup_path.py      # ionsim 路径配置
 ```
