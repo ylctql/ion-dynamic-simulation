@@ -95,9 +95,10 @@ python field_visualize.py --freq-scan z --freq-scan-n 50
 python field_visualize.py --freq-scan x,y --freq-scan-n 30,30 --mode heatmap
 python field_visualize.py --freq-scan x,y --mode 3d --out freq_2d.png
 
-# Savitzky-Golay smoothing along specified axes (0–3 directions)
-python field_visualize.py --vary z --smooth-axes z
+# Savitzky-Golay smoothing (default: along z; use --smooth-axes none to disable)
+python field_visualize.py --vary z
 python field_visualize.py --freq --smooth-axes x,y,z --smooth-sg 15,3
+python field_visualize.py --vary z --smooth-axes none
 ```
 
 ### Field visualization options
@@ -122,7 +123,7 @@ python field_visualize.py --freq --smooth-axes x,y,z --smooth-sg 15,3
 | `--freq-n-pts` | 200 | Fit sample points per axis for --freq |
 | `--freq-scan` | - | Trap freq scan: single axis (x/y/z) for curve; two axes (e.g. x,y) for heatmap/3d; skips potential plot |
 | `--freq-scan-n` | 50 | --freq-scan points: 1D=int, 2D=comma-separated (e.g. 30,30) |
-| `--smooth-axes` | - | Smooth potential field along 0–3 axes (e.g. x,y,z or x,y or z); Savitzky-Golay filter |
+| `--smooth-axes` | z | Smooth potential along axes (e.g. x,y,z or z); use `none` to disable |
 | `--smooth-sg` | 11,3 | Savitzky-Golay params: window_length,polyorder (comma-separated) |
 
 **Note**: When passing negative values (e.g. `--x_range=-100,100`), use `=` to attach the value to the option; otherwise the parser may interpret `-100` as a new flag.
@@ -154,7 +155,7 @@ python main.py [options]
 | `--csv` | data/monolithic20241118.csv | Electric field CSV; pass filename only (e.g. monolithic20241118.csv) to look in data/ |
 | `--config` | FieldConfiguration/default.json | Voltage config JSON; pass filename only (e.g. default.json) to look in FieldConfiguration/ |
 | `--init_file` | - | Path to .npz with initial r0/v0; must contain 'r'(μm), 'v'(m/s), shape (N,3); if filename is t{time}us.npz, evolution starts from that time |
-| `--smooth-axes` | - | Smooth potential field along 0–3 axes (e.g. x,y,z or z); Savitzky-Golay filter; applies to ion dynamics |
+| `--smooth-axes` | z | Smooth potential along axes (e.g. x,y,z or z); use `none` to disable; Savitzky-Golay filter |
 | `--smooth-sg` | 11,3 | Savitzky-Golay params: window_length,polyorder (comma-separated) |
 
 ### Plotting

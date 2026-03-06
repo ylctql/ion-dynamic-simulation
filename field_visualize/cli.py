@@ -130,9 +130,9 @@ def main() -> None:
     parser.add_argument(
         "--smooth-axes",
         type=str,
-        default=None,
+        default="z",
         metavar="AXES",
-        help="势场平滑方向：0~3 个轴，逗号分隔如 x,y,z 或 x,y 或 x；不指定则不平滑",
+        help="势场平滑方向：默认 z；可指定 x,y,z 或 x,y 或 x；指定 none 关闭滤波",
     )
     parser.add_argument(
         "--smooth-sg",
@@ -180,9 +180,10 @@ def main() -> None:
             {"voltage_list": []}, n_voltage, cfg
         )
 
-    # 势场平滑（可选）
-    if args.smooth_axes:
-        axes_parts = [a.strip().lower() for a in args.smooth_axes.split(",") if a.strip()]
+    # 势场平滑（默认沿 z；--smooth-axes none 关闭）
+    raw_smooth = args.smooth_axes or ""
+    if raw_smooth.strip().lower() != "none":
+        axes_parts = [a.strip().lower() for a in raw_smooth.split(",") if a.strip()]
         valid_axes = [a for a in axes_parts if a in "xyz"]
         if valid_axes:
             try:

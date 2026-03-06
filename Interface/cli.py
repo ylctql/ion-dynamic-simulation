@@ -82,9 +82,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--smooth-axes",
         type=str,
-        default=None,
+        default="z",
         metavar="AXES",
-        help="势场平滑方向：0~3 个轴，逗号分隔如 x,y,z 或 x,y 或 x；不指定则不平滑",
+        help="势场平滑方向：默认 z；可指定 x,y,z 或 x,y 或 x；指定 none 关闭滤波",
     )
     parser.add_argument(
         "--smooth-sg",
@@ -294,22 +294,24 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
     if save_rv_status_dir == "":
         save_rv_status_dir = None
 
-    # 10. 解析 smooth 选项
+    # 10. 解析 smooth 选项（默认沿 z 方向滤波，--smooth-axes none 关闭）
     smooth_axes: tuple[str, ...] | None = None
     smooth_sg: tuple[int, int] = (11, 3)
-    if getattr(args, "smooth_axes", None):
-        axes_parts = [a.strip().lower() for a in args.smooth_axes.split(",") if a.strip()]
+    raw_smooth = getattr(args, "smooth_axes", "z")
+    if raw_smooth and raw_smooth.strip().lower() != "none":
+        axes_parts = [a.strip().lower() for a in raw_smooth.split(",") if a.strip()]
         valid_axes = [a for a in axes_parts if a in "xyz"]
         if valid_axes:
             smooth_axes = tuple(valid_axes)
-            try:
-                sg_parts = [p.strip() for p in getattr(args, "smooth_sg", "11,3").split(",")]
-                smooth_sg = (
-                    int(sg_parts[0]) if sg_parts else 11,
-                    int(sg_parts[1]) if len(sg_parts) >= 2 else 3,
-                )
-            except (ValueError, IndexError):
-                smooth_sg = (11, 3)
+    if smooth_axes is not None:
+        try:
+            sg_parts = [p.strip() for p in getattr(args, "smooth_sg", "11,3").split(",")]
+            smooth_sg = (
+                int(sg_parts[0]) if sg_parts else 11,
+                int(sg_parts[1]) if len(sg_parts) >= 2 else 3,
+            )
+        except (ValueError, IndexError):
+            smooth_sg = (11, 3)
 
     # 11. 构建 Vision
     vision = Vision(
