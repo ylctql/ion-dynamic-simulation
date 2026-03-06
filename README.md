@@ -83,6 +83,10 @@ python field_visualize.py --vary x,y --offset --show-rf-amp
 # 1D potential with quadratic/quartic fit (overlay dashed lines, show R², center, k2)
 python field_visualize.py --vary z --fit 2
 python field_visualize.py --vary z --fit 4
+
+# Compute trap frequencies f_x, f_y, f_z (MHz)
+python field_visualize.py --freq
+python field_visualize.py --freq --const 0,0,50 --freq-fit-degree 4
 ```
 
 ### Field visualization options
@@ -101,6 +105,10 @@ python field_visualize.py --vary z --fit 4
 | `--offset` | - | Subtract min from each potential (total = offset DC + offset pseudopotential) |
 | `--show-rf-amp` | - | Show RF amplitude plot (default: off) |
 | `--fit` | - | 1D: polynomial fit for potential—`2`=quadratic, `4`=quartic; overlay dashed lines, show R², center, k2 |
+| `--freq` | - | Compute and print trap frequencies f_x, f_y, f_z (MHz) at --const point |
+| `--z_range` | -100,100 | z-axis fit range (μm) when using --freq |
+| `--freq-fit-degree` | 2 | Fit degree (2 or 4) for --freq |
+| `--freq-n-pts` | 200 | Sample points per axis for --freq |
 
 **Note**: When passing negative values (e.g. `--x_range=-100,100`), use `=` to attach the value to the option; otherwise the parser may interpret `-100` as a new flag.
 

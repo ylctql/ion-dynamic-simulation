@@ -83,6 +83,10 @@ python field_visualize.py --vary x,y --offset --show-rf-amp
 # 1D 势场二次/四次拟合（叠加虚线，显示 R²、中心、k2）
 python field_visualize.py --vary z --fit 2
 python field_visualize.py --vary z --fit 4
+
+# 计算阱频分布 f_x, f_y, f_z (MHz)
+python field_visualize.py --freq
+python field_visualize.py --freq --const 0,0,50 --freq-fit-degree 4
 ```
 
 ### 电势场可视化参数
@@ -101,6 +105,10 @@ python field_visualize.py --vary z --fit 4
 | `--offset` | - | 各电势减去最小值作为偏置（总电势 = 偏置后静电势 + 偏置后赝势） |
 | `--show-rf-amp` | - | 显示 RF 幅度图（默认不显示） |
 | `--fit` | - | 1D 时对势场做多项式拟合：`2`=二次，`4`=四次；叠加虚线并显示 R²、中心、k2 |
+| `--freq` | - | 计算并输出阱频 f_x, f_y, f_z (MHz)，在 --const 点沿各轴拟合总势 |
+| `--z_range` | -100,100 | --freq 时 z 轴拟合范围 (μm) |
+| `--freq-fit-degree` | 2 | --freq 时拟合阶数：2 或 4 |
+| `--freq-n-pts` | 200 | --freq 时每轴采样点数 |
 
 **注意**：传入负数时（如 `--x_range=-100,100`）需使用 `=` 将值与参数相连，否则解析器可能将 `-100` 识别为新选项。
 

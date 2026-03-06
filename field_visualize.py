@@ -20,7 +20,12 @@ from FieldConfiguration.constants import Config, init_from_config, m as ION_MASS
 from FieldConfiguration.loader import build_voltage_list, field_settings_from_config
 from FieldParser.csv_reader import read as read_csv
 from FieldParser.calc_field import calc_field, calc_potential
-from FieldParser.potential_fit import fit_potential_1d, eval_fit, get_center_and_k2
+from FieldParser.potential_fit import (
+    fit_potential_1d,
+    eval_fit,
+    get_center_and_k2,
+    k2_to_trap_freq_MHz,
+)
 from utils import Voltage
 
 CoordAxis = Literal["x", "y", "z"]
@@ -131,6 +136,48 @@ def _build_grid_1d(
     r[:, 2] = z_const
     r[:, AXIS_INDEX[vary_axis]] = coords
     return r
+
+
+def _compute_trap_freqs_at_point(
+    potential_interps: list,
+    field_interps: list,
+    voltage_list: list[Voltage],
+    cfg: Config,
+    xc_um: float,
+    yc_um: float,
+    zc_um: float,
+    x_range_um: tuple[float, float],
+    y_range_um: tuple[float, float],
+    z_range_um: tuple[float, float],
+    n_pts: int,
+    fit_degree: int,
+) -> dict[str, float]:
+    """在给定点处沿 x,y,z 分别拟合总势，计算阱频 f_x, f_y, f_z (MHz)"""
+    dl = cfg.dl
+    xc = _um_to_norm(xc_um, dl)
+    yc = _um_to_norm(yc_um, dl)
+    zc = _um_to_norm(zc_um, dl)
+    xr = (_um_to_norm(x_range_um[0], dl), _um_to_norm(x_range_um[1], dl))
+    yr = (_um_to_norm(y_range_um[0], dl), _um_to_norm(y_range_um[1], dl))
+    zr = (_um_to_norm(z_range_um[0], dl), _um_to_norm(z_range_um[1], dl))
+
+    result: dict[str, float] = {}
+    for axis, vary_range, coord_um in [
+        ("x", xr, np.linspace(x_range_um[0], x_range_um[1], n_pts)),
+        ("y", yr, np.linspace(y_range_um[0], y_range_um[1], n_pts)),
+        ("z", zr, np.linspace(z_range_um[0], z_range_um[1], n_pts)),
+    ]:
+        r = _build_grid_1d(axis, vary_range, xc, yc, zc, n_pts)
+        _, _, _, V_total = _compute_potentials(
+            potential_interps, field_interps, voltage_list, cfg, r
+        )
+        try:
+            fit_result, _ = fit_potential_1d(coord_um, V_total, degree=fit_degree)
+            _, k2 = get_center_and_k2(fit_result, fit_degree)
+            result[f"f_{axis}"] = k2_to_trap_freq_MHz(k2, ION_MASS)
+        except (ValueError, np.linalg.LinAlgError, RuntimeError):
+            result[f"f_{axis}"] = float("nan")
+    return result
 
 
 def _build_grid_2d(
@@ -425,6 +472,31 @@ def main() -> None:
         metavar="DEGREE",
         help="1D 时对势场做多项式拟合：2=二次，4=四次；叠加虚线并显示 R²",
     )
+    parser.add_argument(
+        "--freq",
+        action="store_true",
+        help="计算并输出阱频分布 f_x, f_y, f_z (MHz)，在 --const 指定点沿各轴拟合总势",
+    )
+    parser.add_argument(
+        "--z_range",
+        type=str,
+        default="-100,100",
+        help="--freq 时 z 轴拟合范围 (μm)，逗号分隔",
+    )
+    parser.add_argument(
+        "--freq-fit-degree",
+        type=int,
+        default=2,
+        choices=[2, 4],
+        metavar="DEGREE",
+        help="--freq 时拟合阶数，默认 2",
+    )
+    parser.add_argument(
+        "--freq-n-pts",
+        type=int,
+        default=200,
+        help="--freq 时每轴采样点数，默认 200",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -481,7 +553,29 @@ def main() -> None:
 
     xc_um, yc_um, zc_um = parse_const(args.const)
     xr_um = parse_range(args.x_range)
+    yr_um = parse_range(args.y_range)
+    zr_um = parse_range(args.z_range)
     dl = cfg.dl
+
+    if args.freq:
+        freqs = _compute_trap_freqs_at_point(
+            potential_interps,
+            field_interps,
+            voltage_list,
+            cfg,
+            xc_um, yc_um, zc_um,
+            x_range_um=xr_um,
+            y_range_um=yr_um,
+            z_range_um=zr_um,
+            n_pts=args.freq_n_pts,
+            fit_degree=args.freq_fit_degree,
+        )
+        print("Trap frequencies at (x=%.1f, y=%.1f, z=%.1f) μm:" % (xc_um, yc_um, zc_um))
+        for k, v in freqs.items():
+            if np.isnan(v):
+                print("  %s: N/A (k2<=0 or fit failed)" % k)
+            else:
+                print("  %s: %.4f MHz" % (k, v))
 
     def parse_n_pts(s: str, dim: int):
         if not s.strip():
@@ -528,7 +622,6 @@ def main() -> None:
         a1, a2 = vary_parts[0], vary_parts[1]
         if a1 not in "xyz" or a2 not in "xyz" or a1 == a2:
             raise ValueError("--vary 须为两个不同坐标 x,y,z")
-        yr_um = parse_range(args.y_range)
         yr = (_um_to_norm(yr_um[0], dl), _um_to_norm(yr_um[1], dl))
         n_pts = parse_n_pts(args.n_pts, 2)
         const_idx = next(i for i, c in enumerate("xyz") if c not in (a1, a2))

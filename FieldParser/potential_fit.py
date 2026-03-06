@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.constants import e as ELEMENTARY_CHARGE
 
 
 def _extrema_from_poly(coefs: np.ndarray, x_range: tuple[float, float]) -> float:
@@ -139,3 +140,22 @@ def get_center_and_k2(fit_result: np.ndarray, degree: int) -> tuple[float, float
     coefs = fit_result[1:]
     k2 = _k2_at_center(coefs, center)
     return center, k2
+
+
+def k2_to_trap_freq_MHz(
+    k2: float,
+    mass_kg: float,
+    charge: float = ELEMENTARY_CHARGE,
+    k2_unit_um: bool = True,
+) -> float:
+    """
+    从 k2 计算阱频 f (MHz)。ω = sqrt(2*q*k2/m)，f = ω/(2π)
+    k2>0 为阱形，k2<=0 返回 NaN
+    k2 单位：V/μm²（k2_unit_um=True）或 V/m²
+    """
+    if k2 <= 0:
+        return float("nan")
+    k2_si = k2 * 1e12 if k2_unit_um else k2
+    k_eff = 2 * charge * k2_si
+    omega = np.sqrt(k_eff / mass_kg)
+    return float(omega / (2 * np.pi) / 1e6)
