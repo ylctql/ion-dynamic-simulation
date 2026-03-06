@@ -99,8 +99,11 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--save_fig_dir",
         type=str,
-        default="",
-        help="轨迹帧保存根目录，结构为 {dir}/{离子数}/t{时间}us.png；可设 ISM_DEFAULT_SAVE_FIG_DIR 覆盖默认",
+        nargs="?",
+        default=None,
+        const=DEFAULT_SAVE_FIG_DIR,
+        metavar="DIR",
+        help="轨迹帧保存根目录，结构为 {dir}/{离子数}/t{时间}us.png；指定但未传参时默认 saves/images/traj；可设 ISM_DEFAULT_SAVE_FIG_DIR 覆盖默认",
     )
     parser.add_argument(
         "--save_rv_traj_dir",

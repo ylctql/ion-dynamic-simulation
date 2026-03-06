@@ -79,6 +79,10 @@ python field_visualize.py --vary x,y --x_range=-100,100 --y_range=-50,50 --out o
 
 # 启用偏置与 RF 幅度图
 python field_visualize.py --vary x,y --offset --show-rf-amp
+
+# 1D 势场二次/四次拟合（叠加虚线，显示 R²、中心、k2）
+python field_visualize.py --vary z --fit 2
+python field_visualize.py --vary z --fit 4
 ```
 
 ### 电势场可视化参数
@@ -96,6 +100,7 @@ python field_visualize.py --vary x,y --offset --show-rf-amp
 | `--out` | - | 输出图片路径 |
 | `--offset` | - | 各电势减去最小值作为偏置（总电势 = 偏置后静电势 + 偏置后赝势） |
 | `--show-rf-amp` | - | 显示 RF 幅度图（默认不显示） |
+| `--fit` | - | 1D 时对势场做多项式拟合：`2`=二次，`4`=四次；叠加虚线并显示 R²、中心、k2 |
 
 **注意**：传入负数时（如 `--x_range=-100,100`）需使用 `=` 将值与参数相连，否则解析器可能将 `-100` 识别为新选项。
 

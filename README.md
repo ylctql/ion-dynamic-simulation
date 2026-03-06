@@ -79,6 +79,10 @@ python field_visualize.py --vary x,y --x_range=-100,100 --y_range=-50,50 --out o
 
 # With offset and RF amplitude
 python field_visualize.py --vary x,y --offset --show-rf-amp
+
+# 1D potential with quadratic/quartic fit (overlay dashed lines, show R², center, k2)
+python field_visualize.py --vary z --fit 2
+python field_visualize.py --vary z --fit 4
 ```
 
 ### Field visualization options
@@ -96,6 +100,7 @@ python field_visualize.py --vary x,y --offset --show-rf-amp
 | `--out` | - | Output image path |
 | `--offset` | - | Subtract min from each potential (total = offset DC + offset pseudopotential) |
 | `--show-rf-amp` | - | Show RF amplitude plot (default: off) |
+| `--fit` | - | 1D: polynomial fit for potential—`2`=quadratic, `4`=quartic; overlay dashed lines, show R², center, k2 |
 
 **Note**: When passing negative values (e.g. `--x_range=-100,100`), use `=` to attach the value to the option; otherwise the parser may interpret `-100` as a new flag.
 

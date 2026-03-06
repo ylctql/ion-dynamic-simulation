@@ -20,6 +20,7 @@ from FieldConfiguration.constants import Config, init_from_config, m as ION_MASS
 from FieldConfiguration.loader import build_voltage_list, field_settings_from_config
 from FieldParser.csv_reader import read as read_csv
 from FieldParser.calc_field import calc_field, calc_potential
+from FieldParser.potential_fit import fit_potential_1d, eval_fit, get_center_and_k2
 from utils import Voltage
 
 CoordAxis = Literal["x", "y", "z"]
@@ -165,6 +166,7 @@ def plot_1d(
     n_pts: int = 500,
     offset_min: bool = False,
     show_rf_amp: bool = False,
+    fit_degree: int | None = None,
     out_path: str | None = None,
 ) -> None:
     """1D 绘图：电势随单坐标变化"""
@@ -199,11 +201,35 @@ def plot_1d(
     ax1.plot(coord_um, V_dc, label="Static potential (DC)", color="blue")
     ax1.plot(coord_um, V_pseudo, label="RF pseudopotential", color="green")
     ax1.plot(coord_um, V_total, label="Total potential", color="red", linestyle="--")
+
+    # 势场二次/四次拟合（仅 1D）
+    fit_labels: list[str] = []
+    if fit_degree is not None and fit_degree in (2, 4):
+        for V_arr, label, color in [
+            (V_dc, "DC fit", "blue"),
+            (V_pseudo, "Pseudopotential fit", "green"),
+            (V_total, "Total fit", "red"),
+        ]:
+            try:
+                fit_result, r2 = fit_potential_1d(coord_um, V_arr, degree=fit_degree)
+                V_fit = eval_fit(coord_um, fit_result, fit_degree)
+                ax1.plot(
+                    coord_um, V_fit, linestyle=":", color=color, alpha=0.8,
+                    label=f"{label} (R²={r2:.4f})",
+                )
+                center, k2 = get_center_and_k2(fit_result, fit_degree)
+                fit_labels.append(f"{label}: center={center:.1f} μm, k2={k2:.2e}")
+            except (ValueError, np.linalg.LinAlgError, RuntimeError):
+                pass
+        if fit_labels:
+            ax1.set_title(f"{title_base} — Potentials\n" + "; ".join(fit_labels), fontsize=9)
+
     ax1.set_xlabel(f"{vary_axis} (μm)")
     ax1.set_ylabel("Potential (V)")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
-    ax1.set_title(f"{title_base} — Potentials")
+    if not fit_labels:
+        ax1.set_title(f"{title_base} — Potentials")
     _set_ylim_from_data(ax1, np.concatenate([V_dc, V_pseudo, V_total]))
     plt.tight_layout()
     if out_path:
@@ -391,6 +417,14 @@ def main() -> None:
         action="store_true",
         help="显示 RF 幅度图像（默认不显示）",
     )
+    parser.add_argument(
+        "--fit",
+        type=int,
+        default=None,
+        choices=[2, 4],
+        metavar="DEGREE",
+        help="1D 时对势场做多项式拟合：2=二次，4=四次；叠加虚线并显示 R²",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -487,6 +521,7 @@ def main() -> None:
             n_pts=n_pts,
             offset_min=args.offset,
             show_rf_amp=args.show_rf_amp,
+            fit_degree=args.fit,
             out_path=args.out,
         )
     elif len(vary_parts) == 2:
