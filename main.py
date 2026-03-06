@@ -127,6 +127,9 @@ def _build_force(
     cfg,
     charge: np.ndarray,
     root: Path,
+    *,
+    smooth_axes: tuple[str, ...] | None = None,
+    smooth_sg: tuple[int, int] = (11, 3),
 ) -> Callable:
     """根据 field_settings 构建 force 回调"""
     if not field_settings.csv_filename:
@@ -137,6 +140,16 @@ def _build_force(
     grid_coord, grid_voltage = read_csv(
         csv_path, field_settings, normalize=True, dl=cfg.dl, dV=cfg.dV
     )
+    if smooth_axes:
+        from field_visualize import apply_savgol_smooth
+
+        grid_voltage = apply_savgol_smooth(
+            grid_coord,
+            grid_voltage,
+            smooth_axes,
+            window_length=smooth_sg[0],
+            polyorder=smooth_sg[1],
+        )
     return build_force(field_settings, grid_coord, grid_voltage, charge)
 
 
@@ -259,7 +272,12 @@ def run(parsed: ParsedRun) -> Frame | None:
     logger.info("计算设备: %s", actual_device)
 
     force = _build_force(
-        parsed.field_settings, cfg, np.asarray(parsed.params.q, dtype=np.float64), _ROOT
+        parsed.field_settings,
+        cfg,
+        np.asarray(parsed.params.q, dtype=np.float64),
+        _ROOT,
+        smooth_axes=parsed.smooth_axes,
+        smooth_sg=parsed.smooth_sg,
     )
     proc, frame_init, queue_control, queue_data = _create_backend_and_start(
         parsed, force

@@ -1,16 +1,85 @@
 """
-电场可视化核心：单位换算、电势计算、网格构建
+电场可视化核心：单位换算、电势计算、网格构建、势场平滑
 """
 from __future__ import annotations
 
 from typing import Callable, Literal
 
 import numpy as np
+from scipy.signal import savgol_filter
 
 from utils import Voltage
 
 CoordAxis = Literal["x", "y", "z"]
 AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
+
+
+def apply_savgol_smooth(
+    grid_coord: np.ndarray,
+    grid_voltage: np.ndarray,
+    axes: tuple[str, ...],
+    window_length: int = 11,
+    polyorder: int = 3,
+) -> np.ndarray:
+    """
+    对势场格点数据沿指定方向应用 Savitzky-Golay 滤波平滑。
+
+    Parameters
+    ----------
+    grid_coord : np.ndarray, shape (N, 3)
+        格点坐标 (x, y, z)，已按 lexsort 排序
+    grid_voltage : np.ndarray, shape (N, n_basis)
+        势场值
+    axes : tuple[str, ...]
+        滤波方向，如 ("x",), ("x", "y"), ("x", "y", "z")
+    window_length : int
+        SG 滤波器窗口长度，须为奇数
+    polyorder : int
+        SG 滤波器多项式阶数
+
+    Returns
+    -------
+    grid_voltage_smooth : np.ndarray
+        平滑后的势场，形状与 grid_voltage 相同
+    """
+    if not axes:
+        return grid_voltage.copy()
+
+    x = np.unique(grid_coord[:, 0])
+    y = np.unique(grid_coord[:, 1])
+    z = np.unique(grid_coord[:, 2])
+    nx, ny, nz = len(x), len(y), len(z)
+    n_basis = grid_voltage.shape[1]
+
+    axis_map = {"x": 0, "y": 1, "z": 2}
+    sizes = [nx, ny, nz]
+
+    # 确保 window_length 为奇数且合法
+    if window_length % 2 == 0:
+        window_length = max(3, window_length - 1)
+    window_length = max(polyorder + 1, window_length)
+    if window_length % 2 == 0:
+        window_length += 1
+
+    out = grid_voltage.copy()
+    for i in range(n_basis):
+        V = out[:, i].reshape(nx, ny, nz, order="C")
+        for ax in axes:
+            axis_idx = axis_map.get(ax)
+            if axis_idx is None:
+                continue
+            size = sizes[axis_idx]
+            w = min(window_length, size)
+            if w % 2 == 0:
+                w = max(polyorder + 1, w - 1)
+            if w < polyorder + 1:
+                continue
+            try:
+                V = savgol_filter(V, w, polyorder, axis=axis_idx, mode="nearest")
+            except ValueError:
+                pass
+        out[:, i] = V.ravel(order="C")
+    return out
 
 
 def um_to_norm(val_um: float, dl: float) -> float:

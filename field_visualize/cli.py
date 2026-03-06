@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .core import um_to_norm
+from .core import apply_savgol_smooth, um_to_norm
 from .plots import plot_1d, plot_2d, plot_freq_scan_1d, plot_freq_scan_2d
 from .trap_freq import (
     compute_freq_scan_1d,
@@ -127,6 +127,20 @@ def main() -> None:
         default="50",
         help="--freq-scan 扫描点数：1D 为整数 (如 50)；2D 为逗号分隔 (如 30,30)",
     )
+    parser.add_argument(
+        "--smooth-axes",
+        type=str,
+        default=None,
+        metavar="AXES",
+        help="势场平滑方向：0~3 个轴，逗号分隔如 x,y,z 或 x,y 或 x；不指定则不平滑",
+    )
+    parser.add_argument(
+        "--smooth-sg",
+        type=str,
+        default="11,3",
+        metavar="WINDOW,POLY",
+        help="Savitzky-Golay 滤波器参数：窗口长度与多项式阶数，逗号分隔，默认 11,3",
+    )
     args = parser.parse_args()
 
     from Interface.cli import (
@@ -165,6 +179,21 @@ def main() -> None:
         field_settings.voltage_list = build_voltage_list(
             {"voltage_list": []}, n_voltage, cfg
         )
+
+    # 势场平滑（可选）
+    if args.smooth_axes:
+        axes_parts = [a.strip().lower() for a in args.smooth_axes.split(",") if a.strip()]
+        valid_axes = [a for a in axes_parts if a in "xyz"]
+        if valid_axes:
+            try:
+                sg_parts = [p.strip() for p in args.smooth_sg.split(",")]
+                wl = int(sg_parts[0]) if sg_parts else 11
+                poly = int(sg_parts[1]) if len(sg_parts) >= 2 else 3
+            except (ValueError, IndexError):
+                wl, poly = 11, 3
+            grid_voltage = apply_savgol_smooth(
+                grid_coord, grid_voltage, tuple(valid_axes), window_length=wl, polyorder=poly
+            )
 
     potential_interps = calc_potential(grid_coord, grid_voltage)
     field_interps = calc_field(grid_coord, grid_voltage)

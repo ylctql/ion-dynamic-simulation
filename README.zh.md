@@ -94,6 +94,10 @@ python field_visualize.py --freq --const 0,0,50 --freq-fit-degree 4
 python field_visualize.py --freq-scan z --freq-scan-n 50
 python field_visualize.py --freq-scan x,y --freq-scan-n 30,30 --mode heatmap
 python field_visualize.py --freq-scan x,y --mode 3d --out freq_2d.png
+
+# Savitzky-Golay 势场平滑（0~3 个方向）
+python field_visualize.py --vary z --smooth-axes z
+python field_visualize.py --freq --smooth-axes x,y,z --smooth-sg 15,3
 ```
 
 ### 电势场可视化参数
@@ -118,6 +122,8 @@ python field_visualize.py --freq-scan x,y --mode 3d --out freq_2d.png
 | `--freq-n-pts` | 200 | --freq 时每轴拟合采样点数 |
 | `--freq-scan` | - | 阱频沿轴扫描：单轴 (x/y/z) 绘曲线；双轴 (如 x,y) 绘 heatmap/3d；指定后不绘势场 |
 | `--freq-scan-n` | 50 | --freq-scan 扫描点数：1D 为整数；2D 为逗号分隔 (如 30,30) |
+| `--smooth-axes` | - | 势场平滑方向：0~3 个轴 (如 x,y,z 或 x,y 或 z)；使用 Savitzky-Golay 滤波器 |
+| `--smooth-sg` | 11,3 | Savitzky-Golay 参数：窗口长度,多项式阶数，逗号分隔 |
 
 **注意**：传入负数时（如 `--x_range=-100,100`）需使用 `=` 将值与参数相连，否则解析器可能将 `-100` 识别为新选项。
 
@@ -148,6 +154,8 @@ python main.py [options]
 | `--csv` | data/monolithic20241118.csv | 电场 CSV；可仅传文件名(如 monolithic20241118.csv)，自动在 data/ 下查找 |
 | `--config` | FieldConfiguration/default.json | 电极电压 JSON；可仅传文件名(如 default.json)，自动在 FieldConfiguration/ 下查找 |
 | `--init_file` | - | 初始 r0/v0 的 .npz 文件路径，须含 'r'(μm)、'v'(m/s)，形状 (N,3)；若文件名为 t{时间}us.npz 则从该时刻继续演化，否则从 --t0 开始 |
+| `--smooth-axes` | - | 势场平滑方向：0~3 个轴 (如 x,y,z 或 z)；Savitzky-Golay 滤波器；作用于离子动力学模拟 |
+| `--smooth-sg` | 11,3 | Savitzky-Golay 参数：窗口长度,多项式阶数，逗号分隔 |
 
 ### 绘图
 

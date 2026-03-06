@@ -8,6 +8,7 @@ from .core import (
     AXIS_INDEX,
     CoordAxis,
     apply_offset_min,
+    apply_savgol_smooth,
     build_grid_1d,
     build_grid_2d,
     compute_potentials,
@@ -25,6 +26,7 @@ from .cli import main
 
 __all__ = [
     "main",
+    "apply_savgol_smooth",
     "CoordAxis",
     "AXIS_INDEX",
     "um_to_norm",

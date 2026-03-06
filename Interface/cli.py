@@ -44,6 +44,8 @@ class ParsedRun:
     interval: float
     batch: int
     config: Config
+    smooth_axes: tuple[str, ...] | None = None
+    smooth_sg: tuple[int, int] = (11, 3)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -76,6 +78,20 @@ def create_parser() -> argparse.ArgumentParser:
         default="VV",
         choices=["RK4", "VV"],
         help="积分算法: RK4 或 VV",
+    )
+    parser.add_argument(
+        "--smooth-axes",
+        type=str,
+        default=None,
+        metavar="AXES",
+        help="势场平滑方向：0~3 个轴，逗号分隔如 x,y,z 或 x,y 或 x；不指定则不平滑",
+    )
+    parser.add_argument(
+        "--smooth-sg",
+        type=str,
+        default="11,3",
+        metavar="WINDOW,POLY",
+        help="Savitzky-Golay 滤波器参数：窗口长度与多项式阶数，逗号分隔，默认 11,3",
     )
     parser.add_argument(
         "--csv",
@@ -278,7 +294,24 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
     if save_rv_status_dir == "":
         save_rv_status_dir = None
 
-    # 10. 构建 Vision
+    # 10. 解析 smooth 选项
+    smooth_axes: tuple[str, ...] | None = None
+    smooth_sg: tuple[int, int] = (11, 3)
+    if getattr(args, "smooth_axes", None):
+        axes_parts = [a.strip().lower() for a in args.smooth_axes.split(",") if a.strip()]
+        valid_axes = [a for a in axes_parts if a in "xyz"]
+        if valid_axes:
+            smooth_axes = tuple(valid_axes)
+            try:
+                sg_parts = [p.strip() for p in getattr(args, "smooth_sg", "11,3").split(",")]
+                smooth_sg = (
+                    int(sg_parts[0]) if sg_parts else 11,
+                    int(sg_parts[1]) if len(sg_parts) >= 2 else 3,
+                )
+            except (ValueError, IndexError):
+                smooth_sg = (11, 3)
+
+    # 11. 构建 Vision
     vision = Vision(
         plot_fig=plot_fig,
         show_plot=show_plot if plot_fig is not None else None,
@@ -302,4 +335,6 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         interval=args.interval,
         batch=args.batch,
         config=cfg,
+        smooth_axes=smooth_axes,
+        smooth_sg=smooth_sg,
     )
