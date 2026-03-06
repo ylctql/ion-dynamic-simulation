@@ -184,7 +184,7 @@ python main.py [options]
 ## Project Structure
 
 ```
-ism-main-v1.0/
+ism-main/
 ├── Interface/          # CLI, parameters
 ├── FieldConfiguration/ # Constants, voltage config loader
 ├── FieldParser/       # CSV reader, field interpolation, force

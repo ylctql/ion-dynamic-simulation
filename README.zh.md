@@ -184,7 +184,7 @@ python main.py [options]
 ## 项目结构
 
 ```
-ism-main-v1.0/
+ism-main/
 ├── Interface/          # 命令行设置、参数
 ├── FieldConfiguration/ # 通用常数、电压配置
 ├── FieldParser/       # CSV 解析、场插值、外场力函数

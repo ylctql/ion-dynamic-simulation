@@ -25,7 +25,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "无法导入 ionsim 模块，请先编译 C++ 扩展：\n"
-        "  cd ism-main-v1.0 && cmake -B build && cmake --build build"
+        "  cd ism-main && cmake -B build && cmake --build build"
     ) from e
 
 
