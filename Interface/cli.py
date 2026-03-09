@@ -58,7 +58,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", type=float, default=1.0, help="帧间隔 (dt 单位)")
     parser.add_argument("--step", type=int, default=10, help="每帧积分步数")
     parser.add_argument("--batch", type=int, default=50, help="每批帧数，增大可减少 batch 边界等待造成的卡顿")
-    parser.add_argument("--alpha", type=float, default=0.0, help="同位素参杂比例")
+    parser.add_argument("--alpha", type=float, default=0.0, help="同位素参杂比例；单同位素模式下为该同位素丰度")
+    parser.add_argument(
+        "--isotope",
+        type=str,
+        default=None,
+        choices=["Ba133", "Ba134", "Ba135", "Ba136", "Ba137", "Ba138"],
+        help="单同位素模式：指定同位素种类，alpha 为该同位素丰度，其余为 Ba135；不指定则使用混合模式",
+    )
     parser.add_argument(
         "--init_file",
         type=str,
@@ -254,11 +261,12 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         if args.csv:
             logger.warning("CSV 文件不存在 %s，使用零外力", csv_path)
 
-    # 5. 解析 color_mode
+    # 5. 解析 color_mode（单同位素或混合模式时默认 isotope 着色）
     if args.color_mode is not None:
         color_mode = None if args.color_mode == "none" else args.color_mode
     else:
-        color_mode = "isotope" if params.alpha > 0 else None
+        use_isotope = params.alpha > 0 or getattr(args, "isotope", None) is not None
+        color_mode = "isotope" if use_isotope else None
 
     # 6. 解析 plot_fig（有效值: xoy, zoy, zox）
     valid_views: set[str] = {"xoy", "zoy", "zox"}

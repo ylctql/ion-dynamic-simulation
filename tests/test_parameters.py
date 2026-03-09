@@ -41,6 +41,34 @@ def test_parameters_isotope_doping():
     assert len(p.m) == 6
 
 
+def test_parameters_single_isotope():
+    """单同位素模式：alpha 为指定同位素丰度，其余为 Ba135"""
+    p = Parameters(N=10, alpha=0.3, isotope_type="Ba133")
+    assert p.m is not None
+    assert len(p.m) == 10
+    # 前 3 个应为 Ba133 (133/135)，后 7 个为 Ba135 (1.0)
+    np.testing.assert_array_almost_equal(p.m[:3], 133 / 135)
+    np.testing.assert_array_almost_equal(p.m[3:], 1.0)
+
+
+def test_from_argparse_isotope():
+    class Args:
+        N = 10
+        alpha = 0.2
+        isotope = "Ba136"
+        t0 = 0.0
+        time = None
+        device = "cpu"
+        calc_method = "VV"
+
+    p = from_argparse(Args(), 1e-8)
+    assert p.isotope_type == "Ba136"
+    assert p.alpha == 0.2
+    # 2 个 Ba136，8 个 Ba135
+    np.testing.assert_array_almost_equal(p.m[:2], 136 / 135)
+    np.testing.assert_array_almost_equal(p.m[2:], 1.0)
+
+
 def test_parameters_get_r0_get_v0():
     p = Parameters(N=3, r0=np.zeros((3, 3)), v0=np.ones((3, 3)))
     r = p.get_r0()

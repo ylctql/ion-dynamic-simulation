@@ -141,7 +141,8 @@ python main.py [options]
 | `--N` | 50 | Number of ions |
 | `--t0` | 0 | Start time (μs) |
 | `--time` | ∞ | Duration to run from t0 (μs); omit for infinite |
-| `--alpha` | 0 | Isotope doping ratio |
+| `--alpha` | 0 | Isotope doping ratio; in single-isotope mode, abundance of that isotope |
+| `--isotope` | - | Single-isotope mode: Ba133/Ba134/Ba135/Ba136/Ba137/Ba138; alpha = abundance of this isotope, rest = Ba135; omit for mixed mode |
 | `--device` | cpu | Compute device: cpu / cuda |
 | `--calc_method` | VV | Integration method: RK4 / VV |
 | `--step` | 10 | Integration steps per frame |
@@ -164,7 +165,7 @@ python main.py [options]
 |--------|---------|-------------|
 | `--plot` | - | Enable real-time plotting |
 | `--plot_fig` | - | Subplot views, comma-separated e.g. zoy,zox; default zoy,zox when --plot |
-| `--color_mode` | - | Coloring: y_pos / v2 / isotope / none; default isotope when alpha>0 |
+| `--color_mode` | - | Coloring: y_pos / v2 / isotope / none; default isotope when alpha>0 or --isotope |
 | `--ion_size` | 5.0 | Scatter point size |
 | `--x_range` | 100 | x-axis display half-width (μm) |
 | `--y_range` | 20 | y-axis display half-width (μm) |

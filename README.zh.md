@@ -141,7 +141,8 @@ python main.py [options]
 | `--N` | 50 | 离子数量 |
 | `--t0` | 0 | 起始时间 (μs) |
 | `--time` | ∞ | 从 t0 起继续运行的时长 (μs)，不传则无限 |
-| `--alpha` | 0 | 同位素参杂比例 |
+| `--alpha` | 0 | 同位素参杂比例；单同位素模式下为该同位素丰度 |
+| `--isotope` | - | 单同位素模式：Ba133/Ba134/Ba135/Ba136/Ba137/Ba138；alpha 为该同位素丰度，其余为 Ba135；不指定则使用混合模式 |
 | `--device` | cpu | 计算设备：cpu / cuda |
 | `--calc_method` | VV | 积分算法：RK4 / VV |
 | `--step` | 10 | 每帧积分步数 |
@@ -164,7 +165,7 @@ python main.py [options]
 |------|------|------|
 | `--plot` | - | 启用实时绘图 |
 | `--plot_fig` | - | 子图视角，逗号分隔如 zoy,zox；默认 --plot 时为 zoy,zox |
-| `--color_mode` | - | 着色：y_pos / v2 / isotope / none；alpha>0 时默认 isotope |
+| `--color_mode` | - | 着色：y_pos / v2 / isotope / none；alpha>0 或 --isotope 时默认 isotope |
 | `--ion_size` | 5.0 | 散点大小 |
 | `--x_range` | 100 | x 方向显示半宽 (μm) |
 | `--y_range` | 20 | y 方向显示半宽 (μm) |

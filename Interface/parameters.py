@@ -39,6 +39,7 @@ class Parameters:
 
     # ----- 同位素参杂（可选，用于自动分配质量）-----
     alpha: float = 0.0  # 参杂比例，>0 时按 Ba133/134/135/136/137/138 分配质量
+    isotope_type: str | None = None  # 单同位素模式：指定种类时 alpha 为该同位素丰度，其余为 Ba135
 
     def __post_init__(self) -> None:
         """根据 N 和 alpha 补全 m, q；根据 r0, v0 决定是否随机初始化"""
@@ -60,14 +61,33 @@ class Parameters:
             if self.q.size != self.N:
                 raise ValueError(f"q 长度 {self.q.size} 与 N={self.N} 不一致")
 
-        if self.alpha > 0:
+        if self.alpha > 0 or self.isotope_type is not None:
             self._apply_isotope_doping()
 
     def _apply_isotope_doping(self) -> None:
-        """按 alpha 分配 Ba133/134/135/136/137/138 质量"""
+        """按 alpha 分配质量：单同位素模式（isotope_type 指定）或混合模式"""
         n = self.N
         a = self.alpha
-        # Ba133, Ba134, Ba135, Ba136, Ba137, Ba138 各占 alpha，Ba135 占剩余
+
+        if self.isotope_type is not None:
+            # 单同位素模式：alpha 为该同位素丰度，其余为 Ba135
+            mass_map = {
+                "Ba133": 133 / 135,
+                "Ba134": 134 / 135,
+                "Ba135": 1.0,
+                "Ba136": 136 / 135,
+                "Ba137": 137 / 135,
+                "Ba138": 138 / 135,
+            }
+            m_doped = mass_map.get(self.isotope_type)
+            if m_doped is None:
+                raise ValueError(f"未知同位素 {self.isotope_type}，支持: {list(mass_map.keys())}")
+            n_doped = int(n * a) if a > 0 else 0
+            self.m[:n_doped] = m_doped
+            self.m[n_doped:] = 1.0  # Ba135
+            return
+
+        # 混合模式：Ba133/134/135/136/137/138 各占 alpha，Ba135 占剩余
         i0, i1, i2, i3, i4, i5 = (
             int(n * a),
             int(2 * n * a),
@@ -128,6 +148,7 @@ def from_argparse(args, dt: float) -> Parameters:
     """
     N = getattr(args, "N", 50)
     alpha = getattr(args, "alpha", getattr(args, "isotope_ratio", 0.0))
+    isotope_type = getattr(args, "isotope", None)
     t0 = getattr(args, "t0", 0.0)
     time_us = getattr(args, "time", np.inf)
     if time_us is None:
@@ -140,6 +161,7 @@ def from_argparse(args, dt: float) -> Parameters:
     return Parameters(
         N=N,
         alpha=alpha,
+        isotope_type=isotope_type,
         t0=t0_dt,
         duration=duration_dt,
         device="cuda" if getattr(args, "device", "cpu") == "cuda" else "cpu",
