@@ -105,10 +105,6 @@ def main() -> int:
     if not run(cmake_args):
         if use_cuda:
             print("CUDA 构建失败，回退为 CPU-only 构建...")
-            # 回退时需清理 build 目录，避免残留 CUDA 配置导致链接错误
-            if BUILD_DIR.exists():
-                print(f"清理 {BUILD_DIR} 后重新配置...")
-                shutil.rmtree(BUILD_DIR)
             cmake_args = make_cmake_args(False)
             if not run(cmake_args):
                 return 1

@@ -134,7 +134,6 @@ TensorType CoulombInteractionCudaWithContext(CRef<TensorType>& r,
 }  // namespace
 
 #ifdef IONCPP_USE_CUDA
-// 置于 ioncpp 命名空间（非匿名），供 numerical_integration.cpp 链接
 CoulombCudaContext* CoulombCudaContextCreate(size_t N,
                                             CRef<VectorType>& charge) {
     auto* ctx = new CoulombCudaContext;
