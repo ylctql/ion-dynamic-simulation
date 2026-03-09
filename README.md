@@ -106,7 +106,7 @@ python field_visualize.py --vary z --smooth-axes none
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--csv` | data/monolithic20241118.csv | Electric field CSV path |
-| `--config` | FieldConfiguration/default.json | Voltage config JSON path |
+| `--config` | FieldConfiguration/configs/default.json | Voltage config JSON path |
 | `--vary` | x | Varying axes: single (x/y/z) for 1D; comma-separated (e.g. x,y) for 2D |
 | `--x_range` | -100,100 | Range for primary axis (μm), comma-separated |
 | `--y_range` | -100,100 | Range for second axis in 2D (μm) |
@@ -154,7 +154,7 @@ python main.py [options]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--csv` | data/monolithic20241118.csv | Electric field CSV; pass filename only (e.g. monolithic20241118.csv) to look in data/ |
-| `--config` | FieldConfiguration/default.json | Voltage config JSON; pass filename only (e.g. default.json) to look in FieldConfiguration/ |
+| `--config` | FieldConfiguration/configs/default.json | Voltage config JSON; pass filename only (e.g. default.json) to look in FieldConfiguration/configs/ |
 | `--init_file` | - | Path to .npz with initial r0/v0; must contain 'r'(μm), 'v'(m/s), shape (N,3); if filename is t{time}us.npz, evolution starts from that time |
 | `--smooth-axes` | z | Smooth potential along axes (e.g. x,y,z or z); use `none` to disable; Savitzky-Golay filter |
 | `--smooth-sg` | 11,3 | Savitzky-Golay params: window_length,polyorder (comma-separated) |
@@ -187,7 +187,7 @@ python main.py [options]
 ```
 ism-main/
 ├── Interface/          # CLI, parameters
-├── FieldConfiguration/ # Constants, voltage config loader
+├── FieldConfiguration/ # Constants, voltage config loader; configs/ for JSON configs
 ├── FieldParser/       # CSV reader, field interpolation, force
 ├── ComputeKernel/     # C++ ionsim, Python backend
 ├── Plotter/           # Real-time visualization

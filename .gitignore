@@ -52,6 +52,7 @@ Thumbs.db
 data/
 data_cache/
 *.npy
+FieldConfiguration/configs/
 
 # 保存的结果
 saves/

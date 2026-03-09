@@ -106,7 +106,7 @@ python field_visualize.py --vary z --smooth-axes none
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--csv` | data/monolithic20241118.csv | 电场 CSV 路径 |
-| `--config` | FieldConfiguration/default.json | 电压配置 JSON 路径 |
+| `--config` | FieldConfiguration/configs/default.json | 电压配置 JSON 路径 |
 | `--vary` | x | 变化坐标：单坐标 (x/y/z) 为 1D；逗号分隔 (如 x,y) 为 2D |
 | `--x_range` | -100,100 | 主变化方向范围 (μm)，逗号分隔 |
 | `--y_range` | -100,100 | 2D 时第二坐标范围 (μm) |
@@ -154,7 +154,7 @@ python main.py [options]
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--csv` | data/monolithic20241118.csv | 电场 CSV；可仅传文件名(如 monolithic20241118.csv)，自动在 data/ 下查找 |
-| `--config` | FieldConfiguration/default.json | 电极电压 JSON；可仅传文件名(如 default.json)，自动在 FieldConfiguration/ 下查找 |
+| `--config` | FieldConfiguration/configs/default.json | 电极电压 JSON；可仅传文件名(如 default.json)，自动在 FieldConfiguration/configs/ 下查找 |
 | `--init_file` | - | 初始 r0/v0 的 .npz 文件路径，须含 'r'(μm)、'v'(m/s)，形状 (N,3)；若文件名为 t{时间}us.npz 则从该时刻继续演化，否则从 --t0 开始 |
 | `--smooth-axes` | z | 势场平滑方向 (如 x,y,z 或 z)；指定 none 关闭滤波；Savitzky-Golay |
 | `--smooth-sg` | 11,3 | Savitzky-Golay 参数：窗口长度,多项式阶数，逗号分隔 |
@@ -187,7 +187,7 @@ python main.py [options]
 ```
 ism-main/
 ├── Interface/          # 命令行设置、参数
-├── FieldConfiguration/ # 通用常数、电压配置
+├── FieldConfiguration/ # 通用常数、电压配置；configs/ 存放 JSON 配置
 ├── FieldParser/       # CSV 解析、场插值、外场力函数
 ├── ComputeKernel/     # C++ ionsim、Python 后端
 ├── Plotter/           # 实时绘图

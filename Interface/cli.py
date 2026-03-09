@@ -22,12 +22,12 @@ from Plotter.vision import PlotFig, Vision
 logger = logging.getLogger(__name__)
 
 # 默认路径，可通过环境变量覆盖
-DEFAULT_CONFIG_PATH = os.environ.get("ISM_DEFAULT_CONFIG", "FieldConfiguration/default.json")
+DEFAULT_CONFIG_PATH = os.environ.get("ISM_DEFAULT_CONFIG", "FieldConfiguration/configs/default.json")
 DEFAULT_CSV_PATH = os.environ.get("ISM_DEFAULT_CSV", "data/monolithic20241118.csv")
 DEFAULT_SAVE_FIG_DIR = os.environ.get("ISM_DEFAULT_SAVE_FIG_DIR", "saves/images/traj")
 # 仅传文件名时使用的默认目录（写死，便于日常只传文件名）
 DEFAULT_CSV_DIR = "data"
-DEFAULT_CONFIG_DIR = "FieldConfiguration"
+DEFAULT_CONFIG_DIR = "FieldConfiguration/configs"
 
 if TYPE_CHECKING:
     from Interface.parameters import Parameters
@@ -110,7 +110,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--config",
         type=str,
         default="",
-        help="电极电压 JSON；可仅传文件名(如 default.json)则自动在 FieldConfiguration/ 下查找；可设 ISM_DEFAULT_CONFIG 覆盖默认",
+        help="电极电压 JSON；可仅传文件名(如 default.json)则自动在 FieldConfiguration/configs/ 下查找；可设 ISM_DEFAULT_CONFIG 覆盖默认",
     )
     parser.add_argument("--save_final_image", type=str, default=None, help="最后一帧保存路径")
     parser.add_argument(
