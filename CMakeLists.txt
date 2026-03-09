@@ -6,6 +6,10 @@ option(USE_CUDA "Enable CUDA acceleration for Coulomb force" OFF)
 # 排查用：禁用库仑力以测试是否为库仑计算导致变慢
 option(SKIP_COULOMB_FOR_TEST "Skip Coulomb force for performance debugging" OFF)
 if(USE_CUDA)
+  # 显式设置 CUDA 架构，避免 "Failed to detect" 或 "must be non-empty" 错误
+  if(NOT CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
+    set(CMAKE_CUDA_ARCHITECTURES "native" CACHE STRING "CUDA architectures" FORCE)
+  endif()
   enable_language(CUDA)
   find_package(CUDAToolkit QUIET)
   if(CUDAToolkit_FOUND)
@@ -79,10 +83,23 @@ target_link_libraries(ioncpp PUBLIC Eigen3::Eigen)
 
 add_subdirectory(ComputeKernel)
 
-# pybind11 模块 ionsim
-pybind11_add_module(ionsim ComputeKernel/ionsim.cpp)
+# pybind11 模块 ionsim：将 ioncpp 源文件直接编译进 ionsim，避免链接时遗漏 CoulombCudaContext* 等符号
+set(ionsim_sources
+  ComputeKernel/ionsim.cpp
+  ComputeKernel/Coulomb.cpp
+  ComputeKernel/numerical_integration.cpp
+)
+if(USE_CUDA)
+  list(APPEND ionsim_sources ComputeKernel/Coulomb_cuda.cu)
+endif()
+pybind11_add_module(ionsim ${ionsim_sources})
 target_compile_features(ionsim PRIVATE cxx_std_17)
-target_link_libraries(ionsim PRIVATE ioncpp)
+target_include_directories(ionsim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ComputeKernel)
+target_link_libraries(ionsim PRIVATE Eigen3::Eigen)
+if(USE_CUDA)
+  target_compile_definitions(ionsim PRIVATE IONCPP_USE_CUDA)
+  target_link_libraries(ionsim PRIVATE CUDA::cudart)
+endif()
 
 # 输出到 build 目录，便于 Python 直接 import
 set_target_properties(ionsim PROPERTIES

@@ -15,7 +15,10 @@ constexpr data_t EPS_DIST2 = 1e-20;  // 避免 dist2=0 时 rsqrt 发散
 __global__ void computeCoulombInteractionKernel(
     data_t* r, data_t* charge, data_t* result, int N) {
 
-    extern __shared__ data_t shared_r[];
+    // shared_r: [0, DIM*blockDim.x), shared_charge: [DIM*blockDim.x, DIM*blockDim.x+blockDim.x)
+    extern __shared__ data_t shared_mem[];
+    data_t* shared_r = shared_mem;
+    data_t* shared_charge = shared_mem + DIM * blockDim.x;
 
     int tid = threadIdx.x;
     int i = blockIdx.x * blockDim.x + tid;
@@ -38,6 +41,7 @@ __global__ void computeCoulombInteractionKernel(
                 shared_r[d * blockDim.x + tid] = 0.0;
             }
         }
+        shared_charge[tid] = (j < N) ? charge[j] : 0.0;
         __syncthreads();
 
         for (int j_in_tile = 0; j_in_tile < blockDim.x; ++j_in_tile) {
@@ -55,7 +59,7 @@ __global__ void computeCoulombInteractionKernel(
 
             data_t inv_dist = rsqrt(dist2);
             data_t inv_dist3 = inv_dist * inv_dist * inv_dist;
-            data_t factor = charge_i * charge[j] * inv_dist3;
+            data_t factor = charge_i * shared_charge[j_in_tile] * inv_dist3;
 
             for (int d = 0; d < DIM; ++d) {
                 force[d] += diff[d] * factor;
@@ -79,7 +83,7 @@ extern "C" void computeCoulombInteraction(
     data_t* r, data_t* charge, data_t* result, int N,
     int grid_size, int block_size) {
 
-    int shared_bytes = block_size * DIM * sizeof(data_t);
+    int shared_bytes = block_size * (DIM + 1) * sizeof(data_t);
     computeCoulombInteractionKernel<<<grid_size, block_size, shared_bytes>>>(
         r, charge, result, N);
     cudaDeviceSynchronize();

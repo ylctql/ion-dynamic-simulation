@@ -14,11 +14,13 @@ namespace {
 
 TensorType acceleration(CRef<TensorType>& r, CRef<TensorType>& v,
                         CRef<VectorType>& charge, CRef<VectorType>& mass,
-                        data_t t, ForceCallback& force, bool use_cuda) {
+                        data_t t, ForceCallback& force, bool use_cuda,
+                        void* cuda_ctx) {
 #ifdef IONCPP_SKIP_COULOMB
     TensorType F_total = force(r, v, t);
 #else
-    TensorType F_total = force(r, v, t) + CoulombInteraction(r, charge, use_cuda);
+    TensorType F_total =
+        force(r, v, t) + CoulombInteraction(r, charge, use_cuda, cuda_ctx);
 #endif
     return F_total.colwise() / mass;
 }
@@ -32,6 +34,11 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajRK(
 
     const data_t dt = (time_end - time_start) / static_cast<data_t>(step);
     const size_t N = init_r.rows();
+
+    void* cuda_ctx = nullptr;
+#ifdef IONCPP_USE_CUDA
+    if (use_cuda) cuda_ctx = CoulombCudaContextCreate(N, charge);
+#endif
 
     TensorType r = init_r;
     TensorType v = init_v;
@@ -48,27 +55,28 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajRK(
     for (size_t i = 0; i < step; ++i) {
         const data_t t = time_start + dt * static_cast<data_t>(i);
 
-        v_k1 = acceleration(r, v, charge, mass, t, force, use_cuda) * dt;
+        v_k1 = acceleration(r, v, charge, mass, t, force, use_cuda, cuda_ctx) *
+               dt;
         r_k1 = v * dt;
 
         r_tmp = r + r_k1 * 0.5;
         v_tmp = v + v_k1 * 0.5;
         v_k2 = acceleration(r_tmp, v_tmp, charge, mass, t + dt * 0.5, force,
-                            use_cuda) *
+                          use_cuda, cuda_ctx) *
                dt;
         r_k2 = v_tmp * dt;
 
         r_tmp = r + r_k2 * 0.5;
         v_tmp = v + v_k2 * 0.5;
         v_k3 = acceleration(r_tmp, v_tmp, charge, mass, t + dt * 0.5, force,
-                            use_cuda) *
+                          use_cuda, cuda_ctx) *
                dt;
         r_k3 = v_tmp * dt;
 
         r_tmp = r + r_k3;
         v_tmp = v + v_k3;
-        v_k4 = acceleration(r_tmp, v_tmp, charge, mass, t + dt, force,
-                            use_cuda) *
+        v_k4 = acceleration(r_tmp, v_tmp, charge, mass, t + dt, force, use_cuda,
+                          cuda_ctx) *
                dt;
         r_k4 = v_tmp * dt;
 
@@ -78,6 +86,12 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajRK(
         r_ret.push_back(r);
         v_ret.push_back(v);
     }
+
+#ifdef IONCPP_USE_CUDA
+    if (cuda_ctx != nullptr)
+        CoulombCudaContextDestroy(
+            static_cast<CoulombCudaContext*>(cuda_ctx));
+#endif
 
     return {r_ret, v_ret};
 }
@@ -89,6 +103,11 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajVV(
 
     const data_t dt = (time_end - time_start) / static_cast<data_t>(step);
     const size_t N = init_r.rows();
+
+    void* cuda_ctx = nullptr;
+#ifdef IONCPP_USE_CUDA
+    if (use_cuda) cuda_ctx = CoulombCudaContextCreate(N, charge);
+#endif
 
     TensorType r = init_r;
     TensorType v = init_v;
@@ -104,7 +123,7 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajVV(
         const data_t t = time_start + dt * static_cast<data_t>(i);
 
         if (!a_last_initialized) {
-            a = acceleration(r, v, charge, mass, t, force, use_cuda);
+            a = acceleration(r, v, charge, mass, t, force, use_cuda, cuda_ctx);
             a_last = a;
             a_last_initialized = true;
 
@@ -112,7 +131,8 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajVV(
             v += a * dt;
         } else {
             r += v * dt + a_last * (dt * dt * 0.5);
-            a = acceleration(r, v, charge, mass, t + dt, force, use_cuda);
+            a = acceleration(r, v, charge, mass, t + dt, force, use_cuda,
+                            cuda_ctx);
             v += (a + a_last) * (dt * 0.5);
             a_last = a;
         }
@@ -120,6 +140,12 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajVV(
         r_ret.push_back(r);
         v_ret.push_back(v);
     }
+
+#ifdef IONCPP_USE_CUDA
+    if (cuda_ctx != nullptr)
+        CoulombCudaContextDestroy(
+            static_cast<CoulombCudaContext*>(cuda_ctx));
+#endif
 
     return {r_ret, v_ret};
 }

@@ -66,9 +66,10 @@ TensorType CoulombInteractionCpu(CRef<TensorType>& r,
 }
 
 #ifdef IONCPP_USE_CUDA
-// CUDA 实现：调用 Coulomb_cuda.cu 的 computeCoulombInteraction
-TensorType CoulombInteractionCuda(CRef<TensorType>& r,
-                                   CRef<VectorType>& charge) {
+// CUDA 实现：支持持久化上下文，ctx 非空时复用显存（charge 已在 Create 时拷贝）
+TensorType CoulombInteractionCudaWithContext(CRef<TensorType>& r,
+                                              CRef<VectorType>& charge,
+                                              CoulombCudaContext* ctx) {
     const auto N = r.rows();
     TensorType result(N, DIM);
     result.setZero();
@@ -76,42 +77,55 @@ TensorType CoulombInteractionCuda(CRef<TensorType>& r,
     data_t* d_r = nullptr;
     data_t* d_charge = nullptr;
     data_t* d_result = nullptr;
+    bool owns_buffers = (ctx == nullptr);
 
-    cudaError_t err = cudaMalloc(&d_r, N * DIM * sizeof(data_t));
-    if (err == cudaSuccess) err = cudaMalloc(&d_charge, N * sizeof(data_t));
-    if (err == cudaSuccess) err = cudaMalloc(&d_result, N * DIM * sizeof(data_t));
-    if (err != cudaSuccess) {
-        cudaFree(d_r);
-        cudaFree(d_charge);
-        cudaFree(d_result);
-        return CoulombInteractionCpu(r, charge);
+    if (ctx != nullptr && ctx->N == N) {
+        d_r = ctx->d_r;
+        d_charge = ctx->d_charge;
+        d_result = ctx->d_result;
+    } else if (ctx == nullptr) {
+        cudaError_t err = cudaMalloc(&d_r, N * DIM * sizeof(data_t));
+        if (err == cudaSuccess) err = cudaMalloc(&d_charge, N * sizeof(data_t));
+        if (err == cudaSuccess)
+            err = cudaMalloc(&d_result, N * DIM * sizeof(data_t));
+        if (err != cudaSuccess) {
+            cudaFree(d_r);
+            cudaFree(d_charge);
+            cudaFree(d_result);
+            return CoulombInteractionCpu(r, charge);
+        }
     }
 
     cudaMemcpy(d_r, r.data(), N * DIM * sizeof(data_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_charge, charge.data(), N * sizeof(data_t),
-               cudaMemcpyHostToDevice);
+    if (owns_buffers) {
+        cudaMemcpy(d_charge, charge.data(), N * sizeof(data_t),
+                   cudaMemcpyHostToDevice);
+    }
     cudaMemset(d_result, 0, N * DIM * sizeof(data_t));
 
-    const int threadsPerBlock = 64;
+    const int threadsPerBlock = 128;
     const int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
     computeCoulombInteraction(d_r, d_charge, d_result, N, blocksPerGrid,
                              threadsPerBlock);
 
-    err = cudaGetLastError();
+    cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        // 不依赖 iostream，仅用于调试
-        cudaFree(d_r);
-        cudaFree(d_charge);
-        cudaFree(d_result);
-        return CoulombInteractionCpu(r, charge);  // 失败时回退 CPU
+        if (owns_buffers) {
+            cudaFree(d_r);
+            cudaFree(d_charge);
+            cudaFree(d_result);
+        }
+        return CoulombInteractionCpu(r, charge);
     }
 
     cudaMemcpy(result.data(), d_result, N * DIM * sizeof(data_t),
                cudaMemcpyDeviceToHost);
 
-    cudaFree(d_r);
-    cudaFree(d_charge);
-    cudaFree(d_result);
+    if (owns_buffers) {
+        cudaFree(d_r);
+        cudaFree(d_charge);
+        cudaFree(d_result);
+    }
 
     return result;
 }
@@ -119,13 +133,50 @@ TensorType CoulombInteractionCuda(CRef<TensorType>& r,
 
 }  // namespace
 
+#ifdef IONCPP_USE_CUDA
+// 置于 ioncpp 命名空间（非匿名），供 numerical_integration.cpp 链接
+CoulombCudaContext* CoulombCudaContextCreate(size_t N,
+                                            CRef<VectorType>& charge) {
+    auto* ctx = new CoulombCudaContext;
+    ctx->N = N;
+    cudaError_t err = cudaMalloc(&ctx->d_r, N * DIM * sizeof(data_t));
+    if (err == cudaSuccess) err = cudaMalloc(&ctx->d_charge, N * sizeof(data_t));
+    if (err == cudaSuccess)
+        err = cudaMalloc(&ctx->d_result, N * DIM * sizeof(data_t));
+    if (err != cudaSuccess) {
+        cudaFree(ctx->d_r);
+        cudaFree(ctx->d_charge);
+        cudaFree(ctx->d_result);
+        delete ctx;
+        return nullptr;
+    }
+    cudaMemcpy(ctx->d_charge, charge.data(), N * sizeof(data_t),
+               cudaMemcpyHostToDevice);
+    return ctx;
+}
+
+void CoulombCudaContextDestroy(CoulombCudaContext* ctx) {
+    if (ctx == nullptr) return;
+    cudaFree(ctx->d_r);
+    cudaFree(ctx->d_charge);
+    cudaFree(ctx->d_result);
+    ctx->d_r = nullptr;
+    ctx->d_charge = nullptr;
+    ctx->d_result = nullptr;
+    ctx->N = 0;
+    delete ctx;
+}
+#endif  // IONCPP_USE_CUDA
+
 TensorType CoulombInteraction(CRef<TensorType>& r, CRef<VectorType>& charge,
-                              bool use_cuda) {
+                              bool use_cuda, void* ctx) {
 #ifdef IONCPP_USE_CUDA
     if (use_cuda) {
-        return CoulombInteractionCuda(r, charge);
+        return CoulombInteractionCudaWithContext(
+            r, charge, static_cast<CoulombCudaContext*>(ctx));
     }
 #endif
+    (void)ctx;
     return CoulombInteractionCpu(r, charge);
 }
 
