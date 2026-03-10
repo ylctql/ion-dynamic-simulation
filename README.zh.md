@@ -140,7 +140,7 @@ python main.py [options]
 |------|------|------|
 | `--N` | 50 | 离子数量 |
 | `--t0` | 0 | 起始时间 (μs) |
-| `--time` | ∞ | 从 t0 起继续运行的时长 (μs)，不传则无限 |
+| `--time` | ∞ | 模拟终止时刻 (μs)，不传则无限运行 |
 | `--alpha` | 0 | 同位素参杂比例；单同位素模式下为该同位素丰度 |
 | `--isotope` | - | 单同位素模式：Ba133/Ba134/Ba135/Ba136/Ba137/Ba138；alpha 为该同位素丰度，其余为 Ba135；不指定则使用混合模式 |
 | `--device` | cpu | 计算设备：cpu / cuda |
@@ -155,7 +155,7 @@ python main.py [options]
 |------|------|------|
 | `--csv` | data/monolithic20241118.csv | 电场 CSV；可仅传文件名(如 monolithic20241118.csv)，自动在 data/ 下查找 |
 | `--config` | FieldConfiguration/configs/default.json | 电极电压 JSON；可仅传文件名(如 default.json)，自动在 FieldConfiguration/configs/ 下查找 |
-| `--init_file` | - | 初始 r0/v0 的 .npz 文件路径，须含 'r'(μm)、'v'(m/s)，形状 (N,3)；若文件名为 t{时间}us.npz 则从该时刻继续演化，否则从 --t0 开始 |
+| `--init_file` | - | 初始 r0/v0 的 .npz 文件路径，须含 'r'(μm)、'v'(m/s)，形状 (N,3)；t0 优先从 npz 内 t_us 读取（确保 RF 相位衔接），其次从文件名 t{时间}us.npz 解析，否则用 --t0 |
 | `--smooth-axes` | z | 势场平滑方向 (如 x,y,z 或 z)；指定 none 关闭滤波；Savitzky-Golay |
 | `--smooth-sg` | 11,3 | Savitzky-Golay 参数：窗口长度,多项式阶数，逗号分隔 |
 

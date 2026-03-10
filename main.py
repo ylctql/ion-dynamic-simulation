@@ -172,7 +172,7 @@ def _create_backend_and_start(
     queue_control = mp.Queue()
     queue_data = mp.Queue(maxsize=50)
 
-    # time 为演化结束时间 (dt 单位)，= t0 + duration，使 --time 表示从 t0 起继续运行的时长
+    # time_end_dt 为演化终止时刻 (dt 单位)，--time 指定模拟终止时刻 (μs)
     time_end_dt = t0 + duration if np.isfinite(duration) else np.inf
     backend = CalculationBackend(
         step=parsed.step,
@@ -208,7 +208,7 @@ def _save_rv_only(vision: Vision, f_last: Frame, cfg, device: str) -> None:
     dir_path = os.path.join(vision.save_rv_status_dir, device, str(len(f_last.r)))
     os.makedirs(dir_path, exist_ok=True)
     path = os.path.join(dir_path, f"t{time_us:.1f}us.npz")
-    np.savez(path, r=r_um, v=v_m_s)
+    np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
     logger.info("已保存 r/v: %s", path)
 
 

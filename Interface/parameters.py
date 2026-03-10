@@ -150,13 +150,22 @@ def from_argparse(args, dt: float) -> Parameters:
     alpha = getattr(args, "alpha", getattr(args, "isotope_ratio", 0.0))
     isotope_type = getattr(args, "isotope", None)
     t0 = getattr(args, "t0", 0.0)
-    time_us = getattr(args, "time", np.inf)
-    if time_us is None:
-        time_us = np.inf
+    time_end_us = getattr(args, "time", np.inf)
+    if time_end_us is None:
+        time_end_us = np.inf
 
-    # 将微秒转换为 dt 单位
-    duration_dt = np.inf if time_us == np.inf else time_us / (dt * 1e6)
+    # 将微秒转换为 dt 单位；--time 为模拟终止时刻 (μs)
     t0_dt = t0 / (dt * 1e6)
+    if time_end_us == np.inf:
+        duration_dt = np.inf
+    else:
+        if t0 >= time_end_us:
+            raise ValueError(
+                f"--t0 ({t0} μs) 必须小于 --time ({time_end_us} μs)，"
+                "终止时刻不能早于或等于起始时刻"
+            )
+        time_end_dt = time_end_us / (dt * 1e6)
+        duration_dt = time_end_dt - t0_dt
 
     return Parameters(
         N=N,

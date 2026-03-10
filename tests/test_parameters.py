@@ -1,5 +1,6 @@
 """参数解析模块测试"""
 import numpy as np
+import pytest
 
 from Interface.parameters import Parameters, from_argparse
 
@@ -9,7 +10,7 @@ def test_from_argparse_basic():
         N = 10
         alpha = 0.0
         t0 = 0.0
-        time = 1.0  # 1 μs
+        time = 1.0  # 终止时刻 1 μs
         device = "cpu"
         calc_method = "VV"
 
@@ -20,6 +21,36 @@ def test_from_argparse_basic():
     assert p.calc_method == "VV"
     assert p.duration == 1.0 / (dt * 1e6)
     assert p.t0 == 0.0
+
+
+def test_from_argparse_time_as_end_time():
+    """--time 为终止时刻：t0=100, time=200 → duration=100 μs"""
+    class Args:
+        N = 5
+        alpha = 0.0
+        t0 = 100.0
+        time = 200.0
+        device = "cpu"
+        calc_method = "VV"
+
+    dt = 1e-8
+    p = from_argparse(Args(), dt)
+    expected_duration_dt = 100.0 / (dt * 1e6)  # 200-100=100 μs
+    assert p.duration == expected_duration_dt
+
+
+def test_from_argparse_t0_ge_time_raises():
+    """t0 >= time 时应报错"""
+    class Args:
+        N = 5
+        alpha = 0.0
+        t0 = 200.0
+        time = 100.0
+        device = "cpu"
+        calc_method = "VV"
+
+    with pytest.raises(ValueError, match="终止时刻不能早于或等于起始时刻"):
+        from_argparse(Args(), 1e-8)
 
 
 def test_from_argparse_infinite_time():

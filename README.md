@@ -140,7 +140,7 @@ python main.py [options]
 |--------|---------|-------------|
 | `--N` | 50 | Number of ions |
 | `--t0` | 0 | Start time (μs) |
-| `--time` | ∞ | Duration to run from t0 (μs); omit for infinite |
+| `--time` | ∞ | Simulation end time (μs); omit for infinite |
 | `--alpha` | 0 | Isotope doping ratio; in single-isotope mode, abundance of that isotope |
 | `--isotope` | - | Single-isotope mode: Ba133/Ba134/Ba135/Ba136/Ba137/Ba138; alpha = abundance of this isotope, rest = Ba135; omit for mixed mode |
 | `--device` | cpu | Compute device: cpu / cuda |
@@ -155,7 +155,7 @@ python main.py [options]
 |--------|---------|-------------|
 | `--csv` | data/monolithic20241118.csv | Electric field CSV; pass filename only (e.g. monolithic20241118.csv) to look in data/ |
 | `--config` | FieldConfiguration/configs/default.json | Voltage config JSON; pass filename only (e.g. default.json) to look in FieldConfiguration/configs/ |
-| `--init_file` | - | Path to .npz with initial r0/v0; must contain 'r'(μm), 'v'(m/s), shape (N,3); if filename is t{time}us.npz, evolution starts from that time |
+| `--init_file` | - | Path to .npz with initial r0/v0; must contain 'r'(μm), 'v'(m/s), shape (N,3); t0 is taken from npz 't_us' first (for RF phase continuity), then from filename t{time}us.npz, else --t0 |
 | `--smooth-axes` | z | Smooth potential along axes (e.g. x,y,z or z); use `none` to disable; Savitzky-Golay filter |
 | `--smooth-sg` | 11,3 | Savitzky-Golay params: window_length,polyorder (comma-separated) |
 

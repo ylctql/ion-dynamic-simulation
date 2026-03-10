@@ -53,7 +53,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="离子阱动力学模拟")
     parser.add_argument("--N", type=int, default=50, help="离子数")
     parser.add_argument("--t0", type=float, default=0.0, help="起始时间 (μs)")
-    parser.add_argument("--time", type=float, default=None, help="从 t0 起继续运行的时长 (μs)，默认无限")
+    parser.add_argument("--time", type=float, default=None, help="模拟终止时刻 (μs)，不传则无限运行")
     parser.add_argument("--plot", action="store_true", help="启用实时绘图")
     parser.add_argument("--interval", type=float, default=1.0, help="帧间隔 (dt 单位)")
     parser.add_argument("--step", type=int, default=10, help="每帧积分步数")
@@ -70,7 +70,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--init_file",
         type=str,
         default="",
-        help="初始 r0/v0 的 .npz 文件路径，须含 'r'(μm) 和 'v'(m/s) 键，形状 (N,3)",
+        help="初始 r0/v0 的 .npz 路径，须含 r/v；含 t_us 或文件名 t{X}us.npz 时自动设 t0 以衔接 RF 相位",
     )
     parser.add_argument(
         "--device",
@@ -219,13 +219,34 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
         params.r0 = (r_um * 1e-6 / cfg.dl).astype(float, order="C")
         params.v0 = (v_si * cfg.dt / cfg.dl).astype(float, order="C")
 
-        # 若文件名以时间命名（如 t10.0us.npz），则用该时间作为演化起点；否则沿用 --t0
-        m = re.match(r"t(\d+(?:\.\d+)?)us\.npz$", init_path.name, re.IGNORECASE)
-        if m is not None:
-            t0_us = float(m.group(1))
+        # 演化起点 t0：优先用 npz 内 t_us（确保 RF 相位正确衔接），其次文件名，最后 --t0
+        t0_us = None
+        if "t_us" in data:
+            t0_us = float(np.asarray(data["t_us"]).item())
+        elif "t" in data:
+            t0_us = float(np.asarray(data["t"]).item())
+        if t0_us is None:
+            m = re.match(r"t(\d+(?:\.\d+)?)us\.npz$", init_path.name, re.IGNORECASE)
+            if m is not None:
+                t0_us = float(m.group(1))
+        if t0_us is not None:
             params.t0 = t0_us / (cfg.dt * 1e6)
-            logger.info("init_file 以时间命名，演化起点设为 t0 = %.3f μs", t0_us)
-        # 否则 params.t0 已由 from_argparse 根据 --t0 设置（默认 0）
+            logger.info("init_file 演化起点 t0 = %.3f μs（RF 相位衔接）", t0_us)
+            # 若指定了 --time，需用更新后的 t0 重算 duration 并校验 t0 < time
+            time_end_us = getattr(args, "time", None)
+            if time_end_us is not None and time_end_us != np.inf:
+                if t0_us >= time_end_us:
+                    raise ValueError(
+                        f"init_file 演化起点 t0={t0_us:.3f} μs 必须小于 --time ({time_end_us} μs)，"
+                        "终止时刻不能早于或等于起始时刻"
+                    )
+                time_end_dt = time_end_us / (cfg.dt * 1e6)
+                params.duration = time_end_dt - params.t0
+        elif getattr(args, "t0", 0.0) == 0.0:
+            logger.warning(
+                "init_file 未包含时刻信息且未指定 --t0，使用 t0=0；"
+                "若 checkpoint 来自其他时刻，请指定 --t0 以确保 RF 相位正确衔接"
+            )
 
     # 4. 构建 FieldSettings
     csv_path = _resolve_path(args.csv, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)

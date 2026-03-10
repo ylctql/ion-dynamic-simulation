@@ -207,13 +207,14 @@ class DataPlotter:
             ax.set_ylabel("x (μm)", fontsize=14)
 
     def _save_rv(self, f: Frame, n_ions: int, out_dir: str, basename: str) -> None:
-        """保存 r(μm)、v(m/s) 到 npz 文件"""
+        """保存 r(μm)、v(m/s)、t_us(μs) 到 npz 文件，t_us 供续跑时正确设置 RF 相位"""
         r_um = np.asarray(f.r, dtype=np.float64) * self._dl_um
         v_m_s = np.asarray(f.v, dtype=np.float64) * self.dl / self.dt
+        time_us = f.timestamp * self._dt_us
         dir_path = os.path.join(out_dir, str(n_ions))
         os.makedirs(dir_path, exist_ok=True)
         path = os.path.join(dir_path, f"{basename}.npz")
-        np.savez(path, r=r_um, v=v_m_s)
+        np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
         logger.info("已保存 r/v: %s", path)
 
     def _add_isotope_legend(self, ax) -> None:
