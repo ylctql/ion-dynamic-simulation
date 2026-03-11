@@ -22,54 +22,51 @@ __global__ void computeCoulombInteractionKernel(
 
     int tid = threadIdx.x;
     int i = blockIdx.x * blockDim.x + tid;
-    if (i >= N) return;
+    bool active = (i < N);
 
     data_t force[DIM] = {0.0};
     data_t pos_i[DIM];
-    data_t charge_i = charge[i];
-
-    for (int d = 0; d < DIM; ++d) {
-        pos_i[d] = r[d * N + i];
+    data_t charge_i = active ? charge[i] : 0.0;
+    if (active) {
+        for (int d = 0; d < DIM; ++d) pos_i[d] = r[d * N + i];
     }
 
     for (int tile_start = 0; tile_start < N; tile_start += blockDim.x) {
         int j = tile_start + tid;
         for (int d = 0; d < DIM; ++d) {
-            if (j < N) {
-                shared_r[d * blockDim.x + tid] = r[d * N + j];
-            } else {
-                shared_r[d * blockDim.x + tid] = 0.0;
-            }
+            shared_r[d * blockDim.x + tid] = (j < N) ? r[d * N + j] : 0.0;
         }
         shared_charge[tid] = (j < N) ? charge[j] : 0.0;
         __syncthreads();
 
-        for (int j_in_tile = 0; j_in_tile < blockDim.x; ++j_in_tile) {
-            int j = tile_start + j_in_tile;
-            if (j >= N || i == j) continue;
+        if (active) {
+            for (int j_in_tile = 0; j_in_tile < blockDim.x; ++j_in_tile) {
+                int j = tile_start + j_in_tile;
+                if (j >= N || i == j) continue;
 
-            data_t dist2 = 0.0;
-            data_t diff[DIM];
+                data_t dist2 = 0.0;
+                data_t diff[DIM];
 
-            for (int d = 0; d < DIM; ++d) {
-                diff[d] = pos_i[d] - shared_r[d * blockDim.x + j_in_tile];
-                dist2 += diff[d] * diff[d];
-            }
-            dist2 = fmax(dist2, EPS_DIST2);
+                for (int d = 0; d < DIM; ++d) {
+                    diff[d] = pos_i[d] - shared_r[d * blockDim.x + j_in_tile];
+                    dist2 += diff[d] * diff[d];
+                }
+                dist2 = fmax(dist2, EPS_DIST2);
 
-            data_t inv_dist = rsqrt(dist2);
-            data_t inv_dist3 = inv_dist * inv_dist * inv_dist;
-            data_t factor = charge_i * shared_charge[j_in_tile] * inv_dist3;
+                data_t inv_dist = rsqrt(dist2);
+                data_t inv_dist3 = inv_dist * inv_dist * inv_dist;
+                data_t factor = charge_i * shared_charge[j_in_tile] * inv_dist3;
 
-            for (int d = 0; d < DIM; ++d) {
-                force[d] += diff[d] * factor;
+                for (int d = 0; d < DIM; ++d) {
+                    force[d] += diff[d] * factor;
+                }
             }
         }
         __syncthreads();
     }
 
-    for (int d = 0; d < DIM; ++d) {
-        result[d * N + i] = force[d];
+    if (active) {
+        for (int d = 0; d < DIM; ++d) result[d * N + i] = force[d];
     }
 }
 
