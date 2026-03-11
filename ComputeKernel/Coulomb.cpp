@@ -103,7 +103,7 @@ TensorType CoulombInteractionCudaWithContext(CRef<TensorType>& r,
     }
     cudaMemset(d_result, 0, N * DIM * sizeof(data_t));
 
-    const int threadsPerBlock = 128;
+    const int threadsPerBlock = 256;
     const int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
     computeCoulombInteraction(d_r, d_charge, d_result, N, blocksPerGrid,
                              threadsPerBlock);

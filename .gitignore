@@ -59,3 +59,4 @@ saves/
 
 # 性能测试结果
 benchmark/benchmark_results/
+tests/test_results/
