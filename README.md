@@ -13,6 +13,7 @@ Ion trap dynamics simulation with modular architecture. Simulates ion crystal dy
 - **CPU / CUDA**: Optional GPU acceleration for Coulomb force
 - **Real-time plotting**: Live visualization with matplotlib
 - **Field visualization**: Standalone tool for electric potential distribution (static, RF pseudopotential, total) in 1D or 2D (heatmap / 3D surface)
+- **Equilibrium solver**: Fit 3D trap potential and minimize total energy (trap + Coulomb) to find ion crystal equilibrium positions
 
 ## Requirements
 
@@ -128,6 +129,58 @@ python field_visualize.py --vary z --smooth-axes none
 
 **Note**: When passing negative values (e.g. `--x_range=-100,100`), use `=` to attach the value to the option; otherwise the parser may interpret `-100` as a new flag.
 
+## Equilibrium Solver
+
+The `equilibrium` module computes ion crystal equilibrium positions by:
+
+1. Fitting total trap potential with a 3D quartic polynomial (`fit_potential_3d_quartic`)
+2. Building total energy `U_total = U_trap + U_coulomb`
+3. Minimizing `U_total` with L-BFGS-B
+
+Energy is reported in **eV**, and trap potential uses a shifted zero (`V_shifted = V_true - V_min_sample`) for clearer scale comparison with Coulomb energy.
+
+```bash
+python -m equilibrium.find_equilibrium [options]
+```
+
+### Usage examples
+
+```bash
+# Solve equilibrium for 40 ions (default field/config)
+python -m equilibrium.find_equilibrium --N 40
+
+# Custom trap ranges and initialization from file
+python -m equilibrium.find_equilibrium --N 120 --x_range=-80,80 --y_range=-30,30 --z_range=-150,150 --init_file saves/rv/traj/cpu/300/t200.0us.npz
+
+# Save figure with zoy (top) / zox (bottom) layout
+python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-out equilibrium/equi_pos/80.png
+```
+
+### Equilibrium solver options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--csv` | data/monolithic20241118.csv | Electric field CSV path (filename-only also supported) |
+| `--config` | FieldConfiguration/configs/default.json | Voltage config JSON path (filename-only also supported) |
+| `--N` | 20 | Number of ions |
+| `--charge` | 1.0 | Charge per ion in elementary charge `e` |
+| `--center` | 0,0,0 | Fit center `(x,y,z)` in μm |
+| `--x_range` | -50,50 | x range for fit/optimization in μm |
+| `--y_range` | -20,20 | y range for fit/optimization in μm |
+| `--z_range` | -100,100 | z range for fit/optimization in μm |
+| `--fit-n-pts` | 8 | Sample points per axis for 3D quartic fit |
+| `--softening-um` | 0.001 | Coulomb softening length in μm |
+| `--maxiter` | 500 | Max optimization iterations |
+| `--tol` | 1e-10 | Relative convergence tolerance (`ftol`, dimensionless) |
+| `--seed` | 42 | RNG seed when random initialization is used |
+| `--init_file` | - | Optional `.npz` with key `r` (shape `(N,3)`, unit μm) |
+| `--plot` | - | Plot equilibrium positions (`zoy` top, `zox` bottom) |
+| `--color_mode` | none | `none` / `y_pos` / `v2` / `isotope` (unsupported modes degrade gracefully) |
+| `--plot-out` | - | Output path for figure; if omitted, opens interactive window |
+| `--out` | equilibrium/equi_pos/{N}.npz | Output path for equilibrium npz (default auto by ion count) |
+| `--smooth-axes` | z | Potential smoothing axes (`none` to disable) |
+| `--smooth-sg` | 11,3 | Savitzky-Golay smoothing parameters |
+
 ## Command-line Options
 
 ```bash
@@ -200,6 +253,11 @@ ism-main/
 │   ├── trap_freq.py   # Trap frequency computation
 │   ├── plots.py       # Potential and freq-scan plotting
 │   └── cli.py         # Argument parsing and main flow
+├── equilibrium/       # Equilibrium-position solver
+│   ├── potential_fit_3d.py  # 3D quartic potential fit and gradient
+│   ├── energy.py      # Trap/Coulomb/total energy in eV
+│   ├── find_equilibrium.py  # CLI: minimize total energy for equilibrium
+│   └── equi_pos/      # Default output directory for equilibrium npz
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```

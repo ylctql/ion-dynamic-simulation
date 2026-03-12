@@ -13,6 +13,7 @@
 - **GPU 加速**：库仑力可选用 CUDA 加速
 - **实时绘图**：基于 matplotlib 的实时可视化
 - **电势场可视化**：独立工具，可绘制静电势、RF 赝势、总电势的 1D 或 2D（热力图/三维曲面）分布
+- **平衡构型求解**：拟合 3D 阱势并最小化总势能（外势 + 库仑）得到离子晶格平衡位置
 
 ## 环境要求
 
@@ -128,6 +129,58 @@ python field_visualize.py --vary z --smooth-axes none
 
 **注意**：传入负数时（如 `--x_range=-100,100`）需使用 `=` 将值与参数相连，否则解析器可能将 `-100` 识别为新选项。
 
+## 平衡构型求解（Equilibrium Solver）
+
+`equilibrium` 模块用于计算离子晶格平衡位置，流程为：
+
+1. 对总外势进行 3D 四次多项式拟合（`fit_potential_3d_quartic`）
+2. 构建总势能 `U_total = U_trap + U_coulomb`
+3. 使用 L-BFGS-B 最小化 `U_total` 得到平衡位置
+
+能量单位统一为 **eV**。同时外势采用零点平移（`V_shifted = V_true - V_min_sample`），便于与库仑势能量级比较。
+
+```bash
+python -m equilibrium.find_equilibrium [options]
+```
+
+### 使用示例
+
+```bash
+# 默认场配置下求解 40 个离子的平衡构型
+python -m equilibrium.find_equilibrium --N 40
+
+# 自定义范围，并从已有 npz 初始化
+python -m equilibrium.find_equilibrium --N 120 --x_range=-80,80 --y_range=-30,30 --z_range=-150,150 --init_file saves/rv/traj/cpu/300/t200.0us.npz
+
+# 绘制平衡位置布局图（上 zoy，下 zox）
+python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-out equilibrium/equi_pos/80.png
+```
+
+### 平衡构型参数
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--csv` | data/monolithic20241118.csv | 电场 CSV 路径（也支持仅传文件名） |
+| `--config` | FieldConfiguration/configs/default.json | 电压配置 JSON 路径（也支持仅传文件名） |
+| `--N` | 20 | 离子数量 |
+| `--charge` | 1.0 | 单离子电荷（单位 `e`） |
+| `--center` | 0,0,0 | 拟合中心 `(x,y,z)`，单位 μm |
+| `--x_range` | -50,50 | x 方向拟合/优化范围，单位 μm |
+| `--y_range` | -20,20 | y 方向拟合/优化范围，单位 μm |
+| `--z_range` | -100,100 | z 方向拟合/优化范围，单位 μm |
+| `--fit-n-pts` | 8 | 3D 拟合每轴采样点数 |
+| `--softening-um` | 0.001 | 库仑软化长度（μm） |
+| `--maxiter` | 500 | 优化最大迭代步数 |
+| `--tol` | 1e-10 | 收敛阈值（`ftol`，无量纲） |
+| `--seed` | 42 | 随机初始化种子 |
+| `--init_file` | - | 可选初值 `.npz`，需含 `r`，形状 `(N,3)`，单位 μm |
+| `--plot` | - | 绘制平衡位置布局（上 zoy，下 zox） |
+| `--color_mode` | none | `none` / `y_pos` / `v2` / `isotope`（不适用模式会自动降级） |
+| `--plot-out` | - | 布局图输出路径；不传则弹窗显示 |
+| `--out` | equilibrium/equi_pos/{N}.npz | 结果 npz 输出路径（默认按离子数命名） |
+| `--smooth-axes` | z | 势场平滑方向（`none` 关闭） |
+| `--smooth-sg` | 11,3 | Savitzky-Golay 平滑参数 |
+
 ## 命令行参数
 
 ```bash
@@ -200,6 +253,11 @@ ism-main/
 │   ├── trap_freq.py   # 阱频计算
 │   ├── plots.py       # 势场与阱频扫描绘图
 │   └── cli.py         # 参数解析与主流程
+├── equilibrium/       # 平衡构型求解模块
+│   ├── potential_fit_3d.py  # 3D 四次势场拟合与梯度
+│   ├── energy.py      # 外势/库仑/总势能（eV）
+│   ├── find_equilibrium.py  # CLI：最小化总势求平衡位置
+│   └── equi_pos/      # 平衡构型默认输出目录（npz）
 ├── main.py            # 入口
 └── setup_path.py      # ionsim 路径配置
 ```
