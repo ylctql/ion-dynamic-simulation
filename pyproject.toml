@@ -22,10 +22,12 @@ dev = [
 [project.scripts]
 ism-main = "main:main"
 field-visualize = "field_visualize:main"
+traj-equilibrium = "TrajectoryAnalysis.run_equilibrium:main"
+traj-plot-equilibrium = "TrajectoryAnalysis.visualize:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["Interface*", "FieldConfiguration*", "FieldParser*", "ComputeKernel*", "Plotter*"]
+include = ["Interface*", "FieldConfiguration*", "FieldParser*", "ComputeKernel*", "Plotter*", "TrajectoryAnalysis*"]
 
 [tool.setuptools]
 py-modules = ["utils", "setup_path", "field_visualize"]
