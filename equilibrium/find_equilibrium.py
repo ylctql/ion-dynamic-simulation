@@ -19,6 +19,8 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+_DEFAULT_OUT_SENTINEL = "__default__"
+
 
 def _parse_range_2(s: str, arg_name: str, parser: argparse.ArgumentParser) -> tuple[float, float]:
     parts = [float(x.strip()) for x in s.split(",")]
@@ -32,6 +34,63 @@ def _parse_center(s: str, parser: argparse.ArgumentParser) -> tuple[float, float
     if len(parts) != 3:
         parser.error("--center 须为 x,y,z 三个数")
     return (parts[0], parts[1], parts[2])
+
+
+def _parse_hessian_slice_indices(
+    expr: str | None,
+    size: int,
+    parser: argparse.ArgumentParser,
+) -> np.ndarray:
+    """
+    将 1D numpy 风格切片字符串解析为索引数组。
+
+    支持示例：
+    - ":"（全选）
+    - "0:10"
+    - "::3"
+    - "5"（单个索引）
+    """
+    if size <= 0:
+        parser.error("Hessian 维度必须为正")
+    s = (expr or ":").strip()
+    arr = np.arange(size, dtype=int)
+    try:
+        if s in ("", ":"):
+            idx = arr
+        elif ":" in s:
+            parts = s.split(":")
+            if len(parts) > 3:
+                parser.error(
+                    "--hessian-slice 仅支持 1D 切片，格式如 start:stop:step（可省略项）"
+                )
+            parts = parts + [""] * (3 - len(parts))
+
+            def _maybe_int(v: str) -> int | None:
+                return None if v.strip() == "" else int(v.strip())
+
+            start = _maybe_int(parts[0])
+            stop = _maybe_int(parts[1])
+            step = _maybe_int(parts[2])
+            if step == 0:
+                parser.error("--hessian-slice 的 step 不能为 0")
+            idx = arr[slice(start, stop, step)]
+        else:
+            idx = np.asarray([arr[int(s)]], dtype=int)
+    except (ValueError, IndexError):
+        parser.error(
+            f'--hessian-slice="{s}" 解析失败；请使用如 ":"、"0:10"、"::3"、"5" 的格式'
+        )
+
+    if idx.size == 0:
+        parser.error(f'--hessian-slice="{s}" 结果为空，请检查范围')
+    return np.asarray(idx, dtype=int)
+
+
+def _slice_to_filename_part(s: str) -> str:
+    """将 slice 字符串转换为文件名可用片段。"""
+    t = (s or ":").strip().replace(" ", "")
+    t = t.replace("/", "_").replace("\\", "_")
+    return t
 
 
 def _build_initial_positions(
@@ -133,6 +192,139 @@ def _plot_equilibrium_layout(
         plt.show()
 
 
+def _plot_hessian_heatmap(
+    hessian_eV_per_um2: np.ndarray,
+    hessian_kind: str,
+    plot_out: str | None = None,
+) -> None:
+    """将 Hessian 矩阵以热力图形式可视化。"""
+    import matplotlib.pyplot as plt
+    from matplotlib import colors
+
+    h = np.asarray(hessian_eV_per_um2, dtype=float)
+    if h.ndim != 2 or h.shape[0] != h.shape[1]:
+        raise ValueError(f"Hessian 应为方阵，当前形状 {h.shape}")
+
+    vmax = float(np.max(np.abs(h)))
+    if vmax <= 0.0:
+        vmax = 1.0
+
+    fig, ax = plt.subplots(1, 1, figsize=(7, 6))
+    hmin = float(np.min(h))
+    hmax = float(np.max(h))
+    if hmin < 0.0 < hmax:
+        norm = colors.TwoSlopeNorm(vmin=hmin, vcenter=0.0, vmax=hmax)
+        im = ax.imshow(h, cmap="RdBu_r", norm=norm, origin="lower", aspect="auto")
+    else:
+        im = ax.imshow(h, cmap="viridis", origin="lower", aspect="auto", vmin=hmin, vmax=hmax)
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Hessian (eV/μm²)")
+    ax.set_xlabel("DOF index")
+    ax.set_ylabel("DOF index")
+    ax.set_title(f"Hessian Heatmap ({hessian_kind})")
+    fig.tight_layout()
+
+    if plot_out:
+        out_path = Path(plot_out)
+        if not out_path.is_absolute():
+            out_path = _ROOT / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(str(out_path), dpi=220)
+        plt.close(fig)
+        print(f"Hessian 热力图已保存: {out_path}")
+    else:
+        plt.show()
+
+
+def _plot_phonon_spectrum(
+    freq_mhz: np.ndarray,
+    mode: str = "frequency",
+    plot_out: str | None = None,
+) -> None:
+    """
+    绘制声子频谱（线频率，MHz）。
+
+    mode:
+    - "frequency": 横轴频率（MHz），纵轴离散谱线强度
+    - "index": 横轴模式 index，纵轴频率（MHz，按降序）
+    """
+    import matplotlib.pyplot as plt
+
+    f = np.asarray(freq_mhz, dtype=float).ravel()
+    if f.size == 0:
+        raise ValueError("频率数组为空，无法绘制声子频谱")
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4.8))
+    stable_mask = f >= 0.0
+    unstable_mask = ~stable_mask
+    if mode == "index":
+        x = np.arange(f.size, dtype=int)
+        ax.axhline(0.0, color="k", linewidth=0.8)
+        if np.any(stable_mask):
+            ax.vlines(
+                x[stable_mask],
+                0.0,
+                f[stable_mask],
+                colors="tab:blue",
+                linewidth=1.2,
+                label="stable",
+            )
+        if np.any(unstable_mask):
+            ax.vlines(
+                x[unstable_mask],
+                0.0,
+                f[unstable_mask],
+                colors="tab:red",
+                linewidth=1.2,
+                label="unstable",
+            )
+        ax.set_xlabel("Mode index (frequency-desc order)")
+        ax.set_ylabel("Phonon frequency (MHz)")
+        ax.set_title("Phonon Spectrum (index mode)")
+    else:
+        x = f
+        y0 = np.zeros_like(f)
+        y1 = np.ones_like(f)
+        if np.any(stable_mask):
+            ax.vlines(
+                x[stable_mask],
+                y0[stable_mask],
+                y1[stable_mask],
+                colors="tab:blue",
+                linewidth=1.0,
+                label="stable",
+            )
+        if np.any(unstable_mask):
+            ax.vlines(
+                x[unstable_mask],
+                y0[unstable_mask],
+                y1[unstable_mask],
+                colors="tab:red",
+                linewidth=1.0,
+                label="unstable",
+            )
+        ax.set_xlabel("Phonon frequency (MHz)")
+        ax.set_ylabel("Spectral line")
+        ax.set_yticks([])
+        ax.set_title("Phonon Spectrum (frequency mode)")
+
+    ax.grid(True, alpha=0.3)
+    if np.any(unstable_mask):
+        ax.legend(loc="best")
+    fig.tight_layout()
+
+    if plot_out:
+        out_path = Path(plot_out)
+        if not out_path.is_absolute():
+            out_path = _ROOT / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(str(out_path), dpi=220)
+        plt.close(fig)
+        print(f"声子频谱图已保存: {out_path}")
+    else:
+        plt.show()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="最小化总势能（外势+库伦）以求离子晶格平衡位置"
@@ -149,9 +341,71 @@ def main() -> None:
     )
     parser.add_argument("--x_range", type=str, default="-50,50", help="x 轴拟合/优化范围 (μm)")
     parser.add_argument("--y_range", type=str, default="-20,20", help="y 轴拟合/优化范围 (μm)")
-    parser.add_argument("--z_range", type=str, default="-100,100", help="z 轴拟合/优化范围 (μm)")
-    parser.add_argument("--fit-n-pts", type=int, default=8, help="3D 拟合每轴采样点数，默认 8")
+    parser.add_argument("--z_range", type=str, default="-150,150", help="z 轴拟合/优化范围 (μm)")
+    parser.add_argument("--fit-n-pts-x", type=int, default=100, help="3D 拟合 x 轴采样点数，默认 100")
+    parser.add_argument("--fit-n-pts-y", type=int, default=40, help="3D 拟合 y 轴采样点数，默认 40")
+    parser.add_argument("--fit-n-pts-z", type=int, default=300, help="3D 拟合 z 轴采样点数，默认 300")
     parser.add_argument("--softening-um", type=float, default=0.001, help="库伦软化长度 (μm)，默认 0.001")
+    parser.add_argument("--phonon", action="store_true", help="在平衡位置处计算 Hessian 并提取声子模式")
+    parser.add_argument(
+        "--mass-amu",
+        type=float,
+        default=135.0,
+        help="--phonon 时离子质量（amu，默认 135.0，即 Ba135）",
+    )
+    parser.add_argument(
+        "--phonon-print-modes",
+        type=int,
+        default=10,
+        help="--phonon 时打印前若干个本征频率（按频率降序），默认 10",
+    )
+    parser.add_argument(
+        "--plot-hessian",
+        nargs="?",
+        const="total",
+        default=None,
+        choices=["total", "trap", "coulomb"],
+        help='绘制 Hessian 热力图；不带值默认 total，也可指定 "trap" 或 "coulomb"',
+    )
+    parser.add_argument(
+        "--hessian-slice",
+        type=str,
+        default=":",
+        help='Hessian 子矩阵索引（numpy 1D 切片风格），如 ":"、"0:10"、"::3"、"5"',
+    )
+    parser.add_argument(
+        "--plot-hessian-out",
+        nargs="?",
+        const=_DEFAULT_OUT_SENTINEL,
+        default=None,
+        help="--plot-hessian 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/hessian_plot/{N}_{slice}.png",
+    )
+    parser.add_argument(
+        "--plot-phonon-spectrum",
+        nargs="?",
+        const="frequency",
+        default=None,
+        choices=["frequency", "index"],
+        help='绘制声子频谱；默认 frequency（横轴频率，离散谱线），可选 "index"',
+    )
+    parser.add_argument(
+        "--plot-phonon-spectrum-out",
+        nargs="?",
+        const=_DEFAULT_OUT_SENTINEL,
+        default=None,
+        help="--plot-phonon-spectrum 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/spectra/{N}_{slice}.png",
+    )
+    parser.add_argument(
+        "--save-hessian-data",
+        action="store_true",
+        help="保存 Hessian 数据（total/trap/coulomb）到 npz",
+    )
+    parser.add_argument(
+        "--hessian-data-out",
+        type=str,
+        default="",
+        help="Hessian 数据输出 npz 路径；不传则默认保存到 equilibrium/hessian_data/{N}_{slice}.npz",
+    )
     parser.add_argument("--maxiter", type=int, default=500, help="优化最大迭代步数，默认 500")
     parser.add_argument("--tol", type=float, default=1e-10, help="优化收敛阈值，默认 1e-10")
     parser.add_argument("--seed", type=int, default=42, help="随机种子，默认 42")
@@ -188,6 +442,7 @@ def main() -> None:
     from field_visualize.core import apply_savgol_smooth, compute_potentials, um_to_norm
 
     from equilibrium.energy import total_energy_and_grad
+    from equilibrium.phonon import solve_phonon_modes, total_hessian
     from equilibrium.potential_fit_3d import fit_potential_3d_quartic
 
     def _resolve_path(arg: str, default_full: str, default_dir: str) -> str:
@@ -239,12 +494,20 @@ def main() -> None:
         um_to_norm=lambda v: um_to_norm(v, cfg.dl),
         center_um=center_um,
         range_um=range_um,
-        n_pts_per_axis=args.fit_n_pts,
+        n_pts_per_axis=(args.fit_n_pts_x, args.fit_n_pts_y, args.fit_n_pts_z),
     )
 
     n_ions = int(args.N)
     if n_ions <= 0:
         parser.error("--N 必须为正整数")
+    n_dof = 3 * n_ions
+    hessian_dof_indices = _parse_hessian_slice_indices(args.hessian_slice, n_dof, parser)
+    slice_part = _slice_to_filename_part(args.hessian_slice)
+    default_stem = f"{n_ions}_{slice_part}"
+    print(
+        f'Hessian 子空间: slice="{args.hessian_slice}" -> '
+        f"{hessian_dof_indices.size}/{n_dof} 个自由度"
+    )
     charge_ec = np.full(n_ions, float(args.charge), dtype=float)
 
     if args.init_file:
@@ -323,6 +586,32 @@ def main() -> None:
     print(f"y 范围: [{y_min:.3f}, {y_max:.3f}] μm (span={y_span:.3f} μm)")
     print("=" * 68)
 
+    phonon = None
+    need_phonon = bool(args.phonon or (args.plot_phonon_spectrum is not None))
+    if need_phonon:
+        phonon = solve_phonon_modes(
+            fit=fit,
+            r_um=r_eq,
+            charge_ec=charge_ec,
+            mass_amu=float(args.mass_amu),
+            softening_um=float(args.softening_um),
+            dof_indices=hessian_dof_indices,
+        )
+        if args.phonon:
+            freq_mhz = phonon.freq_hz_signed / 1e6
+            unstable = int(np.sum(phonon.omega2_s2 < 0.0))
+            print("声子模式分析:")
+            print(f"  mass = {float(args.mass_amu):.6f} amu")
+            print(f"  模式数 = {freq_mhz.size}, 不稳定模数(omega^2<0) = {unstable}")
+            n_print = max(0, min(int(args.phonon_print_modes), freq_mhz.size))
+            for i in range(n_print):
+                print(
+                    f"  mode {i:03d}: "
+                    f"f = {freq_mhz[i]:+.6f} MHz, "
+                    f"omega^2 = {phonon.omega2_s2[i]:+.6e} s^-2"
+                )
+            print("=" * 68)
+
     if args.out.strip():
         out_path = Path(args.out)
         if not out_path.is_absolute():
@@ -330,24 +619,41 @@ def main() -> None:
     else:
         out_path = _ROOT / "equilibrium" / "equi_pos" / f"{n_ions}.npz"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
-        str(out_path),
-        r=r_eq,
-        r0=r0,
-        total_energy_eV=e_eq,
-        trap_energy_eV=float(breakdown_eq.trap_eV),
-        coulomb_energy_eV=float(breakdown_eq.coulomb_eV),
-        success=bool(res.success),
-        status=int(res.status),
-        message=str(res.message),
-        nit=int(res.nit),
-        nfev=int(res.nfev),
-        fit_r2=float(fit.r_squared),
-        center_um=np.array(center_um, dtype=float),
-        x_range_um=np.array(x_range, dtype=float),
-        y_range_um=np.array(y_range, dtype=float),
-        z_range_um=np.array(z_range, dtype=float),
-    )
+    save_data = {
+        "r": r_eq,
+        "r0": r0,
+        "total_energy_eV": e_eq,
+        "trap_energy_eV": float(breakdown_eq.trap_eV),
+        "coulomb_energy_eV": float(breakdown_eq.coulomb_eV),
+        "success": bool(res.success),
+        "status": int(res.status),
+        "message": str(res.message),
+        "nit": int(res.nit),
+        "nfev": int(res.nfev),
+        "fit_r2": float(fit.r_squared),
+        "center_um": np.array(center_um, dtype=float),
+        "x_range_um": np.array(x_range, dtype=float),
+        "y_range_um": np.array(y_range, dtype=float),
+        "z_range_um": np.array(z_range, dtype=float),
+        "hessian_slice_expr": np.array(args.hessian_slice),
+        "hessian_dof_indices": hessian_dof_indices,
+    }
+    if phonon is not None:
+        save_data.update(
+            {
+                "phonon_mass_amu": float(args.mass_amu),
+                "hessian_total_eV_per_um2": phonon.hessian_total_eV_per_um2,
+                "hessian_trap_eV_per_um2": phonon.hessian_trap_eV_per_um2,
+                "hessian_coulomb_eV_per_um2": phonon.hessian_coulomb_eV_per_um2,
+                "dynamical_matrix_s2": phonon.dynamical_matrix_s2,
+                "omega2_s2": phonon.omega2_s2,
+                "freq_hz_signed": phonon.freq_hz_signed,
+                "eigvec_mass_weighted": phonon.eigvec_mass_weighted,
+                "eigvec_cartesian": phonon.eigvec_cartesian,
+                "phonon_dof_indices": phonon.dof_indices,
+            }
+        )
+    np.savez(str(out_path), **save_data)
     print(f"结果已保存: {out_path}")
 
     if args.plot:
@@ -361,6 +667,95 @@ def main() -> None:
             charge_ec=charge_ec,
             plot_out=plot_out or None,
         )
+
+    if args.plot_hessian is not None:
+        if phonon is not None:
+            h_total = phonon.hessian_total_eV_per_um2
+            h_trap = phonon.hessian_trap_eV_per_um2
+            h_coul = phonon.hessian_coulomb_eV_per_um2
+        else:
+            h_total, h_trap, h_coul = total_hessian(
+                fit=fit,
+                r_um=r_eq,
+                charge_ec=charge_ec,
+                softening_um=float(args.softening_um),
+            )
+            h_total = h_total[np.ix_(hessian_dof_indices, hessian_dof_indices)]
+            h_trap = h_trap[np.ix_(hessian_dof_indices, hessian_dof_indices)]
+            h_coul = h_coul[np.ix_(hessian_dof_indices, hessian_dof_indices)]
+
+        kind = args.plot_hessian
+        if kind == "trap":
+            h_plot = h_trap
+        elif kind == "coulomb":
+            h_plot = h_coul
+        else:
+            h_plot = h_total
+
+        hessian_plot_out = None
+        if args.plot_hessian_out is not None:
+            if args.plot_hessian_out == _DEFAULT_OUT_SENTINEL:
+                hessian_plot_out = str(_ROOT / "equilibrium" / "hessian_plot" / f"{default_stem}.png")
+            else:
+                hessian_plot_out = args.plot_hessian_out.strip()
+                if hessian_plot_out == "":
+                    hessian_plot_out = str(_ROOT / "equilibrium" / "hessian_plot" / f"{default_stem}.png")
+        _plot_hessian_heatmap(
+            hessian_eV_per_um2=h_plot,
+            hessian_kind=kind,
+            plot_out=hessian_plot_out,
+        )
+
+    if args.plot_phonon_spectrum is not None:
+        if phonon is None:
+            parser.error("--plot-phonon-spectrum 需要可用的声子模式结果")
+        spectrum_out = None
+        if args.plot_phonon_spectrum_out is not None:
+            if args.plot_phonon_spectrum_out == _DEFAULT_OUT_SENTINEL:
+                spectrum_out = str(_ROOT / "equilibrium" / "spectra" / f"{default_stem}.png")
+            else:
+                spectrum_out = args.plot_phonon_spectrum_out.strip()
+                if spectrum_out == "":
+                    spectrum_out = str(_ROOT / "equilibrium" / "spectra" / f"{default_stem}.png")
+        _plot_phonon_spectrum(
+            freq_mhz=phonon.freq_hz_signed / 1e6,
+            mode=args.plot_phonon_spectrum,
+            plot_out=spectrum_out,
+        )
+
+    if args.save_hessian_data:
+        if phonon is not None:
+            h_total = phonon.hessian_total_eV_per_um2
+            h_trap = phonon.hessian_trap_eV_per_um2
+            h_coul = phonon.hessian_coulomb_eV_per_um2
+        else:
+            h_total, h_trap, h_coul = total_hessian(
+                fit=fit,
+                r_um=r_eq,
+                charge_ec=charge_ec,
+                softening_um=float(args.softening_um),
+            )
+            h_total = h_total[np.ix_(hessian_dof_indices, hessian_dof_indices)]
+            h_trap = h_trap[np.ix_(hessian_dof_indices, hessian_dof_indices)]
+            h_coul = h_coul[np.ix_(hessian_dof_indices, hessian_dof_indices)]
+
+        hessian_data_out = args.hessian_data_out.strip() if args.hessian_data_out else ""
+        if not hessian_data_out:
+            hessian_data_out = str(_ROOT / "equilibrium" / "hessian_data" / f"{default_stem}.npz")
+        hessian_data_path = Path(hessian_data_out)
+        if not hessian_data_path.is_absolute():
+            hessian_data_path = _ROOT / hessian_data_path
+        hessian_data_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(
+            str(hessian_data_path),
+            hessian_total_eV_per_um2=h_total,
+            hessian_trap_eV_per_um2=h_trap,
+            hessian_coulomb_eV_per_um2=h_coul,
+            hessian_slice_expr=np.array(args.hessian_slice),
+            hessian_dof_indices=hessian_dof_indices,
+            N=int(n_ions),
+        )
+        print(f"Hessian 数据已保存: {hessian_data_path}")
 
 
 if __name__ == "__main__":

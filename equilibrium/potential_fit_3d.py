@@ -39,7 +39,7 @@ def fit_potential_3d_quartic(
     um_to_norm: Callable[[float], float],
     center_um: tuple[float, float, float] = (0.0, 0.0, 0.0),
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
-    n_pts_per_axis: int = 8,
+    n_pts_per_axis: int | tuple[int, int, int] = 8,
 ) -> FitResult3D:
     """
     直接对总势场做 3D 四次多项式拟合，并将势能零点平移到采样最小势。
@@ -58,8 +58,9 @@ def fit_potential_3d_quartic(
     range_um : tuple of tuples, optional
         各轴拟合范围 ((x_min, x_max), (y_min, y_max), (z_min, z_max)) μm
         默认 (-50, 50) 每轴
-    n_pts_per_axis : int
-        每轴采样点数，总采样数 n_pts_per_axis³，须 ≥ 6 以保证 125 项可拟合
+    n_pts_per_axis : int | tuple[int, int, int]
+        采样点数。可传单个整数（x/y/z 相同），或传 (nx, ny, nz) 分别指定三轴采样点数。
+        为保证 125 项拟合稳定，建议每轴 >= 6。
 
     Returns
     -------
@@ -81,10 +82,17 @@ def fit_potential_3d_quartic(
     yr_n = (um_to_norm(yr0), um_to_norm(yr1))
     zr_n = (um_to_norm(zr0), um_to_norm(zr1))
 
-    # 3D 网格采样
-    x_um = np.linspace(xr0, xr1, n_pts_per_axis)
-    y_um = np.linspace(yr0, yr1, n_pts_per_axis)
-    z_um = np.linspace(zr0, zr1, n_pts_per_axis)
+    # 3D 网格采样（支持三轴不同采样数）
+    if isinstance(n_pts_per_axis, int):
+        nx = ny = nz = int(n_pts_per_axis)
+    else:
+        nx, ny, nz = [int(v) for v in n_pts_per_axis]
+    if nx < 2 or ny < 2 or nz < 2:
+        raise ValueError(f"n_pts_per_axis 每轴至少为 2，当前为 ({nx}, {ny}, {nz})")
+
+    x_um = np.linspace(xr0, xr1, nx)
+    y_um = np.linspace(yr0, yr1, ny)
+    z_um = np.linspace(zr0, zr1, nz)
     xx, yy, zz = np.meshgrid(x_um, y_um, z_um, indexing="ij")
     x_flat = xx.ravel()
     y_flat = yy.ravel()
@@ -110,7 +118,7 @@ def fit_potential_3d_quartic(
     if np.sum(valid) < 125:
         raise ValueError(
             f"有效采样点 {np.sum(valid)} 不足，至少需 125 点拟合 3D 四次多项式。"
-            f"请增大 n_pts_per_axis 或检查势场范围。"
+            f"请增大 n_pts_per_axis（当前网格 {nx}x{ny}x{nz}）或检查势场范围。"
         )
     V_mat_valid = V_mat[valid]
     V_true_valid = V_true[valid]
@@ -199,5 +207,79 @@ def grad_fit_3d(fit: FitResult3D, r_um: np.ndarray) -> np.ndarray:
 
     # 链式法则: dV/dx = (dV/du) * (du/dx) = (dV/du) / L
     return np.column_stack([dV_du / L, dV_dv / L, dV_dw / L])
+
+
+def hessian_fit_3d(fit: FitResult3D, r_um: np.ndarray) -> np.ndarray:
+    """
+    用 3D 拟合结果计算电势 Hessian，单位 V/μm^2。
+
+    Returns
+    -------
+    hess : np.ndarray, shape (N, 3, 3)
+        每个点对应一个 3x3 对称 Hessian 矩阵，变量顺序为 (x, y, z)。
+    """
+    r_um = np.atleast_2d(r_um)
+    x0, y0, z0 = fit.center_um
+    L = fit.scale_um
+    u = (r_um[:, 0] - x0) / L
+    v = (r_um[:, 1] - y0) / L
+    w = (r_um[:, 2] - z0) / L
+    c = fit.coeffs
+
+    # 二阶偏导在 (u,v,w) 坐标下
+    c_duu = np.zeros((3, 5, 5))
+    for i in range(3):
+        c_duu[i, :, :] = c[i + 2, :, :] * (i + 2) * (i + 1)
+    d2V_duu = P.polyval3d(u, v, w, c_duu)
+
+    c_dvv = np.zeros((5, 3, 5))
+    for j in range(3):
+        c_dvv[:, j, :] = c[:, j + 2, :] * (j + 2) * (j + 1)
+    d2V_dvv = P.polyval3d(u, v, w, c_dvv)
+
+    c_dww = np.zeros((5, 5, 3))
+    for k in range(3):
+        c_dww[:, :, k] = c[:, :, k + 2] * (k + 2) * (k + 1)
+    d2V_dww = P.polyval3d(u, v, w, c_dww)
+
+    c_duv = np.zeros((4, 4, 5))
+    for i in range(4):
+        for j in range(4):
+            c_duv[i, j, :] = c[i + 1, j + 1, :] * (i + 1) * (j + 1)
+    d2V_duv = P.polyval3d(u, v, w, c_duv)
+
+    c_duw = np.zeros((4, 5, 4))
+    for i in range(4):
+        for k in range(4):
+            c_duw[i, :, k] = c[i + 1, :, k + 1] * (i + 1) * (k + 1)
+    d2V_duw = P.polyval3d(u, v, w, c_duw)
+
+    c_dvw = np.zeros((5, 4, 4))
+    for j in range(4):
+        for k in range(4):
+            c_dvw[:, j, k] = c[:, j + 1, k + 1] * (j + 1) * (k + 1)
+    d2V_dvw = P.polyval3d(u, v, w, c_dvw)
+
+    # 链式法则：每个一阶导都会引入 1/L，因此二阶导统一为 1/L^2
+    scale2 = L * L
+    hxx = d2V_duu / scale2
+    hyy = d2V_dvv / scale2
+    hzz = d2V_dww / scale2
+    hxy = d2V_duv / scale2
+    hxz = d2V_duw / scale2
+    hyz = d2V_dvw / scale2
+
+    n = r_um.shape[0]
+    hess = np.zeros((n, 3, 3), dtype=float)
+    hess[:, 0, 0] = hxx
+    hess[:, 1, 1] = hyy
+    hess[:, 2, 2] = hzz
+    hess[:, 0, 1] = hxy
+    hess[:, 1, 0] = hxy
+    hess[:, 0, 2] = hxz
+    hess[:, 2, 0] = hxz
+    hess[:, 1, 2] = hyz
+    hess[:, 2, 1] = hyz
+    return hess
 
 

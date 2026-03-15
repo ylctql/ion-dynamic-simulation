@@ -137,6 +137,13 @@ The `equilibrium` module computes ion crystal equilibrium positions by:
 2. Building total energy `U_total = U_trap + U_coulomb`
 3. Minimizing `U_total` with L-BFGS-B
 
+After equilibrium is found, it can also:
+
+- build Hessian matrices (`total`, `trap`, `coulomb`)
+- solve phonon modes (eigenvalues/eigenvectors of mass-weighted dynamical matrix)
+- work on a Hessian subspace selected by NumPy-like slice syntax (`:`, `0:10`, `::3`, `5`)
+- visualize Hessian heatmaps and phonon spectra
+
 Energy is reported in **eV**, and trap potential uses a shifted zero (`V_shifted = V_true - V_min_sample`) for clearer scale comparison with Coulomb energy.
 
 ```bash
@@ -154,6 +161,10 @@ python -m equilibrium.find_equilibrium --N 120 --x_range=-80,80 --y_range=-30,30
 
 # Save figure with zoy (top) / zox (bottom) layout
 python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-out equilibrium/equi_pos/80.png
+
+# Solve phonon modes on a Hessian subspace and save spectrum/hessian outputs
+# (use --*-out without a path to save to default directories)
+python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --plot-phonon-spectrum --plot-phonon-spectrum-out --plot-hessian trap --plot-hessian-out --save-hessian-data
 ```
 
 ### Equilibrium solver options
@@ -167,9 +178,21 @@ python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-o
 | `--center` | 0,0,0 | Fit center `(x,y,z)` in μm |
 | `--x_range` | -50,50 | x range for fit/optimization in μm |
 | `--y_range` | -20,20 | y range for fit/optimization in μm |
-| `--z_range` | -100,100 | z range for fit/optimization in μm |
-| `--fit-n-pts` | 8 | Sample points per axis for 3D quartic fit |
+| `--z_range` | -150,150 | z range for fit/optimization in μm |
+| `--fit-n-pts-x` | 100 | Sample points along x-axis for 3D quartic fit |
+| `--fit-n-pts-y` | 40 | Sample points along y-axis for 3D quartic fit |
+| `--fit-n-pts-z` | 300 | Sample points along z-axis for 3D quartic fit |
 | `--softening-um` | 0.001 | Coulomb softening length in μm |
+| `--phonon` | - | Solve phonon modes at equilibrium (diagonalize dynamical matrix) |
+| `--mass-amu` | 135.0 | Ion mass for phonon solver (amu, default Ba135) |
+| `--phonon-print-modes` | 10 | Print first N phonon modes (descending by frequency) |
+| `--hessian-slice` | : | Hessian DOF subspace slice (`:`, `0:10`, `::3`, `5`) |
+| `--plot-hessian` | - | Plot Hessian heatmap only (no save); optional kind: `total`(default) / `trap` / `coulomb` |
+| `--plot-hessian-out` | - | Save Hessian heatmap; with no path uses default `equilibrium/hessian_plot/{N}_{slice}.png` |
+| `--save-hessian-data` | - | Save Hessian matrices (`total/trap/coulomb`) as npz |
+| `--hessian-data-out` | equilibrium/hessian_data/{N}_{slice}.npz | Hessian data npz output path |
+| `--plot-phonon-spectrum` | - | Plot phonon spectrum only (no save); optional mode: `frequency`(default) / `index` |
+| `--plot-phonon-spectrum-out` | - | Save phonon spectrum; with no path uses default `equilibrium/spectra/{N}_{slice}.png` |
 | `--maxiter` | 500 | Max optimization iterations |
 | `--tol` | 1e-10 | Relative convergence tolerance (`ftol`, dimensionless) |
 | `--seed` | 42 | RNG seed when random initialization is used |
@@ -180,6 +203,8 @@ python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-o
 | `--out` | equilibrium/equi_pos/{N}.npz | Output path for equilibrium npz (default auto by ion count) |
 | `--smooth-axes` | z | Potential smoothing axes (`none` to disable) |
 | `--smooth-sg` | 11,3 | Savitzky-Golay smoothing parameters |
+
+**Default naming rule for Hessian/spectrum outputs** (when `--*-out` is provided): `{N}_{slice}` (for example `120_0:90.png`).
 
 ## Command-line Options
 
@@ -256,8 +281,12 @@ ism-main/
 ├── equilibrium/       # Equilibrium-position solver
 │   ├── potential_fit_3d.py  # 3D quartic potential fit and gradient
 │   ├── energy.py      # Trap/Coulomb/total energy in eV
+│   ├── phonon.py      # Hessian construction and phonon mode solver
 │   ├── find_equilibrium.py  # CLI: minimize total energy for equilibrium
-│   └── equi_pos/      # Default output directory for equilibrium npz
+│   ├── equi_pos/      # Default output directory for equilibrium npz
+│   ├── hessian_data/  # Default output directory for Hessian npz data
+│   ├── hessian_plot/  # Default output directory for Hessian heatmaps
+│   └── spectra/       # Default output directory for phonon spectra
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```

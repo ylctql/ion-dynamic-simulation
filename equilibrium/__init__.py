@@ -13,12 +13,20 @@ from equilibrium.potential_fit_3d import (
     eval_fit_3d,
     fit_potential_3d_quartic,
     grad_fit_3d,
+    hessian_fit_3d,
 )
 from equilibrium.energy import (
     EnergyBreakdown,
     coulomb_energy_and_grad,
     total_energy_and_grad,
     trap_energy_and_grad,
+)
+from equilibrium.phonon import (
+    PhononResult,
+    coulomb_hessian,
+    solve_phonon_modes,
+    total_hessian,
+    trap_hessian,
 )
 
 __all__ = [
@@ -27,7 +35,13 @@ __all__ = [
     "eval_fit_3d",
     "fit_potential_3d_quartic",
     "grad_fit_3d",
+    "hessian_fit_3d",
     "trap_energy_and_grad",
     "coulomb_energy_and_grad",
     "total_energy_and_grad",
+    "PhononResult",
+    "trap_hessian",
+    "coulomb_hessian",
+    "total_hessian",
+    "solve_phonon_modes",
 ]
