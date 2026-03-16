@@ -160,11 +160,15 @@ python -m equilibrium.find_equilibrium --N 40
 python -m equilibrium.find_equilibrium --N 120 --x_range=-80,80 --y_range=-30,30 --z_range=-150,150 --init_file saves/rv/traj/cpu/300/t200.0us.npz
 
 # 绘制平衡位置布局图（上 zoy，下 zox）
-python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-out equilibrium/equi_pos/80.png
+python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-out equilibrium/results/equi_pos/80.png
 
 # 在 Hessian 子空间上计算声子并保存频谱/Hessian 结果
 # （--*-out 不带路径时会保存到默认目录）
 python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --plot-phonon-spectrum --plot-phonon-spectrum-out --plot-hessian trap --plot-hessian-out --save-hessian-data
+
+# 绘制指定声子模式的本征向量（zox 平面）
+# （mode 序号按频率降序，默认 mode=0）
+python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-vector 3 --plot-mode-vector-arrow-scale 1.8 --plot-mode-vector-out
 ```
 
 ### 平衡构型参数
@@ -188,11 +192,14 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --p
 | `--phonon-print-modes` | 10 | 打印前 N 个声子模（按频率降序） |
 | `--hessian-slice` | : | Hessian 自由度子空间切片（如 `:`、`0:10`、`::3`、`5`） |
 | `--plot-hessian` | - | 仅绘制 Hessian 热力图（不保存）；可选 `total`（默认）/`trap`/`coulomb` |
-| `--plot-hessian-out` | - | 保存 Hessian 热力图；不带路径时默认 `equilibrium/hessian_plot/{N}_{slice}.png` |
+| `--plot-hessian-out` | - | 保存 Hessian 热力图；不带路径时默认 `equilibrium/results/hessian_plot/{N}_{slice}.png` |
 | `--save-hessian-data` | - | 保存 Hessian 数据（`total/trap/coulomb`）为 npz |
-| `--hessian-data-out` | equilibrium/hessian_data/{N}_{slice}.npz | Hessian 数据输出路径 |
+| `--hessian-data-out` | equilibrium/results/hessian_data/{N}_{slice}.npz | Hessian 数据输出路径 |
 | `--plot-phonon-spectrum` | - | 仅绘制声子频谱（不保存）；可选 `frequency`（默认）/`index` |
-| `--plot-phonon-spectrum-out` | - | 保存声子频谱；不带路径时默认 `equilibrium/spectra/{N}_{slice}.png` |
+| `--plot-phonon-spectrum-out` | - | 保存声子频谱；不带路径时默认 `equilibrium/results/spectra/{N}_{slice}.png` |
+| `--plot-mode-vector` | - | 绘制指定声子模式本征向量（zox 平面）；可选模式序号（按频率降序），默认 `0` |
+| `--plot-mode-vector-out` | - | 保存模式向量图；不带路径时默认 `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
+| `--plot-mode-vector-arrow-scale` | 1.0 | `--plot-mode-vector` 的箭头长度倍率（>0） |
 | `--maxiter` | 500 | 优化最大迭代步数 |
 | `--tol` | 1e-10 | 收敛阈值（`ftol`，无量纲） |
 | `--seed` | 42 | 随机初始化种子 |
@@ -200,7 +207,7 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --p
 | `--plot` | - | 绘制平衡位置布局（上 zoy，下 zox） |
 | `--color_mode` | none | `none` / `y_pos` / `v2` / `isotope`（不适用模式会自动降级） |
 | `--plot-out` | - | 布局图输出路径；不传则弹窗显示 |
-| `--out` | equilibrium/equi_pos/{N}.npz | 结果 npz 输出路径（默认按离子数命名） |
+| `--out` | equilibrium/results/equi_pos/{N}.npz | 结果 npz 输出路径（默认按离子数命名） |
 | `--smooth-axes` | z | 势场平滑方向（`none` 关闭） |
 | `--smooth-sg` | 11,3 | Savitzky-Golay 平滑参数 |
 
@@ -283,10 +290,12 @@ ism-main/
 │   ├── energy.py      # 外势/库仑/总势能（eV）
 │   ├── phonon.py      # Hessian 构建与声子模式求解
 │   ├── find_equilibrium.py  # CLI：最小化总势求平衡位置
-│   ├── equi_pos/      # 平衡构型默认输出目录（npz）
-│   ├── hessian_data/  # Hessian 数据默认输出目录
-│   ├── hessian_plot/  # Hessian 热力图默认输出目录
-│   └── spectra/       # 声子频谱默认输出目录
+│   └── results/       # 默认输出根目录
+│       ├── equi_pos/      # 平衡构型 npz 输出
+│       ├── hessian_data/  # Hessian 数据输出
+│       ├── hessian_plot/  # Hessian 热力图输出
+│       ├── spectra/       # 声子频谱输出
+│       └── mode_vector/   # 声子模式向量图输出
 ├── main.py            # 入口
 └── setup_path.py      # ionsim 路径配置
 ```

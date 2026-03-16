@@ -325,6 +325,120 @@ def _plot_phonon_spectrum(
         plt.show()
 
 
+def _plot_phonon_mode_vector_zox(
+    r_um: np.ndarray,
+    eigvec_cartesian: np.ndarray,
+    dof_indices: np.ndarray,
+    mode_index: int,
+    mode_freq_hz_signed: float | None = None,
+    arrow_scale_factor: float = 1.0,
+    plot_out: str | None = None,
+) -> None:
+    """
+    绘制指定声子模式在 zox 平面上的本征向量分布。
+
+    - 散点位置：离子平衡位置投影到 zox 平面（横轴 z，纵轴 x）
+    - 箭头方向/长度：该模式在 (z, x) 分量
+    - 颜色：该模式在该离子上的三维分量模长
+    """
+    import matplotlib.pyplot as plt
+
+    r = np.asarray(r_um, dtype=float)
+    if r.ndim != 2 or r.shape[1] != 3:
+        raise ValueError(f"r_um 应为 (N,3)，当前 {r.shape}")
+    n_ions = r.shape[0]
+    n_dof = 3 * n_ions
+
+    eig = np.asarray(eigvec_cartesian, dtype=float)
+    if eig.ndim != 2:
+        raise ValueError(f"eigvec_cartesian 应为二维数组，当前形状 {eig.shape}")
+    if mode_index < 0 or mode_index >= eig.shape[1]:
+        raise ValueError(
+            f"mode_index={mode_index} 超出范围 [0, {eig.shape[1] - 1}]"
+        )
+
+    idx = np.asarray(dof_indices, dtype=int).ravel()
+    if idx.size != eig.shape[0]:
+        raise ValueError(
+            f"dof_indices 长度 {idx.size} 与 eigvec_cartesian 行数 {eig.shape[0]} 不一致"
+        )
+
+    # 子空间本征向量还原到完整 3N 自由度；未纳入子空间的分量置零
+    mode_full = np.zeros(n_dof, dtype=float)
+    mode_full[idx] = eig[:, mode_index]
+    mode_xyz = mode_full.reshape(n_ions, 3)
+
+    z = r[:, 2]
+    x = r[:, 0]
+    vz = mode_xyz[:, 2]
+    vx = mode_xyz[:, 0]
+    amp = np.linalg.norm(mode_xyz, axis=1)
+    amp_max = float(np.max(amp))
+    if amp_max > 0.0:
+        amp_norm = amp / amp_max
+    else:
+        amp_norm = amp
+
+    fig, ax = plt.subplots(1, 1, figsize=(9, 7))
+    sc = ax.scatter(z, x, c=amp_norm, cmap="viridis", s=42, alpha=0.95)
+    cbar = fig.colorbar(sc, ax=ax)
+    cbar.set_label("Mode amplitude (normalized)")
+
+    if arrow_scale_factor <= 0.0:
+        raise ValueError("arrow_scale_factor 必须为正数")
+
+    # 使用 angles=xy + scale_units=xy，保证坐标单位下箭头方向正确。
+    # 将最大箭头长度自适应到图主尺度的一定比例，再乘用户倍率控制。
+    plane_amp = np.sqrt(vz * vz + vx * vx)
+    plane_max = float(np.max(plane_amp))
+    z_span = float(np.max(z) - np.min(z))
+    x_span = float(np.max(x) - np.min(x))
+    ref_span = max(z_span, x_span, 1e-12)
+    target_max_len = 0.08 * ref_span * float(arrow_scale_factor)
+    quiver_scale = None if plane_max <= 0.0 else (plane_max / target_max_len)
+    ax.quiver(
+        z,
+        x,
+        vz,
+        vx,
+        color="red",
+        angles="xy",
+        scale_units="xy",
+        scale=quiver_scale,
+        width=0.003,
+        alpha=0.9,
+        zorder=3,
+    )
+
+    z_pad = max(1e-9, 0.08 * (float(np.max(z)) - float(np.min(z)) + 1e-12))
+    x_pad = max(1e-9, 0.08 * (float(np.max(x)) - float(np.min(x)) + 1e-12))
+    ax.set_xlim(float(np.min(z)) - z_pad, float(np.max(z)) + z_pad)
+    ax.set_ylim(float(np.min(x)) - x_pad, float(np.max(x)) + x_pad)
+    ax.set_xlabel("z (μm)")
+    ax.set_ylabel("x (μm)")
+    if mode_freq_hz_signed is not None:
+        f_hz = float(mode_freq_hz_signed)
+        f_mhz = f_hz / 1e6
+        freq_text = f"mode={mode_index}, f={f_mhz:+.6f} MHz"
+    else:
+        freq_text = f"mode={mode_index}"
+    ax.set_title(f"Phonon Mode Vector (zox), {freq_text}")
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+
+    if plot_out:
+        out_path = Path(plot_out)
+        if not out_path.is_absolute():
+            out_path = _ROOT / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(str(out_path), dpi=220)
+        plt.close(fig)
+        print(f"声子模式向量图已保存: {out_path}")
+    else:
+        plt.show()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="最小化总势能（外势+库伦）以求离子晶格平衡位置"
@@ -378,7 +492,7 @@ def main() -> None:
         nargs="?",
         const=_DEFAULT_OUT_SENTINEL,
         default=None,
-        help="--plot-hessian 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/hessian_plot/{N}_{slice}.png",
+        help="--plot-hessian 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/hessian_plot/{N}_{slice}.png",
     )
     parser.add_argument(
         "--plot-phonon-spectrum",
@@ -393,7 +507,28 @@ def main() -> None:
         nargs="?",
         const=_DEFAULT_OUT_SENTINEL,
         default=None,
-        help="--plot-phonon-spectrum 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/spectra/{N}_{slice}.png",
+        help="--plot-phonon-spectrum 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/spectra/{N}_{slice}.png",
+    )
+    parser.add_argument(
+        "--plot-mode-vector",
+        nargs="?",
+        const=0,
+        type=int,
+        default=None,
+        help="绘制指定声子模式的本征向量（zox 平面）；不带值默认 0（按频率降序）",
+    )
+    parser.add_argument(
+        "--plot-mode-vector-out",
+        nargs="?",
+        const=_DEFAULT_OUT_SENTINEL,
+        default=None,
+        help="--plot-mode-vector 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png",
+    )
+    parser.add_argument(
+        "--plot-mode-vector-arrow-scale",
+        type=float,
+        default=1.0,
+        help="--plot-mode-vector 箭头长度倍率（>0，默认 1.0）",
     )
     parser.add_argument(
         "--save-hessian-data",
@@ -404,7 +539,7 @@ def main() -> None:
         "--hessian-data-out",
         type=str,
         default="",
-        help="Hessian 数据输出 npz 路径；不传则默认保存到 equilibrium/hessian_data/{N}_{slice}.npz",
+        help="Hessian 数据输出 npz 路径；不传则默认保存到 equilibrium/results/hessian_data/{N}_{slice}.npz",
     )
     parser.add_argument("--maxiter", type=int, default=500, help="优化最大迭代步数，默认 500")
     parser.add_argument("--tol", type=float, default=1e-10, help="优化收敛阈值，默认 1e-10")
@@ -423,7 +558,7 @@ def main() -> None:
         "--out",
         type=str,
         default="",
-        help="输出 npz 路径（保存平衡位置与能量）；不传则保存到 equilibrium/equi_pos/{N}.npz",
+        help="输出 npz 路径（保存平衡位置与能量）；不传则保存到 equilibrium/results/equi_pos/{N}.npz",
     )
     parser.add_argument("--smooth-axes", type=str, default="z", help="势场平滑方向，默认 z；none 关闭")
     parser.add_argument("--smooth-sg", type=str, default="11,3", help="Savitzky-Golay 参数 window,poly，默认 11,3")
@@ -587,7 +722,11 @@ def main() -> None:
     print("=" * 68)
 
     phonon = None
-    need_phonon = bool(args.phonon or (args.plot_phonon_spectrum is not None))
+    need_phonon = bool(
+        args.phonon
+        or (args.plot_phonon_spectrum is not None)
+        or (args.plot_mode_vector is not None)
+    )
     if need_phonon:
         phonon = solve_phonon_modes(
             fit=fit,
@@ -617,7 +756,7 @@ def main() -> None:
         if not out_path.is_absolute():
             out_path = _ROOT / out_path
     else:
-        out_path = _ROOT / "equilibrium" / "equi_pos" / f"{n_ions}.npz"
+        out_path = _ROOT / "equilibrium" / "results" / "equi_pos" / f"{n_ions}.npz"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     save_data = {
         "r": r_eq,
@@ -695,11 +834,11 @@ def main() -> None:
         hessian_plot_out = None
         if args.plot_hessian_out is not None:
             if args.plot_hessian_out == _DEFAULT_OUT_SENTINEL:
-                hessian_plot_out = str(_ROOT / "equilibrium" / "hessian_plot" / f"{default_stem}.png")
+                hessian_plot_out = str(_ROOT / "equilibrium" / "results" / "hessian_plot" / f"{default_stem}.png")
             else:
                 hessian_plot_out = args.plot_hessian_out.strip()
                 if hessian_plot_out == "":
-                    hessian_plot_out = str(_ROOT / "equilibrium" / "hessian_plot" / f"{default_stem}.png")
+                    hessian_plot_out = str(_ROOT / "equilibrium" / "results" / "hessian_plot" / f"{default_stem}.png")
         _plot_hessian_heatmap(
             hessian_eV_per_um2=h_plot,
             hessian_kind=kind,
@@ -712,15 +851,54 @@ def main() -> None:
         spectrum_out = None
         if args.plot_phonon_spectrum_out is not None:
             if args.plot_phonon_spectrum_out == _DEFAULT_OUT_SENTINEL:
-                spectrum_out = str(_ROOT / "equilibrium" / "spectra" / f"{default_stem}.png")
+                spectrum_out = str(_ROOT / "equilibrium" / "results" / "spectra" / f"{default_stem}.png")
             else:
                 spectrum_out = args.plot_phonon_spectrum_out.strip()
                 if spectrum_out == "":
-                    spectrum_out = str(_ROOT / "equilibrium" / "spectra" / f"{default_stem}.png")
+                    spectrum_out = str(_ROOT / "equilibrium" / "results" / "spectra" / f"{default_stem}.png")
         _plot_phonon_spectrum(
             freq_mhz=phonon.freq_hz_signed / 1e6,
             mode=args.plot_phonon_spectrum,
             plot_out=spectrum_out,
+        )
+
+    if args.plot_mode_vector is not None:
+        if phonon is None:
+            parser.error("--plot-mode-vector 需要可用的声子模式结果")
+        mode_index = int(args.plot_mode_vector)
+        n_modes = int(phonon.eigvec_cartesian.shape[1])
+        if mode_index < 0 or mode_index >= n_modes:
+            parser.error(f"--plot-mode-vector 超出范围 [0, {n_modes - 1}]")
+
+        mode_plot_out = None
+        if args.plot_mode_vector_out is not None:
+            if args.plot_mode_vector_out == _DEFAULT_OUT_SENTINEL:
+                mode_plot_out = str(
+                    _ROOT
+                    / "equilibrium"
+                    / "results"
+                    / "mode_vector"
+                    / f"{default_stem}_mode{mode_index}.png"
+                )
+            else:
+                mode_plot_out = args.plot_mode_vector_out.strip()
+                if mode_plot_out == "":
+                    mode_plot_out = str(
+                        _ROOT
+                        / "equilibrium"
+                        / "results"
+                        / "mode_vector"
+                        / f"{default_stem}_mode{mode_index}.png"
+                    )
+
+        _plot_phonon_mode_vector_zox(
+            r_um=r_eq,
+            eigvec_cartesian=phonon.eigvec_cartesian,
+            dof_indices=phonon.dof_indices,
+            mode_index=mode_index,
+            mode_freq_hz_signed=float(phonon.freq_hz_signed[mode_index]),
+            arrow_scale_factor=float(args.plot_mode_vector_arrow_scale),
+            plot_out=mode_plot_out,
         )
 
     if args.save_hessian_data:
@@ -741,7 +919,7 @@ def main() -> None:
 
         hessian_data_out = args.hessian_data_out.strip() if args.hessian_data_out else ""
         if not hessian_data_out:
-            hessian_data_out = str(_ROOT / "equilibrium" / "hessian_data" / f"{default_stem}.npz")
+            hessian_data_out = str(_ROOT / "equilibrium" / "results" / "hessian_data" / f"{default_stem}.npz")
         hessian_data_path = Path(hessian_data_out)
         if not hessian_data_path.is_absolute():
             hessian_data_path = _ROOT / hessian_data_path

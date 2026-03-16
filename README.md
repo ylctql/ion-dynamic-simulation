@@ -160,11 +160,15 @@ python -m equilibrium.find_equilibrium --N 40
 python -m equilibrium.find_equilibrium --N 120 --x_range=-80,80 --y_range=-30,30 --z_range=-150,150 --init_file saves/rv/traj/cpu/300/t200.0us.npz
 
 # Save figure with zoy (top) / zox (bottom) layout
-python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-out equilibrium/equi_pos/80.png
+python -m equilibrium.find_equilibrium --N 80 --plot --color_mode y_pos --plot-out equilibrium/results/equi_pos/80.png
 
 # Solve phonon modes on a Hessian subspace and save spectrum/hessian outputs
 # (use --*-out without a path to save to default directories)
 python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --plot-phonon-spectrum --plot-phonon-spectrum-out --plot-hessian trap --plot-hessian-out --save-hessian-data
+
+# Plot eigenvector of a specific phonon mode on zox plane
+# (mode index is in descending-frequency order; default mode 0)
+python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-vector 3 --plot-mode-vector-arrow-scale 1.8 --plot-mode-vector-out
 ```
 
 ### Equilibrium solver options
@@ -188,11 +192,14 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --p
 | `--phonon-print-modes` | 10 | Print first N phonon modes (descending by frequency) |
 | `--hessian-slice` | : | Hessian DOF subspace slice (`:`, `0:10`, `::3`, `5`) |
 | `--plot-hessian` | - | Plot Hessian heatmap only (no save); optional kind: `total`(default) / `trap` / `coulomb` |
-| `--plot-hessian-out` | - | Save Hessian heatmap; with no path uses default `equilibrium/hessian_plot/{N}_{slice}.png` |
+| `--plot-hessian-out` | - | Save Hessian heatmap; with no path uses default `equilibrium/results/hessian_plot/{N}_{slice}.png` |
 | `--save-hessian-data` | - | Save Hessian matrices (`total/trap/coulomb`) as npz |
-| `--hessian-data-out` | equilibrium/hessian_data/{N}_{slice}.npz | Hessian data npz output path |
+| `--hessian-data-out` | equilibrium/results/hessian_data/{N}_{slice}.npz | Hessian data npz output path |
 | `--plot-phonon-spectrum` | - | Plot phonon spectrum only (no save); optional mode: `frequency`(default) / `index` |
-| `--plot-phonon-spectrum-out` | - | Save phonon spectrum; with no path uses default `equilibrium/spectra/{N}_{slice}.png` |
+| `--plot-phonon-spectrum-out` | - | Save phonon spectrum; with no path uses default `equilibrium/results/spectra/{N}_{slice}.png` |
+| `--plot-mode-vector` | - | Plot one phonon mode eigenvector on zox plane; optional mode index (descending by frequency), default `0` |
+| `--plot-mode-vector-out` | - | Save mode-vector plot; with no path uses default `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
+| `--plot-mode-vector-arrow-scale` | 1.0 | Arrow length multiplier for `--plot-mode-vector` (>0) |
 | `--maxiter` | 500 | Max optimization iterations |
 | `--tol` | 1e-10 | Relative convergence tolerance (`ftol`, dimensionless) |
 | `--seed` | 42 | RNG seed when random initialization is used |
@@ -200,7 +207,7 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --p
 | `--plot` | - | Plot equilibrium positions (`zoy` top, `zox` bottom) |
 | `--color_mode` | none | `none` / `y_pos` / `v2` / `isotope` (unsupported modes degrade gracefully) |
 | `--plot-out` | - | Output path for figure; if omitted, opens interactive window |
-| `--out` | equilibrium/equi_pos/{N}.npz | Output path for equilibrium npz (default auto by ion count) |
+| `--out` | equilibrium/results/equi_pos/{N}.npz | Output path for equilibrium npz (default auto by ion count) |
 | `--smooth-axes` | z | Potential smoothing axes (`none` to disable) |
 | `--smooth-sg` | 11,3 | Savitzky-Golay smoothing parameters |
 
@@ -283,10 +290,12 @@ ism-main/
 │   ├── energy.py      # Trap/Coulomb/total energy in eV
 │   ├── phonon.py      # Hessian construction and phonon mode solver
 │   ├── find_equilibrium.py  # CLI: minimize total energy for equilibrium
-│   ├── equi_pos/      # Default output directory for equilibrium npz
-│   ├── hessian_data/  # Default output directory for Hessian npz data
-│   ├── hessian_plot/  # Default output directory for Hessian heatmaps
-│   └── spectra/       # Default output directory for phonon spectra
+│   └── results/       # Default output root directory
+│       ├── equi_pos/      # Equilibrium npz outputs
+│       ├── hessian_data/  # Hessian npz data outputs
+│       ├── hessian_plot/  # Hessian heatmap outputs
+│       ├── spectra/       # Phonon spectrum outputs
+│       └── mode_vector/   # Phonon mode-vector plot outputs
 ├── main.py            # Entry point
 └── setup_path.py      # Path setup for ionsim
 ```

@@ -60,7 +60,4 @@ saves/
 # 性能测试结果
 benchmark/benchmark_results/
 tests/test_results/
-equilibrium/equi_pos/
-equilibrium/spectra/
-equilibrium/hessian_data/
-equilibrium/hessian_plot/
+equilibrium/results/
