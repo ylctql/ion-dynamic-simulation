@@ -42,26 +42,31 @@ def _parse_hessian_slice_indices(
     parser: argparse.ArgumentParser,
 ) -> np.ndarray:
     """
-    将 1D numpy 风格切片字符串解析为索引数组。
+    将 1D numpy 风格切片字符串（支持逗号并集）解析为索引数组。
 
     支持示例：
     - ":"（全选）
     - "0:10"
     - "::3"
     - "5"（单个索引）
+    - "0::3,2::3"（多个子集并集）
     """
     if size <= 0:
         parser.error("Hessian 维度必须为正")
     s = (expr or ":").strip()
     arr = np.arange(size, dtype=int)
-    try:
-        if s in ("", ":"):
-            idx = arr
-        elif ":" in s:
-            parts = s.split(":")
+
+    def _parse_one(token: str) -> np.ndarray:
+        t = token.strip()
+        if t == "":
+            parser.error("--hessian-slice 包含空项；请检查逗号分隔格式")
+        if t == ":":
+            return arr
+        if ":" in t:
+            parts = t.split(":")
             if len(parts) > 3:
                 parser.error(
-                    "--hessian-slice 仅支持 1D 切片，格式如 start:stop:step（可省略项）"
+                    "--hessian-slice 每一项仅支持 1D 切片，格式如 start:stop:step（可省略项）"
                 )
             parts = parts + [""] * (3 - len(parts))
 
@@ -73,17 +78,30 @@ def _parse_hessian_slice_indices(
             step = _maybe_int(parts[2])
             if step == 0:
                 parser.error("--hessian-slice 的 step 不能为 0")
-            idx = arr[slice(start, stop, step)]
-        else:
-            idx = np.asarray([arr[int(s)]], dtype=int)
+            return arr[slice(start, stop, step)]
+        return np.asarray([arr[int(t)]], dtype=int)
+
+    try:
+        tokens = [tok.strip() for tok in (":" if s == "" else s).split(",")]
+        parts = [_parse_one(tok) for tok in tokens]
     except (ValueError, IndexError):
         parser.error(
-            f'--hessian-slice="{s}" 解析失败；请使用如 ":"、"0:10"、"::3"、"5" 的格式'
+            f'--hessian-slice="{s}" 解析失败；请使用如 ":"、"0:10"、"::3"、"5"、"0::3,2::3" 的格式'
         )
 
+    seen = np.zeros(size, dtype=bool)
+    ordered_unique: list[int] = []
+    for part in parts:
+        for i in np.asarray(part, dtype=int).ravel():
+            ii = int(i)
+            if not seen[ii]:
+                seen[ii] = True
+                ordered_unique.append(ii)
+
+    idx = np.asarray(ordered_unique, dtype=int)
     if idx.size == 0:
         parser.error(f'--hessian-slice="{s}" 结果为空，请检查范围')
-    return np.asarray(idx, dtype=int)
+    return idx
 
 
 def _slice_to_filename_part(s: str) -> str:
@@ -196,6 +214,7 @@ def _plot_hessian_heatmap(
     hessian_eV_per_um2: np.ndarray,
     hessian_kind: str,
     plot_out: str | None = None,
+    show_plot: bool = True,
 ) -> None:
     """将 Hessian 矩阵以热力图形式可视化。"""
     import matplotlib.pyplot as plt
@@ -230,16 +249,18 @@ def _plot_hessian_heatmap(
             out_path = _ROOT / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(str(out_path), dpi=220)
-        plt.close(fig)
         print(f"Hessian 热力图已保存: {out_path}")
-    else:
+    if show_plot:
         plt.show()
+    else:
+        plt.close(fig)
 
 
 def _plot_phonon_spectrum(
     freq_mhz: np.ndarray,
     mode: str = "frequency",
     plot_out: str | None = None,
+    show_plot: bool = True,
 ) -> None:
     """
     绘制声子频谱（线频率，MHz）。
@@ -319,10 +340,11 @@ def _plot_phonon_spectrum(
             out_path = _ROOT / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(str(out_path), dpi=220)
-        plt.close(fig)
         print(f"声子频谱图已保存: {out_path}")
-    else:
+    if show_plot:
         plt.show()
+    else:
+        plt.close(fig)
 
 
 def _plot_phonon_mode_vector_zox(
@@ -330,9 +352,10 @@ def _plot_phonon_mode_vector_zox(
     eigvec_cartesian: np.ndarray,
     dof_indices: np.ndarray,
     mode_index: int,
-    mode_freq_hz_signed: float | None = None,
+    freq_hz_signed_all: np.ndarray | None = None,
     arrow_scale_factor: float = 1.0,
     plot_out: str | None = None,
+    show_plot: bool = True,
 ) -> None:
     """
     绘制指定声子模式在 zox 平面上的本征向量分布。
@@ -342,6 +365,7 @@ def _plot_phonon_mode_vector_zox(
     - 颜色：该模式在该离子上的三维分量模长
     """
     import matplotlib.pyplot as plt
+    from matplotlib.widgets import Slider, TextBox
 
     r = np.asarray(r_um, dtype=float)
     if r.ndim != 2 or r.shape[1] != 3:
@@ -352,9 +376,10 @@ def _plot_phonon_mode_vector_zox(
     eig = np.asarray(eigvec_cartesian, dtype=float)
     if eig.ndim != 2:
         raise ValueError(f"eigvec_cartesian 应为二维数组，当前形状 {eig.shape}")
-    if mode_index < 0 or mode_index >= eig.shape[1]:
+    n_modes = int(eig.shape[1])
+    if mode_index < 0 or mode_index >= n_modes:
         raise ValueError(
-            f"mode_index={mode_index} 超出范围 [0, {eig.shape[1] - 1}]"
+            f"mode_index={mode_index} 超出范围 [0, {n_modes - 1}]"
         )
 
     idx = np.asarray(dof_indices, dtype=int).ravel()
@@ -363,80 +388,196 @@ def _plot_phonon_mode_vector_zox(
             f"dof_indices 长度 {idx.size} 与 eigvec_cartesian 行数 {eig.shape[0]} 不一致"
         )
 
-    # 子空间本征向量还原到完整 3N 自由度；未纳入子空间的分量置零
-    mode_full = np.zeros(n_dof, dtype=float)
-    mode_full[idx] = eig[:, mode_index]
-    mode_xyz = mode_full.reshape(n_ions, 3)
-
     z = r[:, 2]
     x = r[:, 0]
-    vz = mode_xyz[:, 2]
-    vx = mode_xyz[:, 0]
-    amp = np.linalg.norm(mode_xyz, axis=1)
-    amp_max = float(np.max(amp))
-    if amp_max > 0.0:
-        amp_norm = amp / amp_max
-    else:
-        amp_norm = amp
-
-    fig, ax = plt.subplots(1, 1, figsize=(9, 7))
-    sc = ax.scatter(z, x, c=amp_norm, cmap="viridis", s=42, alpha=0.95)
-    cbar = fig.colorbar(sc, ax=ax)
-    cbar.set_label("Mode amplitude (normalized)")
-
     if arrow_scale_factor <= 0.0:
         raise ValueError("arrow_scale_factor 必须为正数")
 
-    # 使用 angles=xy + scale_units=xy，保证坐标单位下箭头方向正确。
-    # 将最大箭头长度自适应到图主尺度的一定比例，再乘用户倍率控制。
-    plane_amp = np.sqrt(vz * vz + vx * vx)
-    plane_max = float(np.max(plane_amp))
     z_span = float(np.max(z) - np.min(z))
     x_span = float(np.max(x) - np.min(x))
     ref_span = max(z_span, x_span, 1e-12)
     target_max_len = 0.08 * ref_span * float(arrow_scale_factor)
-    quiver_scale = None if plane_max <= 0.0 else (plane_max / target_max_len)
-    ax.quiver(
-        z,
-        x,
-        vz,
-        vx,
-        color="red",
-        angles="xy",
-        scale_units="xy",
-        scale=quiver_scale,
-        width=0.003,
-        alpha=0.9,
-        zorder=3,
-    )
-
     z_pad = max(1e-9, 0.08 * (float(np.max(z)) - float(np.min(z)) + 1e-12))
     x_pad = max(1e-9, 0.08 * (float(np.max(x)) - float(np.min(x)) + 1e-12))
+
+    freq_all = None
+    if freq_hz_signed_all is not None:
+        freq_all = np.asarray(freq_hz_signed_all, dtype=float).ravel()
+        if freq_all.size != n_modes:
+            raise ValueError(
+                f"freq_hz_signed_all 长度 {freq_all.size} 与 mode 数 {n_modes} 不一致"
+            )
+
+    def _compute_mode_data(k: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, float | None, bool]:
+        # 子空间本征向量还原到完整 3N 自由度；未纳入子空间的分量置零
+        mode_full = np.zeros(n_dof, dtype=float)
+        mode_full[idx] = eig[:, k]
+        mode_xyz = mode_full.reshape(n_ions, 3)
+        vz_local = mode_xyz[:, 2]
+        vx_local = mode_xyz[:, 0]
+        amp = np.linalg.norm(mode_xyz, axis=1)
+        amp_max = float(np.max(amp))
+        amp_norm_local = (amp / amp_max) if amp_max > 0.0 else amp
+        plane_amp = np.sqrt(vz_local * vz_local + vx_local * vx_local)
+        plane_max = float(np.max(plane_amp))
+        has_plane_vector = bool(np.isfinite(plane_max) and (plane_max > 0.0))
+        if has_plane_vector and np.isfinite(target_max_len) and target_max_len > 0.0:
+            quiver_scale_local = plane_max / target_max_len
+            if not np.isfinite(quiver_scale_local) or quiver_scale_local <= 0.0:
+                quiver_scale_local = None
+        else:
+            quiver_scale_local = None
+        return vz_local, vx_local, amp_norm_local, quiver_scale_local, has_plane_vector
+
+    def _mode_title(k: int) -> str:
+        if freq_all is not None:
+            f_mhz = float(freq_all[k]) / 1e6
+            return f"Phonon Mode Vector (zox), mode={k}, f={f_mhz:+.6f} MHz"
+        return f"Phonon Mode Vector (zox), mode={k}"
+
+    current_mode = int(mode_index)
+    vz, vx, amp_norm, quiver_scale, has_plane_vector = _compute_mode_data(current_mode)
+    fig, ax = plt.subplots(1, 1, figsize=(9, 7))
+    sc = ax.scatter(z, x, c=amp_norm, cmap="viridis", s=42, alpha=0.95)
+    cbar = fig.colorbar(sc, ax=ax)
+    cbar.set_label("Mode amplitude (normalized)")
+    quiver_artist = None
+    if has_plane_vector:
+        quiver_artist = ax.quiver(
+            z,
+            x,
+            vz,
+            vx,
+            color="red",
+            angles="xy",
+            scale_units="xy",
+            scale=quiver_scale,
+            width=0.003,
+            alpha=0.9,
+            zorder=3,
+        )
     ax.set_xlim(float(np.min(z)) - z_pad, float(np.max(z)) + z_pad)
     ax.set_ylim(float(np.min(x)) - x_pad, float(np.max(x)) + x_pad)
     ax.set_xlabel("z (μm)")
     ax.set_ylabel("x (μm)")
-    if mode_freq_hz_signed is not None:
-        f_hz = float(mode_freq_hz_signed)
-        f_mhz = f_hz / 1e6
-        freq_text = f"mode={mode_index}, f={f_mhz:+.6f} MHz"
-    else:
-        freq_text = f"mode={mode_index}"
-    ax.set_title(f"Phonon Mode Vector (zox), {freq_text}")
+    ax.set_title(_mode_title(current_mode))
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.3)
-    fig.tight_layout()
 
     if plot_out:
         out_path = Path(plot_out)
         if not out_path.is_absolute():
             out_path = _ROOT / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.tight_layout()
         fig.savefig(str(out_path), dpi=220)
-        plt.close(fig)
         print(f"声子模式向量图已保存: {out_path}")
-    else:
-        plt.show()
+    if not show_plot:
+        plt.close(fig)
+        return
+
+    fig.subplots_adjust(bottom=0.26)
+
+    slider_ax = fig.add_axes([0.14, 0.145, 0.74, 0.045])
+    mode_slider = Slider(
+        ax=slider_ax,
+        label="mode index",
+        valmin=0,
+        valmax=n_modes - 1,
+        valinit=current_mode,
+        valstep=1,
+    )
+    box_ax = fig.add_axes([0.14, 0.055, 0.26, 0.06])
+    mode_text = TextBox(box_ax, "mode index", initial=str(current_mode))
+    status_ax = fig.add_axes([0.43, 0.055, 0.45, 0.06])
+    status_ax.axis("off")
+    status_text = status_ax.text(
+        0.0,
+        0.5,
+        "Hint: drag slider / press Enter after index input / use left-right keys",
+        va="center",
+        ha="left",
+        fontsize=10,
+        color="dimgray",
+    )
+    sync_guard = False
+
+    def _set_status(msg: str) -> None:
+        color = "dimgray" if msg.startswith("Hint:") else "crimson"
+        status_text.set_color(color)
+        status_text.set_text(msg)
+
+    def _refresh_mode(k: int, *, sync_widgets: bool = True) -> None:
+        nonlocal current_mode, quiver_artist, sync_guard
+        vz_local, vx_local, amp_norm_local, quiver_scale_local, has_plane_vector_local = _compute_mode_data(k)
+        sc.set_array(amp_norm_local)
+        if quiver_artist is not None:
+            quiver_artist.remove()
+            quiver_artist = None
+        if has_plane_vector_local:
+            quiver_artist = ax.quiver(
+                z,
+                x,
+                vz_local,
+                vx_local,
+                color="red",
+                angles="xy",
+                scale_units="xy",
+                scale=quiver_scale_local,
+                width=0.003,
+                alpha=0.9,
+                zorder=3,
+            )
+        ax.set_title(_mode_title(k))
+        current_mode = k
+        if sync_widgets and not sync_guard:
+            sync_guard = True
+            try:
+                if int(round(mode_slider.val)) != k:
+                    mode_slider.set_val(k)
+                if mode_text.text.strip() != str(k):
+                    mode_text.set_val(str(k))
+            finally:
+                sync_guard = False
+        if has_plane_vector_local:
+            _set_status("Hint: drag slider / press Enter after index input / use left-right keys")
+        else:
+            _set_status("Hint: this mode has zero in-plane (z,x) vector; no arrows to draw")
+        fig.canvas.draw_idle()
+
+    def _on_submit(text: str) -> None:
+        if sync_guard:
+            return
+        raw = text.strip()
+        try:
+            k = int(raw)
+        except ValueError:
+            _set_status(f"Invalid input: {raw!r} (must be an integer)")
+            return
+        if not (0 <= k < n_modes):
+            _set_status(f"Mode out of range [0, {n_modes - 1}]")
+            return
+        _refresh_mode(k)
+
+    def _on_slider(val: float) -> None:
+        if sync_guard:
+            return
+        k = int(round(float(val)))
+        if 0 <= k < n_modes and k != current_mode:
+            _refresh_mode(k)
+
+    def _on_key(event) -> None:
+        if event.inaxes == box_ax:
+            return
+        if event.key == "left":
+            _refresh_mode((current_mode - 1) % n_modes)
+        elif event.key == "right":
+            _refresh_mode((current_mode + 1) % n_modes)
+
+    mode_slider.on_changed(_on_slider)
+    mode_text.on_submit(_on_submit)
+    fig.canvas.mpl_connect("key_press_event", _on_key)
+    plt.show()
 
 
 def main() -> None:
@@ -485,14 +626,14 @@ def main() -> None:
         "--hessian-slice",
         type=str,
         default=":",
-        help='Hessian 子矩阵索引（numpy 1D 切片风格），如 ":"、"0:10"、"::3"、"5"',
+        help='Hessian 子矩阵索引（支持逗号并集），如 ":"、"0:10"、"::3"、"5"、"0::3,2::3"',
     )
     parser.add_argument(
         "--plot-hessian-out",
         nargs="?",
         const=_DEFAULT_OUT_SENTINEL,
         default=None,
-        help="--plot-hessian 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/hessian_plot/{N}_{slice}.png",
+        help="Hessian 热力图输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/hessian_plot/{N}_{slice}.png",
     )
     parser.add_argument(
         "--plot-phonon-spectrum",
@@ -507,7 +648,7 @@ def main() -> None:
         nargs="?",
         const=_DEFAULT_OUT_SENTINEL,
         default=None,
-        help="--plot-phonon-spectrum 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/spectra/{N}_{slice}.png",
+        help="声子频谱输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/spectra/{N}_{slice}.png",
     )
     parser.add_argument(
         "--plot-mode-vector",
@@ -522,7 +663,7 @@ def main() -> None:
         nargs="?",
         const=_DEFAULT_OUT_SENTINEL,
         default=None,
-        help="--plot-mode-vector 时输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png",
+        help="模式向量图输出图片路径；仅指定该选项但不传路径时，默认保存到 equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png",
     )
     parser.add_argument(
         "--plot-mode-vector-arrow-scale",
@@ -725,7 +866,9 @@ def main() -> None:
     need_phonon = bool(
         args.phonon
         or (args.plot_phonon_spectrum is not None)
+        or (args.plot_phonon_spectrum_out is not None)
         or (args.plot_mode_vector is not None)
+        or (args.plot_mode_vector_out is not None)
     )
     if need_phonon:
         phonon = solve_phonon_modes(
@@ -807,7 +950,9 @@ def main() -> None:
             plot_out=plot_out or None,
         )
 
-    if args.plot_hessian is not None:
+    want_plot_hessian = args.plot_hessian is not None
+    want_save_hessian = args.plot_hessian_out is not None
+    if want_plot_hessian or want_save_hessian:
         if phonon is not None:
             h_total = phonon.hessian_total_eV_per_um2
             h_trap = phonon.hessian_trap_eV_per_um2
@@ -823,7 +968,7 @@ def main() -> None:
             h_trap = h_trap[np.ix_(hessian_dof_indices, hessian_dof_indices)]
             h_coul = h_coul[np.ix_(hessian_dof_indices, hessian_dof_indices)]
 
-        kind = args.plot_hessian
+        kind = args.plot_hessian if args.plot_hessian is not None else "total"
         if kind == "trap":
             h_plot = h_trap
         elif kind == "coulomb":
@@ -832,7 +977,7 @@ def main() -> None:
             h_plot = h_total
 
         hessian_plot_out = None
-        if args.plot_hessian_out is not None:
+        if want_save_hessian:
             if args.plot_hessian_out == _DEFAULT_OUT_SENTINEL:
                 hessian_plot_out = str(_ROOT / "equilibrium" / "results" / "hessian_plot" / f"{default_stem}.png")
             else:
@@ -843,13 +988,17 @@ def main() -> None:
             hessian_eV_per_um2=h_plot,
             hessian_kind=kind,
             plot_out=hessian_plot_out,
+            show_plot=want_plot_hessian,
         )
 
-    if args.plot_phonon_spectrum is not None:
+    want_plot_spectrum = args.plot_phonon_spectrum is not None
+    want_save_spectrum = args.plot_phonon_spectrum_out is not None
+    if want_plot_spectrum or want_save_spectrum:
         if phonon is None:
-            parser.error("--plot-phonon-spectrum 需要可用的声子模式结果")
+            parser.error("--plot-phonon-spectrum/--plot-phonon-spectrum-out 需要可用的声子模式结果")
+        spectrum_mode = args.plot_phonon_spectrum if args.plot_phonon_spectrum is not None else "frequency"
         spectrum_out = None
-        if args.plot_phonon_spectrum_out is not None:
+        if want_save_spectrum:
             if args.plot_phonon_spectrum_out == _DEFAULT_OUT_SENTINEL:
                 spectrum_out = str(_ROOT / "equilibrium" / "results" / "spectra" / f"{default_stem}.png")
             else:
@@ -858,20 +1007,23 @@ def main() -> None:
                     spectrum_out = str(_ROOT / "equilibrium" / "results" / "spectra" / f"{default_stem}.png")
         _plot_phonon_spectrum(
             freq_mhz=phonon.freq_hz_signed / 1e6,
-            mode=args.plot_phonon_spectrum,
+            mode=spectrum_mode,
             plot_out=spectrum_out,
+            show_plot=want_plot_spectrum,
         )
 
-    if args.plot_mode_vector is not None:
+    want_plot_mode_vector = args.plot_mode_vector is not None
+    want_save_mode_vector = args.plot_mode_vector_out is not None
+    if want_plot_mode_vector or want_save_mode_vector:
         if phonon is None:
-            parser.error("--plot-mode-vector 需要可用的声子模式结果")
-        mode_index = int(args.plot_mode_vector)
+            parser.error("--plot-mode-vector/--plot-mode-vector-out 需要可用的声子模式结果")
+        mode_index = int(args.plot_mode_vector) if args.plot_mode_vector is not None else 0
         n_modes = int(phonon.eigvec_cartesian.shape[1])
         if mode_index < 0 or mode_index >= n_modes:
             parser.error(f"--plot-mode-vector 超出范围 [0, {n_modes - 1}]")
 
         mode_plot_out = None
-        if args.plot_mode_vector_out is not None:
+        if want_save_mode_vector:
             if args.plot_mode_vector_out == _DEFAULT_OUT_SENTINEL:
                 mode_plot_out = str(
                     _ROOT
@@ -896,9 +1048,10 @@ def main() -> None:
             eigvec_cartesian=phonon.eigvec_cartesian,
             dof_indices=phonon.dof_indices,
             mode_index=mode_index,
-            mode_freq_hz_signed=float(phonon.freq_hz_signed[mode_index]),
+            freq_hz_signed_all=phonon.freq_hz_signed,
             arrow_scale_factor=float(args.plot_mode_vector_arrow_scale),
             plot_out=mode_plot_out,
+            show_plot=want_plot_mode_vector,
         )
 
     if args.save_hessian_data:

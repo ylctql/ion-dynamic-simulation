@@ -141,7 +141,7 @@ python field_visualize.py --vary z --smooth-axes none
 
 - 构建 Hessian 矩阵（`total`、`trap`、`coulomb`）
 - 计算声子模式（质量加权动力学矩阵的本征值/本征向量）
-- 使用 NumPy 风格 slice（如 `:`、`0:10`、`::3`、`5`）仅在 Hessian 子空间上分析
+- 使用 NumPy 风格 slice 在 Hessian 子空间上分析（支持逗号并集，如 `:`、`0:10`、`::3`、`5`、`0::3,2::3`）
 - 绘制 Hessian 热力图与声子频谱
 
 能量单位统一为 **eV**。同时外势采用零点平移（`V_shifted = V_true - V_min_sample`），便于与库仑势能量级比较。
@@ -169,6 +169,13 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --p
 # 绘制指定声子模式的本征向量（zox 平面）
 # （mode 序号按频率降序，默认 mode=0）
 python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-vector 3 --plot-mode-vector-arrow-scale 1.8 --plot-mode-vector-out
+
+# 使用 Hessian 自由度并集切片（例如 x+z 子空间）
+python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::3 --plot-phonon-spectrum index
+
+# 交互式 mode-vector 查看（不指定输出路径时弹窗）
+# 控件：滑条 / 文本框输入后回车 / 键盘左右键翻页
+python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::3 --plot-mode-vector 0
 ```
 
 ### 平衡构型参数
@@ -190,14 +197,14 @@ python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-
 | `--phonon` | - | 在平衡位置处求解声子模式（对角化动力学矩阵） |
 | `--mass-amu` | 135.0 | 声子求解质量（amu，默认 Ba135） |
 | `--phonon-print-modes` | 10 | 打印前 N 个声子模（按频率降序） |
-| `--hessian-slice` | : | Hessian 自由度子空间切片（如 `:`、`0:10`、`::3`、`5`） |
-| `--plot-hessian` | - | 仅绘制 Hessian 热力图（不保存）；可选 `total`（默认）/`trap`/`coulomb` |
+| `--hessian-slice` | : | Hessian 自由度子空间切片（支持逗号并集，如 `:`、`0:10`、`::3`、`5`、`0::3,2::3`） |
+| `--plot-hessian` | - | 弹出 Hessian 热力图窗口；可选 `total`（默认）/`trap`/`coulomb` |
 | `--plot-hessian-out` | - | 保存 Hessian 热力图；不带路径时默认 `equilibrium/results/hessian_plot/{N}_{slice}.png` |
 | `--save-hessian-data` | - | 保存 Hessian 数据（`total/trap/coulomb`）为 npz |
 | `--hessian-data-out` | equilibrium/results/hessian_data/{N}_{slice}.npz | Hessian 数据输出路径 |
-| `--plot-phonon-spectrum` | - | 仅绘制声子频谱（不保存）；可选 `frequency`（默认）/`index` |
+| `--plot-phonon-spectrum` | - | 弹出声子频谱窗口；可选 `frequency`（默认）/`index` |
 | `--plot-phonon-spectrum-out` | - | 保存声子频谱；不带路径时默认 `equilibrium/results/spectra/{N}_{slice}.png` |
-| `--plot-mode-vector` | - | 绘制指定声子模式本征向量（zox 平面）；可选模式序号（按频率降序），默认 `0` |
+| `--plot-mode-vector` | - | 弹出指定声子模式本征向量窗口（zox 平面）；可选模式序号（按频率降序），默认 `0`；窗口支持滑条 / 文本框 / 左右键 |
 | `--plot-mode-vector-out` | - | 保存模式向量图；不带路径时默认 `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
 | `--plot-mode-vector-arrow-scale` | 1.0 | `--plot-mode-vector` 的箭头长度倍率（>0） |
 | `--maxiter` | 500 | 优化最大迭代步数 |
@@ -211,7 +218,14 @@ python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-
 | `--smooth-axes` | z | 势场平滑方向（`none` 关闭） |
 | `--smooth-sg` | 11,3 | Savitzky-Golay 平滑参数 |
 
-**Hessian/频谱默认命名规则**（在提供 `--*-out` 时生效）：`{N}_{slice}`（例如 `120_0:90.png`）。
+`--plot-*` 与 `--plot-*-out` 为独立开关：
+- 指定 `--plot-*` 则弹窗显示
+- 指定 `--plot-*-out` 则保存输出
+- 同时指定则同一次运行中既显示也保存
+
+**提供 `--*-out` 时的默认命名规则**：
+- Hessian/频谱：`{N}_{slice}`（例如 `120_0:90.png`）
+- 模式向量图：`{N}_{slice}_mode{k}`（例如 `120_0:90_mode3.png`）
 
 ## 命令行参数
 

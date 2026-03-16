@@ -141,7 +141,7 @@ After equilibrium is found, it can also:
 
 - build Hessian matrices (`total`, `trap`, `coulomb`)
 - solve phonon modes (eigenvalues/eigenvectors of mass-weighted dynamical matrix)
-- work on a Hessian subspace selected by NumPy-like slice syntax (`:`, `0:10`, `::3`, `5`)
+- work on a Hessian subspace selected by NumPy-like slice syntax (supports unions with commas, e.g. `:`, `0:10`, `::3`, `5`, `0::3,2::3`)
 - visualize Hessian heatmaps and phonon spectra
 
 Energy is reported in **eV**, and trap potential uses a shifted zero (`V_shifted = V_true - V_min_sample`) for clearer scale comparison with Coulomb energy.
@@ -169,6 +169,13 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0:90 --p
 # Plot eigenvector of a specific phonon mode on zox plane
 # (mode index is in descending-frequency order; default mode 0)
 python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-vector 3 --plot-mode-vector-arrow-scale 1.8 --plot-mode-vector-out
+
+# Use Hessian DOF union slices (e.g., x+z subspace)
+python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::3 --plot-phonon-spectrum index
+
+# Interactive mode-vector viewer (window only, no save path)
+# Controls: slider / textbox+Enter / left-right arrow keys
+python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::3 --plot-mode-vector 0
 ```
 
 ### Equilibrium solver options
@@ -190,14 +197,14 @@ python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-
 | `--phonon` | - | Solve phonon modes at equilibrium (diagonalize dynamical matrix) |
 | `--mass-amu` | 135.0 | Ion mass for phonon solver (amu, default Ba135) |
 | `--phonon-print-modes` | 10 | Print first N phonon modes (descending by frequency) |
-| `--hessian-slice` | : | Hessian DOF subspace slice (`:`, `0:10`, `::3`, `5`) |
-| `--plot-hessian` | - | Plot Hessian heatmap only (no save); optional kind: `total`(default) / `trap` / `coulomb` |
+| `--hessian-slice` | : | Hessian DOF subspace slice (supports unions with commas), e.g. `:`, `0:10`, `::3`, `5`, `0::3,2::3` |
+| `--plot-hessian` | - | Show Hessian heatmap window; optional kind: `total`(default) / `trap` / `coulomb` |
 | `--plot-hessian-out` | - | Save Hessian heatmap; with no path uses default `equilibrium/results/hessian_plot/{N}_{slice}.png` |
 | `--save-hessian-data` | - | Save Hessian matrices (`total/trap/coulomb`) as npz |
 | `--hessian-data-out` | equilibrium/results/hessian_data/{N}_{slice}.npz | Hessian data npz output path |
-| `--plot-phonon-spectrum` | - | Plot phonon spectrum only (no save); optional mode: `frequency`(default) / `index` |
+| `--plot-phonon-spectrum` | - | Show phonon spectrum window; optional mode: `frequency`(default) / `index` |
 | `--plot-phonon-spectrum-out` | - | Save phonon spectrum; with no path uses default `equilibrium/results/spectra/{N}_{slice}.png` |
-| `--plot-mode-vector` | - | Plot one phonon mode eigenvector on zox plane; optional mode index (descending by frequency), default `0` |
+| `--plot-mode-vector` | - | Show one phonon mode eigenvector on zox plane; optional mode index (descending by frequency), default `0`; window mode supports slider / textbox / left-right keys |
 | `--plot-mode-vector-out` | - | Save mode-vector plot; with no path uses default `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
 | `--plot-mode-vector-arrow-scale` | 1.0 | Arrow length multiplier for `--plot-mode-vector` (>0) |
 | `--maxiter` | 500 | Max optimization iterations |
@@ -211,7 +218,14 @@ python -m equilibrium.find_equilibrium --N 120 --hessian-slice 0:90 --plot-mode-
 | `--smooth-axes` | z | Potential smoothing axes (`none` to disable) |
 | `--smooth-sg` | 11,3 | Savitzky-Golay smoothing parameters |
 
-**Default naming rule for Hessian/spectrum outputs** (when `--*-out` is provided): `{N}_{slice}` (for example `120_0:90.png`).
+`--plot-*` and `--plot-*-out` are independent switches:
+- set `--plot-*` to open a window
+- set `--plot-*-out` to save output
+- set both to show and save in one run
+
+**Default naming rule for outputs with `--*-out`**:
+- Hessian/spectrum: `{N}_{slice}` (for example `120_0:90.png`)
+- mode-vector: `{N}_{slice}_mode{k}` (for example `120_0:90_mode3.png`)
 
 ## Command-line Options
 
