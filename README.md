@@ -207,6 +207,7 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::
 | `--plot-mode-vector` | - | Show one phonon mode eigenvector on zox plane; optional mode index (descending by frequency), default `0`; window mode supports slider / textbox / left-right keys |
 | `--plot-mode-vector-out` | - | Save mode-vector plot; with no path uses default `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
 | `--plot-mode-vector-arrow-scale` | 1.0 | Arrow length multiplier for `--plot-mode-vector` (>0) |
+| `--plot-point-size` | - | Scatter point size for `--plot` and `--plot-mode-vector`; must be >0; if omitted, each plot uses its own default size |
 | `--maxiter` | 500 | Max optimization iterations |
 | `--tol` | 1e-10 | Relative convergence tolerance (`ftol`, dimensionless) |
 | `--seed` | 42 | RNG seed when random initialization is used |

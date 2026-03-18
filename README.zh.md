@@ -207,6 +207,7 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::
 | `--plot-mode-vector` | - | 弹出指定声子模式本征向量窗口（zox 平面）；可选模式序号（按频率降序），默认 `0`；窗口支持滑条 / 文本框 / 左右键 |
 | `--plot-mode-vector-out` | - | 保存模式向量图；不带路径时默认 `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
 | `--plot-mode-vector-arrow-scale` | 1.0 | `--plot-mode-vector` 的箭头长度倍率（>0） |
+| `--plot-point-size` | - | `--plot` 与 `--plot-mode-vector` 的散点大小；必须 >0；不指定时各图使用默认大小 |
 | `--maxiter` | 500 | 优化最大迭代步数 |
 | `--tol` | 1e-10 | 收敛阈值（`ftol`，无量纲） |
 | `--seed` | 42 | 随机初始化种子 |

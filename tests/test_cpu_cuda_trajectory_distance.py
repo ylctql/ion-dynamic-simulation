@@ -192,6 +192,29 @@ def compute_trajectory_distances(
     return dist
 
 
+def run_with_fixed_initial_conditions(
+    parsed,
+    force,
+    duration_dt: float,
+    *,
+    use_cuda: bool,
+    n_steps: int | None,
+    r0: np.ndarray,
+    v0: np.ndarray,
+) -> tuple[list, list, np.ndarray]:
+    """使用固定初始条件运行一次轨迹演化。"""
+    return run_full_trajectory_iontrap(
+        parsed,
+        force,
+        duration_dt,
+        use_cuda=use_cuda,
+        n_steps=n_steps,
+        # 传入副本，避免底层实现原地修改影响后续比较
+        r0=np.array(r0, dtype=np.float64, order="F", copy=True),
+        v0=np.array(v0, dtype=np.float64, order="F", copy=True),
+    )
+
+
 def run_comparison(
     parsed,
     force,
@@ -211,22 +234,59 @@ def run_comparison(
     r0 = np.asarray(parsed.params.get_r0(), dtype=np.float64, order="F")
     v0 = np.asarray(parsed.params.get_v0(), dtype=np.float64, order="F")
 
-    r_cpu, v_cpu, t = run_full_trajectory_iontrap(
-        parsed, force, duration_dt, use_cuda=False, n_steps=n_steps,
-        r0=r0, v0=v0,
+    r_cpu_1, v_cpu_1, t = run_with_fixed_initial_conditions(
+        parsed,
+        force,
+        duration_dt,
+        use_cuda=False,
+        n_steps=n_steps,
+        r0=r0,
+        v0=v0,
     )
-    r_cuda, v_cuda, _ = run_full_trajectory_iontrap(
-        parsed, force, duration_dt, use_cuda=True, n_steps=n_steps,
-        r0=r0, v0=v0,
+    r_cpu_2, v_cpu_2, _ = run_with_fixed_initial_conditions(
+        parsed,
+        force,
+        duration_dt,
+        use_cuda=False,
+        n_steps=n_steps,
+        r0=r0,
+        v0=v0,
+    )
+    r_cuda_1, v_cuda_1, _ = run_with_fixed_initial_conditions(
+        parsed,
+        force,
+        duration_dt,
+        use_cuda=True,
+        n_steps=n_steps,
+        r0=r0,
+        v0=v0,
+    )
+    r_cuda_2, v_cuda_2, _ = run_with_fixed_initial_conditions(
+        parsed,
+        force,
+        duration_dt,
+        use_cuda=True,
+        n_steps=n_steps,
+        r0=r0,
+        v0=v0,
     )
 
-    dist = compute_trajectory_distances(r_cpu, r_cuda)
+    dist_cpu_cuda = compute_trajectory_distances(r_cpu_1, r_cuda_1)
+    dist_cpu_cpu = compute_trajectory_distances(r_cpu_1, r_cpu_2)
+    dist_cuda_cuda = compute_trajectory_distances(r_cuda_1, r_cuda_2)
 
     return {
         "t": t,
-        "dist": dist,
-        "n_ions": dist.shape[1],
+        "dist": dist_cpu_cuda,
+        "dist_cpu_cuda": dist_cpu_cuda,
+        "dist_cpu_cpu": dist_cpu_cpu,
+        "dist_cuda_cuda": dist_cuda_cuda,
+        "n_ions": dist_cpu_cuda.shape[1],
         "duration": duration_dt,
+        "v_cpu_1": np.array(v_cpu_1),
+        "v_cpu_2": np.array(v_cpu_2),
+        "v_cuda_1": np.array(v_cuda_1),
+        "v_cuda_2": np.array(v_cuda_2),
     }
 
 
@@ -260,13 +320,18 @@ def plot_distance_vs_time(
     ax.grid(True, alpha=0.3)
     ax.set_title("CPU-CUDA trajectory distance per ion")
 
-    # 最大距离（所有离子）
+    # 最大距离（所有离子），同时展示跨设备与同设备对比
     ax = axes[1]
-    dist_max = np.max(dist, axis=1)
-    ax.plot(t_us, dist_max, "k-", alpha=0.8)
+    dist_max = np.max(result["dist_cpu_cuda"], axis=1) if "dist_cpu_cuda" in result else np.max(dist, axis=1)
+    ax.plot(t_us, dist_max, "k-", alpha=0.8, label="cpu-cuda")
+    if "dist_cpu_cpu" in result:
+        ax.plot(t_us, np.max(result["dist_cpu_cpu"], axis=1), alpha=0.8, label="cpu-cpu")
+    if "dist_cuda_cuda" in result:
+        ax.plot(t_us, np.max(result["dist_cuda_cuda"], axis=1), alpha=0.8, label="cuda-cuda")
     ax.set_xlabel("time (μs)")
-    ax.set_ylabel("max_i |r_cpu - r_cuda| (μm)")
+    ax.set_ylabel("max_i distance (μm)")
     ax.grid(True, alpha=0.3)
+    ax.legend()
     ax.set_title("Max distance over all ions")
 
     fig.suptitle(
@@ -302,6 +367,8 @@ def test_cpu_cuda_trajectory_comparison_runs():
     result = run_comparison(parsed, force, duration_dt=parsed.params.duration, n_steps=100)
     assert result["dist"].shape[0] > 0
     assert result["dist"].shape[1] == 10
+    assert result["dist_cpu_cpu"].shape == result["dist"].shape
+    assert result["dist_cuda_cuda"].shape == result["dist"].shape
 
 
 def main():
@@ -384,15 +451,27 @@ def main():
     )
 
     # 无量纲距离 → μm：dist_um = dist * dl * 1e6
-    result["dist"] = result["dist"] * parsed.config.dl * 1e6
+    scale = parsed.config.dl * 1e6
+    result["dist"] = result["dist"] * scale
+    result["dist_cpu_cuda"] = result["dist_cpu_cuda"] * scale
+    result["dist_cpu_cpu"] = result["dist_cpu_cpu"] * scale
+    result["dist_cuda_cuda"] = result["dist_cuda_cuda"] * scale
 
-    max_dist = np.max(result["dist"])
+    max_dist = np.max(result["dist_cpu_cuda"])
+    max_dist_cpu_cpu = np.max(result["dist_cpu_cpu"])
+    max_dist_cuda_cuda = np.max(result["dist_cuda_cuda"])
     time_us = result["duration"] * parsed.config.dt * 1e6
     print(f"N_ions: {result['n_ions']}, time: {time_us:.2f} μs ({result['duration']:.1f} dt)")
-    print(f"Max |r_cpu - r_cuda|: {max_dist:.6e} μm")
+    print(f"Max |r_cpu1 - r_cuda1|: {max_dist:.6e} μm")
+    print(f"Max |r_cpu1 - r_cpu2|: {max_dist_cpu_cpu:.6e} μm")
+    print(f"Max |r_cuda1 - r_cuda2|: {max_dist_cuda_cuda:.6e} μm")
     n_show = min(5, result["n_ions"])
     for i in range(n_show):
-        print(f"  ion {i}: max dist = {np.max(result['dist'][:, i]):.6e} μm")
+        print(
+            f"  ion {i}: cpu-cuda={np.max(result['dist_cpu_cuda'][:, i]):.6e} μm, "
+            f"cpu-cpu={np.max(result['dist_cpu_cpu'][:, i]):.6e} μm, "
+            f"cuda-cuda={np.max(result['dist_cuda_cuda'][:, i]):.6e} μm"
+        )
 
     if args.plot or args.out is not None:
         out_path = None
@@ -406,7 +485,11 @@ def main():
         if out_path and not args.plot:
             import matplotlib
             matplotlib.use("Agg")
-        plot_distance_vs_time(result, out_path=out_path, dt=parsed.config.dt)
+        plot_distance_vs_time(
+            result,
+            out_path=str(out_path) if out_path is not None else None,
+            dt=parsed.config.dt,
+        )
 
 
 if __name__ == "__main__":

@@ -134,6 +134,7 @@ def _plot_equilibrium_layout(
     color_mode: str | None = None,
     charge_ec: np.ndarray | None = None,
     plot_out: str | None = None,
+    point_size: float | None = None,
 ) -> None:
     """
     绘制平衡位置离子的空间分布：
@@ -147,7 +148,7 @@ def _plot_equilibrium_layout(
     x = r_um[:, 0]
 
     mode = (color_mode or "none").lower()
-    scatter_kwargs: dict = {"s": 22, "alpha": 0.9}
+    scatter_kwargs: dict = {"s": 22 if point_size is None else float(point_size), "alpha": 0.9}
     # 尽量对齐 Plotter 约定：none / y_pos / v2 / isotope
     if mode in ("none", ""):
         scatter_kwargs["c"] = "tab:red"
@@ -356,6 +357,9 @@ def _plot_phonon_mode_vector_zox(
     arrow_scale_factor: float = 1.0,
     plot_out: str | None = None,
     show_plot: bool = True,
+    point_size: float | None = None,
+    z_range_um: tuple[float, float] | None = None,
+    x_range_um: tuple[float, float] | None = None,
 ) -> None:
     """
     绘制指定声子模式在 zox 平面上的本征向量分布。
@@ -393,12 +397,18 @@ def _plot_phonon_mode_vector_zox(
     if arrow_scale_factor <= 0.0:
         raise ValueError("arrow_scale_factor 必须为正数")
 
-    z_span = float(np.max(z) - np.min(z))
-    x_span = float(np.max(x) - np.min(x))
+    if z_range_um is not None and x_range_um is not None:
+        z_lim = (float(z_range_um[0]), float(z_range_um[1]))
+        x_lim = (float(x_range_um[0]), float(x_range_um[1]))
+    else:
+        _z_pad = max(1e-9, 0.08 * (float(np.max(z)) - float(np.min(z)) + 1e-12))
+        _x_pad = max(1e-9, 0.08 * (float(np.max(x)) - float(np.min(x)) + 1e-12))
+        z_lim = (float(np.min(z)) - _z_pad, float(np.max(z)) + _z_pad)
+        x_lim = (float(np.min(x)) - _x_pad, float(np.max(x)) + _x_pad)
+    z_span = max(z_lim[1] - z_lim[0], 1e-12)
+    x_span = max(x_lim[1] - x_lim[0], 1e-12)
     ref_span = max(z_span, x_span, 1e-12)
     target_max_len = 0.08 * ref_span * float(arrow_scale_factor)
-    z_pad = max(1e-9, 0.08 * (float(np.max(z)) - float(np.min(z)) + 1e-12))
-    x_pad = max(1e-9, 0.08 * (float(np.max(x)) - float(np.min(x)) + 1e-12))
 
     freq_all = None
     if freq_hz_signed_all is not None:
@@ -437,8 +447,13 @@ def _plot_phonon_mode_vector_zox(
 
     current_mode = int(mode_index)
     vz, vx, amp_norm, quiver_scale, has_plane_vector = _compute_mode_data(current_mode)
-    fig, ax = plt.subplots(1, 1, figsize=(9, 7))
-    sc = ax.scatter(z, x, c=amp_norm, cmap="viridis", s=42, alpha=0.95)
+    _ratio = z_span / x_span
+    _max_dim = 9.0
+    _figw = _max_dim if _ratio >= 1.0 else max(3.0, _max_dim * _ratio)
+    _figh = _max_dim if _ratio < 1.0 else max(3.0, _max_dim / _ratio)
+    fig, ax = plt.subplots(1, 1, figsize=(_figw, _figh))
+    scatter_size = 42 if point_size is None else float(point_size)
+    sc = ax.scatter(z, x, c=amp_norm, cmap="viridis", s=scatter_size, alpha=0.95)
     cbar = fig.colorbar(sc, ax=ax)
     cbar.set_label("Mode amplitude (normalized)")
     quiver_artist = None
@@ -456,8 +471,8 @@ def _plot_phonon_mode_vector_zox(
             alpha=0.9,
             zorder=3,
         )
-    ax.set_xlim(float(np.min(z)) - z_pad, float(np.max(z)) + z_pad)
-    ax.set_ylim(float(np.min(x)) - x_pad, float(np.max(x)) + x_pad)
+    ax.set_xlim(*z_lim)
+    ax.set_ylim(*x_lim)
     ax.set_xlabel("z (μm)")
     ax.set_ylabel("x (μm)")
     ax.set_title(_mode_title(current_mode))
@@ -672,6 +687,12 @@ def main() -> None:
         help="--plot-mode-vector 箭头长度倍率（>0，默认 1.0）",
     )
     parser.add_argument(
+        "--plot-point-size",
+        type=float,
+        default=None,
+        help="绘图散点大小（可同时作用于 --plot 与 --plot-mode-vector；不传则各用默认值）",
+    )
+    parser.add_argument(
         "--save-hessian-data",
         action="store_true",
         help="保存 Hessian 数据（total/trap/coulomb）到 npz",
@@ -704,6 +725,8 @@ def main() -> None:
     parser.add_argument("--smooth-axes", type=str, default="z", help="势场平滑方向，默认 z；none 关闭")
     parser.add_argument("--smooth-sg", type=str, default="11,3", help="Savitzky-Golay 参数 window,poly，默认 11,3")
     args = parser.parse_args()
+    if args.plot_point_size is not None and args.plot_point_size <= 0.0:
+        parser.error("--plot-point-size 必须为正数")
 
     from Interface.cli import (
         DEFAULT_CONFIG_DIR,
@@ -948,6 +971,7 @@ def main() -> None:
             color_mode=args.color_mode,
             charge_ec=charge_ec,
             plot_out=plot_out or None,
+            point_size=args.plot_point_size,
         )
 
     want_plot_hessian = args.plot_hessian is not None
@@ -1052,6 +1076,9 @@ def main() -> None:
             arrow_scale_factor=float(args.plot_mode_vector_arrow_scale),
             plot_out=mode_plot_out,
             show_plot=want_plot_mode_vector,
+            point_size=args.plot_point_size,
+            z_range_um=z_range,
+            x_range_um=x_range,
         )
 
     if args.save_hessian_data:
