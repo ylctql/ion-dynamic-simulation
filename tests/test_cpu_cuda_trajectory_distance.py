@@ -220,6 +220,7 @@ def run_comparison(
     force,
     duration_dt: float,
     n_steps: int | None = None,
+    enable_self_compare: bool = False,
 ) -> dict:
     """
     在相同初始条件下分别运行 CPU 和 CUDA，返回轨迹距离数据。
@@ -243,15 +244,6 @@ def run_comparison(
         r0=r0,
         v0=v0,
     )
-    r_cpu_2, v_cpu_2, _ = run_with_fixed_initial_conditions(
-        parsed,
-        force,
-        duration_dt,
-        use_cuda=False,
-        n_steps=n_steps,
-        r0=r0,
-        v0=v0,
-    )
     r_cuda_1, v_cuda_1, _ = run_with_fixed_initial_conditions(
         parsed,
         force,
@@ -261,19 +253,33 @@ def run_comparison(
         r0=r0,
         v0=v0,
     )
-    r_cuda_2, v_cuda_2, _ = run_with_fixed_initial_conditions(
-        parsed,
-        force,
-        duration_dt,
-        use_cuda=True,
-        n_steps=n_steps,
-        r0=r0,
-        v0=v0,
-    )
-
     dist_cpu_cuda = compute_trajectory_distances(r_cpu_1, r_cuda_1)
-    dist_cpu_cpu = compute_trajectory_distances(r_cpu_1, r_cpu_2)
-    dist_cuda_cuda = compute_trajectory_distances(r_cuda_1, r_cuda_2)
+    dist_cpu_cpu = None
+    dist_cuda_cuda = None
+    v_cpu_2 = None
+    v_cuda_2 = None
+
+    if enable_self_compare:
+        r_cpu_2, v_cpu_2, _ = run_with_fixed_initial_conditions(
+            parsed,
+            force,
+            duration_dt,
+            use_cuda=False,
+            n_steps=n_steps,
+            r0=r0,
+            v0=v0,
+        )
+        r_cuda_2, v_cuda_2, _ = run_with_fixed_initial_conditions(
+            parsed,
+            force,
+            duration_dt,
+            use_cuda=True,
+            n_steps=n_steps,
+            r0=r0,
+            v0=v0,
+        )
+        dist_cpu_cpu = compute_trajectory_distances(r_cpu_1, r_cpu_2)
+        dist_cuda_cuda = compute_trajectory_distances(r_cuda_1, r_cuda_2)
 
     return {
         "t": t,
@@ -324,9 +330,9 @@ def plot_distance_vs_time(
     ax = axes[1]
     dist_max = np.max(result["dist_cpu_cuda"], axis=1) if "dist_cpu_cuda" in result else np.max(dist, axis=1)
     ax.plot(t_us, dist_max, "k-", alpha=0.8, label="cpu-cuda")
-    if "dist_cpu_cpu" in result:
+    if "dist_cpu_cpu" in result and result["dist_cpu_cpu"] is not None:
         ax.plot(t_us, np.max(result["dist_cpu_cpu"], axis=1), alpha=0.8, label="cpu-cpu")
-    if "dist_cuda_cuda" in result:
+    if "dist_cuda_cuda" in result and result["dist_cuda_cuda"] is not None:
         ax.plot(t_us, np.max(result["dist_cuda_cuda"], axis=1), alpha=0.8, label="cuda-cuda")
     ax.set_xlabel("time (μs)")
     ax.set_ylabel("max_i distance (μm)")
@@ -367,6 +373,34 @@ def test_cpu_cuda_trajectory_comparison_runs():
     result = run_comparison(parsed, force, duration_dt=parsed.params.duration, n_steps=100)
     assert result["dist"].shape[0] > 0
     assert result["dist"].shape[1] == 10
+    assert result["dist_cpu_cpu"] is None
+    assert result["dist_cuda_cuda"] is None
+
+
+def test_cpu_cuda_trajectory_self_comparison_runs():
+    """pytest：开启自比较时，CPU-CPU 与 CUDA-CUDA 结果可用"""
+    from Interface import cli
+
+    parser = cli.create_parser()
+    args = parser.parse_args(
+        ["--N", "10", "--time", "10", "--csv", "data/monolithic20241118.csv"]
+    )
+    try:
+        parsed = cli.parse_and_build(args, _ROOT)
+    except FileNotFoundError:
+        return  # skip when csv/config missing
+
+    if not getattr(ionsim, "cuda_available", False):
+        return
+
+    force = _build_force_from_parsed(parsed, _ROOT)
+    result = run_comparison(
+        parsed,
+        force,
+        duration_dt=parsed.params.duration,
+        n_steps=100,
+        enable_self_compare=True,
+    )
     assert result["dist_cpu_cpu"].shape == result["dist"].shape
     assert result["dist_cuda_cuda"].shape == result["dist"].shape
 
@@ -406,6 +440,11 @@ def main():
         help="单同位素模式：指定同位素种类，alpha 为该同位素丰度，其余为 Ba135；不指定则使用混合模式",
     )
     parser.add_argument("--plot", action="store_true", help="显示图形")
+    parser.add_argument(
+        "--self_compare",
+        action="store_true",
+        help="开启同设备自比较（CPU-CPU 与 CUDA-CUDA）；默认关闭，仅比较 CPU-CUDA",
+    )
     parser.add_argument(
         "--out",
         type=str,
@@ -448,30 +487,37 @@ def main():
         parsed, force,
         duration_dt=parsed.params.duration,
         n_steps=args.n_steps,
+        enable_self_compare=args.self_compare,
     )
 
     # 无量纲距离 → μm：dist_um = dist * dl * 1e6
     scale = parsed.config.dl * 1e6
     result["dist"] = result["dist"] * scale
     result["dist_cpu_cuda"] = result["dist_cpu_cuda"] * scale
-    result["dist_cpu_cpu"] = result["dist_cpu_cpu"] * scale
-    result["dist_cuda_cuda"] = result["dist_cuda_cuda"] * scale
+    if result["dist_cpu_cpu"] is not None:
+        result["dist_cpu_cpu"] = result["dist_cpu_cpu"] * scale
+    if result["dist_cuda_cuda"] is not None:
+        result["dist_cuda_cuda"] = result["dist_cuda_cuda"] * scale
 
     max_dist = np.max(result["dist_cpu_cuda"])
-    max_dist_cpu_cpu = np.max(result["dist_cpu_cpu"])
-    max_dist_cuda_cuda = np.max(result["dist_cuda_cuda"])
     time_us = result["duration"] * parsed.config.dt * 1e6
     print(f"N_ions: {result['n_ions']}, time: {time_us:.2f} μs ({result['duration']:.1f} dt)")
     print(f"Max |r_cpu1 - r_cuda1|: {max_dist:.6e} μm")
-    print(f"Max |r_cpu1 - r_cpu2|: {max_dist_cpu_cpu:.6e} μm")
-    print(f"Max |r_cuda1 - r_cuda2|: {max_dist_cuda_cuda:.6e} μm")
     n_show = min(5, result["n_ions"])
-    for i in range(n_show):
-        print(
-            f"  ion {i}: cpu-cuda={np.max(result['dist_cpu_cuda'][:, i]):.6e} μm, "
-            f"cpu-cpu={np.max(result['dist_cpu_cpu'][:, i]):.6e} μm, "
-            f"cuda-cuda={np.max(result['dist_cuda_cuda'][:, i]):.6e} μm"
-        )
+    if args.self_compare:
+        max_dist_cpu_cpu = np.max(result["dist_cpu_cpu"])
+        max_dist_cuda_cuda = np.max(result["dist_cuda_cuda"])
+        print(f"Max |r_cpu1 - r_cpu2|: {max_dist_cpu_cpu:.6e} μm")
+        print(f"Max |r_cuda1 - r_cuda2|: {max_dist_cuda_cuda:.6e} μm")
+        for i in range(n_show):
+            print(
+                f"  ion {i}: cpu-cuda={np.max(result['dist_cpu_cuda'][:, i]):.6e} μm, "
+                f"cpu-cpu={np.max(result['dist_cpu_cpu'][:, i]):.6e} μm, "
+                f"cuda-cuda={np.max(result['dist_cuda_cuda'][:, i]):.6e} μm"
+            )
+    else:
+        for i in range(n_show):
+            print(f"  ion {i}: cpu-cuda={np.max(result['dist_cpu_cuda'][:, i]):.6e} μm")
 
     if args.plot or args.out is not None:
         out_path = None
