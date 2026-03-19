@@ -439,6 +439,13 @@ def main():
         choices=["Ba133", "Ba134", "Ba135", "Ba136", "Ba137", "Ba138"],
         help="单同位素模式：指定同位素种类，alpha 为该同位素丰度，其余为 Ba135；不指定则使用混合模式",
     )
+    parser.add_argument(
+        "--calc_method",
+        type=str,
+        default="VV",
+        choices=["RK4", "VV"],
+        help="积分算法: RK4 或 VV（默认 VV）",
+    )
     parser.add_argument("--plot", action="store_true", help="显示图形")
     parser.add_argument(
         "--self_compare",
@@ -468,6 +475,7 @@ def main():
         main_arg_list += ["--alpha", str(args.alpha)]
     if args.isotope is not None:
         main_arg_list += ["--isotope", args.isotope]
+    main_arg_list += ["--calc_method", args.calc_method]
     main_args = cli.create_parser().parse_args(main_arg_list)
 
     try:
@@ -527,7 +535,7 @@ def main():
                 out_dir = out_dir.parent
             use_isotope = args.alpha > 0 or args.isotope is not None
             suffix = "_isotope" if use_isotope else ""
-            out_path = out_dir / f"N{result['n_ions']}_{time_us:.1f}{suffix}.png"
+            out_path = out_dir / f"N{result['n_ions']}_{time_us:.1f}_{args.calc_method}{suffix}.png"
         if out_path and not args.plot:
             import matplotlib
             matplotlib.use("Agg")
