@@ -782,6 +782,12 @@ def main() -> None:
         _, _, _, v_total = compute_potentials(potential_interps, field_interps, voltage_list, cfg, r_norm)
         return v_total
 
+    v_grid_all = np.asarray(compute_V_total(grid_coord), dtype=float).ravel()
+    v_grid_valid = v_grid_all[np.isfinite(v_grid_all)]
+    if v_grid_valid.size == 0:
+        parser.error("格点总势场全为非有限值，无法确定统一势能零点")
+    v_min_grid = float(np.min(v_grid_valid))
+
     center_um = _parse_center(args.center, parser)
     x_range = _parse_range_2(args.x_range, "x_range", parser)
     y_range = _parse_range_2(args.y_range, "y_range", parser)
@@ -794,6 +800,7 @@ def main() -> None:
         center_um=center_um,
         range_um=range_um,
         n_pts_per_axis=(args.fit_n_pts_x, args.fit_n_pts_y, args.fit_n_pts_z),
+        potential_offset_V=v_min_grid,
     )
 
     n_ions = int(args.N)
@@ -850,7 +857,7 @@ def main() -> None:
     print("=" * 68)
     print(f"N = {n_ions}, q = {args.charge:+.3f} e")
     print(f"拟合 R² = {fit.r_squared:.6f}, scale L = {fit.scale_um:.1f} μm")
-    print(f"势能零点平移: V_shifted = V_true - ({fit.potential_offset_V:.6e} V)")
+    print(f"势能零点平移: V_shifted = V_true - V_min_grid = V_true - ({fit.potential_offset_V:.6e} V)")
     print(f"初始总能量: {e0:.6e} eV")
 
     res = minimize(

@@ -144,7 +144,7 @@ python field_visualize.py --vary z --smooth-axes none
 - 使用 NumPy 风格 slice 在 Hessian 子空间上分析（支持逗号并集，如 `:`、`0:10`、`::3`、`5`、`0::3,2::3`）
 - 绘制 Hessian 热力图与声子频谱
 
-能量单位统一为 **eV**。同时外势采用零点平移（`V_shifted = V_true - V_min_sample`），便于与库仑势能量级比较。
+能量单位统一为 **eV**。同时外势采用统一零点平移（`V_shifted = V_true - V_min_grid`，其中 `V_min_grid` 为格点数据总势最小值），便于与库仑势能量级比较。
 
 ```bash
 python -m equilibrium.find_equilibrium [options]

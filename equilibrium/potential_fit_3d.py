@@ -23,14 +23,14 @@ class FitResult3D:
 
     势场模型: V_shifted(x,y,z) = Σ c_ijk u^i v^j w^k，其中 u=(x-x0)/L, v=(y-y0)/L, w=(z-z0)/L
     为数值稳定，拟合在缩放坐标 [-1,1] 上进行。L 为半跨度。
-    其中 V_shifted = V_true - V_min_sample（将零点平移到采样最小势）。
+    其中 V_shifted = V_true - V_min_ref（将零点平移到参考最小势）。
     坐标单位: μm
     """
 
     coeffs: np.ndarray  # shape (5,5,5)，对应 (u,v,w) 的系数
     center_um: tuple[float, float, float]
     scale_um: float  # L，坐标缩放半跨度
-    potential_offset_V: float  # 采样网格最小势 V_min_sample（被减去）
+    potential_offset_V: float  # 参考最小势 V_min_ref（被减去）
     r_squared: float
 
 
@@ -40,9 +40,10 @@ def fit_potential_3d_quartic(
     center_um: tuple[float, float, float] = (0.0, 0.0, 0.0),
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
     n_pts_per_axis: int | tuple[int, int, int] = 8,
+    potential_offset_V: float | None = None,
 ) -> FitResult3D:
     """
-    直接对总势场做 3D 四次多项式拟合，并将势能零点平移到采样最小势。
+    直接对总势场做 3D 四次多项式拟合，并将势能零点平移到参考最小势。
 
     模型: V_shifted(x,y,z) = Σ c_ijk x^i y^j z^k, 0 ≤ i,j,k ≤ 4
     共 5×5×5 = 125 项，使用最小二乘拟合。
@@ -61,6 +62,8 @@ def fit_potential_3d_quartic(
     n_pts_per_axis : int | tuple[int, int, int]
         采样点数。可传单个整数（x/y/z 相同），或传 (nx, ny, nz) 分别指定三轴采样点数。
         为保证 125 项拟合稳定，建议每轴 >= 6。
+    potential_offset_V : float | None
+        势能零点平移参考值 V_min_ref（单位 V）。若为 None，则退化为当前拟合采样点的最小势。
 
     Returns
     -------
@@ -123,9 +126,12 @@ def fit_potential_3d_quartic(
     V_mat_valid = V_mat[valid]
     V_true_valid = V_true[valid]
 
-    # 势能零点平移：减去采样最小值，便于与库伦势能量级比较（不改变梯度与极值位置）
-    v_min_sample = float(np.min(V_true_valid))
-    V_shifted_valid = V_true_valid - v_min_sample
+    # 势能零点平移：默认减去拟合采样最小值；若给定参考值则统一使用该参考值
+    if potential_offset_V is None:
+        v_min_ref = float(np.min(V_true_valid))
+    else:
+        v_min_ref = float(potential_offset_V)
+    V_shifted_valid = V_true_valid - v_min_ref
 
     coefs_flat, residuals, rank, s = np.linalg.lstsq(V_mat_valid, V_shifted_valid, rcond=None)
     coefs = np.zeros((5, 5, 5))
@@ -145,7 +151,7 @@ def fit_potential_3d_quartic(
         coeffs=coefs,
         center_um=center_um,
         scale_um=scale_um,
-        potential_offset_V=v_min_sample,
+        potential_offset_V=v_min_ref,
         r_squared=r_squared,
     )
 

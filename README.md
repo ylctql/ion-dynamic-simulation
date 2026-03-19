@@ -144,7 +144,7 @@ After equilibrium is found, it can also:
 - work on a Hessian subspace selected by NumPy-like slice syntax (supports unions with commas, e.g. `:`, `0:10`, `::3`, `5`, `0::3,2::3`)
 - visualize Hessian heatmaps and phonon spectra
 
-Energy is reported in **eV**, and trap potential uses a shifted zero (`V_shifted = V_true - V_min_sample`) for clearer scale comparison with Coulomb energy.
+Energy is reported in **eV**, and trap potential uses a unified shifted zero (`V_shifted = V_true - V_min_grid`, where `V_min_grid` is the minimum total potential on grid data) for clearer scale comparison with Coulomb energy.
 
 ```bash
 python -m equilibrium.find_equilibrium [options]
