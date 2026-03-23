@@ -238,7 +238,7 @@ python main.py [options]
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--N` | 50 | Number of ions |
+| `--N` | 50 | Number of ions; comma-separated runs multiple jobs in sequence (e.g. `500,2000,10000`); incompatible with `--init_file` |
 | `--t0` | 0 | Start time (μs) |
 | `--time` | ∞ | Simulation end time (μs); omit for infinite |
 | `--alpha` | 0 | Isotope doping ratio; in single-isotope mode, abundance of that isotope |

@@ -57,6 +57,7 @@ def _build_main_args(
     config_path: str,
     alpha: float,
     isotope: str | None,
+    calc_method: str,
 ):
     arg_list = ["--N", str(n_ions), "--time", str(time_us), "--csv", csv_path]
     if config_path:
@@ -65,6 +66,7 @@ def _build_main_args(
         arg_list += ["--alpha", str(alpha)]
     if isotope is not None:
         arg_list += ["--isotope", isotope]
+    arg_list += ["--calc_method", calc_method]
     return cli.create_parser().parse_args(arg_list)
 
 
@@ -106,6 +108,13 @@ def main() -> None:
         help="单同位素模式：指定同位素种类",
     )
     parser.add_argument(
+        "--calc_method",
+        type=str,
+        default="VV",
+        choices=["RK4", "VV", "both"],
+        help="积分算法: RK4、VV 或 both（两者都跑，默认 VV）",
+    )
+    parser.add_argument(
         "--out",
         type=str,
         default="tests/test_results/traj_dist_batch",
@@ -129,104 +138,110 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary_rows = []
+    calc_methods = ["VV", "RK4"] if args.calc_method == "both" else [args.calc_method]
     total_jobs = len(n_list) * len(time_list)
+    total_runs = total_jobs * len(calc_methods)
     done = 0
 
     for n_ions in n_list:
         for time_us_input in time_list:
-            done += 1
-            print(f"[{done}/{total_jobs}] N={n_ions}, time={time_us_input} μs")
+            for calc_method in calc_methods:
+                done += 1
+                print(f"[{done}/{total_runs}] N={n_ions}, time={time_us_input} μs, method={calc_method}")
 
-            main_args = _build_main_args(
-                n_ions=n_ions,
-                time_us=time_us_input,
-                csv_path=args.csv,
-                config_path=args.config,
-                alpha=args.alpha,
-                isotope=args.isotope,
-            )
-
-            try:
-                parsed = cli.parse_and_build(main_args, _ROOT)
-            except FileNotFoundError as e:
-                print(f"  跳过：配置或数据文件不存在: {e}")
-                continue
-
-            force = _build_force_from_parsed(parsed, _ROOT)
-            result = run_comparison(
-                parsed,
-                force,
-                duration_dt=parsed.params.duration,
-                n_steps=args.n_steps,
-            )
-
-            dist_um = result["dist"] * parsed.config.dl * 1e6
-            t_dt = result["t"]
-            t_us = t_dt * parsed.config.dt * 1e6
-            sim_time_us = result["duration"] * parsed.config.dt * 1e6
-            max_dist = float(np.max(dist_um))
-            mean_dist = float(np.mean(dist_um))
-
-            use_isotope = args.alpha > 0 or args.isotope is not None
-            suffix = "_isotope" if use_isotope else ""
-            stem = f"N{result['n_ions']}_{sim_time_us:.1f}{suffix}"
-            plot_path = out_dir / f"{stem}.png"
-            import matplotlib
-            matplotlib.use("Agg")
-            plot_distance_vs_time(
-                {
-                    "t": t_dt,
-                    "dist": dist_um,
-                    "n_ions": result["n_ions"],
-                    "duration": result["duration"],
-                },
-                out_path=str(plot_path),
-                dt=parsed.config.dt,
-            )
-
-            npz_name = ""
-            json_name = ""
-            if args.save_data:
-                npz_path = out_dir / f"{stem}.npz"
-                json_path = out_dir / f"{stem}.json"
-                np.savez_compressed(
-                    npz_path,
-                    t_dt=t_dt,
-                    t_us=t_us,
-                    dist_um=dist_um,
-                    n_ions=result["n_ions"],
-                    duration_dt=result["duration"],
-                    duration_us=sim_time_us,
+                main_args = _build_main_args(
+                    n_ions=n_ions,
+                    time_us=time_us_input,
+                    csv_path=args.csv,
+                    config_path=args.config,
+                    alpha=args.alpha,
+                    isotope=args.isotope,
+                    calc_method=calc_method,
                 )
 
-                meta = {
-                    "N": int(result["n_ions"]),
-                    "input_time_us": float(time_us_input),
-                    "sim_time_us": float(sim_time_us),
-                    "duration_dt": float(result["duration"]),
-                    "max_dist_um": max_dist,
-                    "mean_dist_um": mean_dist,
-                    "npz": npz_path.name,
-                }
-                json_path.write_text(
-                    json.dumps(meta, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                npz_name = npz_path.name
-                json_name = json_path.name
+                try:
+                    parsed = cli.parse_and_build(main_args, _ROOT)
+                except FileNotFoundError as e:
+                    print(f"  跳过：配置或数据文件不存在: {e}")
+                    continue
 
-            summary_rows.append(
-                {
-                    "N": result["n_ions"],
-                    "input_time_us": time_us_input,
-                    "sim_time_us": sim_time_us,
-                    "max_dist_um": max_dist,
-                    "mean_dist_um": mean_dist,
-                    "npz": npz_name,
-                    "json": json_name,
-                    "plot": plot_path.name,
-                }
-            )
+                force = _build_force_from_parsed(parsed, _ROOT)
+                result = run_comparison(
+                    parsed,
+                    force,
+                    duration_dt=parsed.params.duration,
+                    n_steps=args.n_steps,
+                )
+
+                dist_um = result["dist"] * parsed.config.dl * 1e6
+                t_dt = result["t"]
+                t_us = t_dt * parsed.config.dt * 1e6
+                sim_time_us = result["duration"] * parsed.config.dt * 1e6
+                max_dist = float(np.max(dist_um))
+                mean_dist = float(np.mean(dist_um))
+
+                use_isotope = args.alpha > 0 or args.isotope is not None
+                suffix = "_isotope" if use_isotope else ""
+                stem = f"N{result['n_ions']}_{sim_time_us:.1f}_{calc_method}{suffix}"
+                plot_path = out_dir / f"{stem}.png"
+                import matplotlib
+                matplotlib.use("Agg")
+                plot_distance_vs_time(
+                    {
+                        "t": t_dt,
+                        "dist": dist_um,
+                        "n_ions": result["n_ions"],
+                        "duration": result["duration"],
+                    },
+                    out_path=str(plot_path),
+                    dt=parsed.config.dt,
+                )
+
+                npz_name = ""
+                json_name = ""
+                if args.save_data:
+                    npz_path = out_dir / f"{stem}.npz"
+                    json_path = out_dir / f"{stem}.json"
+                    np.savez_compressed(
+                        npz_path,
+                        t_dt=t_dt,
+                        t_us=t_us,
+                        dist_um=dist_um,
+                        n_ions=result["n_ions"],
+                        duration_dt=result["duration"],
+                        duration_us=sim_time_us,
+                    )
+
+                    meta = {
+                        "N": int(result["n_ions"]),
+                        "input_time_us": float(time_us_input),
+                        "sim_time_us": float(sim_time_us),
+                        "calc_method": calc_method,
+                        "duration_dt": float(result["duration"]),
+                        "max_dist_um": max_dist,
+                        "mean_dist_um": mean_dist,
+                        "npz": npz_path.name,
+                    }
+                    json_path.write_text(
+                        json.dumps(meta, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    npz_name = npz_path.name
+                    json_name = json_path.name
+
+                summary_rows.append(
+                    {
+                        "N": result["n_ions"],
+                        "input_time_us": time_us_input,
+                        "sim_time_us": sim_time_us,
+                        "calc_method": calc_method,
+                        "max_dist_um": max_dist,
+                        "mean_dist_um": mean_dist,
+                        "npz": npz_name,
+                        "json": json_name,
+                        "plot": plot_path.name,
+                    }
+                )
 
     if args.save_data:
         summary_path = out_dir / "summary.csv"
@@ -237,6 +252,7 @@ def main() -> None:
                     "N",
                     "input_time_us",
                     "sim_time_us",
+                    "calc_method",
                     "max_dist_um",
                     "mean_dist_um",
                     "npz",

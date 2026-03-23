@@ -54,6 +54,9 @@ data_cache/
 *.npy
 FieldConfiguration/configs/
 
+# 势场格点数据
+data/
+
 # 保存的结果
 saves/
 

@@ -135,7 +135,7 @@ class Parameters:
         return self.t0
 
 
-def from_argparse(args, dt: float) -> Parameters:
+def from_argparse(args, dt: float, *, n_ions: int | None = None) -> Parameters:
     """
     从 argparse.Namespace 构建 Parameters
     兼容 ism-hybrid main.py 的常用参数名
@@ -145,8 +145,19 @@ def from_argparse(args, dt: float) -> Parameters:
     args : argparse.Namespace
     dt : float
         无量纲时间单位 (s)，用于将微秒转换为 dt 单位
+    n_ions : int | None
+        若指定则覆盖 args 中的离子数（多 --N 时由 CLI 逐场传入）
     """
-    N = getattr(args, "N", 50)
+    if n_ions is not None:
+        N = n_ions
+    else:
+        nv = getattr(args, "N", 50)
+        if isinstance(nv, list):
+            if not nv:
+                raise ValueError("args.N 离子数列表为空")
+            N = nv[0]
+        else:
+            N = int(nv)
     alpha = getattr(args, "alpha", getattr(args, "isotope_ratio", 0.0))
     isotope_type = getattr(args, "isotope", None)
     t0 = getattr(args, "t0", 0.0)

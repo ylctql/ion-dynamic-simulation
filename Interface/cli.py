@@ -21,6 +21,27 @@ from Plotter.vision import PlotFig, Vision
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_n_list(value: str) -> list[int]:
+    """
+    --N 解析：单个整数或逗号分隔列表，如 500 或 500,2000,10000。
+    """
+    s = value.strip()
+    if not s:
+        raise argparse.ArgumentTypeError("--N 不能为空")
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    out: list[int] = []
+    for p in parts:
+        try:
+            n = int(p, 10)
+        except ValueError as e:
+            raise argparse.ArgumentTypeError(f"--N 中含非法整数: {p!r}") from e
+        if n < 1:
+            raise argparse.ArgumentTypeError(f"--N 须为正整数，当前: {n}")
+        out.append(n)
+    return out
+
+
 # 默认路径，可通过环境变量覆盖
 DEFAULT_CONFIG_PATH = os.environ.get("ISM_DEFAULT_CONFIG", "FieldConfiguration/configs/default.json")
 DEFAULT_CSV_PATH = os.environ.get("ISM_DEFAULT_CSV", "data/monolithic20241118.csv")
@@ -51,7 +72,13 @@ class ParsedRun:
 def create_parser() -> argparse.ArgumentParser:
     """创建 ArgumentParser 并添加所有参数"""
     parser = argparse.ArgumentParser(description="离子阱动力学模拟")
-    parser.add_argument("--N", type=int, default=50, help="离子数")
+    parser.add_argument(
+        "--N",
+        type=_parse_n_list,
+        default=_parse_n_list("50"),
+        metavar="N[,N,...]",
+        help="离子数；可逗号分隔一次跑多场，如 500,2000,10000（按顺序依次模拟）",
+    )
     parser.add_argument("--t0", type=float, default=0.0, help="起始时间 (μs)")
     parser.add_argument("--time", type=float, default=None, help="模拟终止时刻 (μs)，不传则无限运行")
     parser.add_argument("--plot", action="store_true", help="启用实时绘图")
@@ -167,9 +194,19 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
+def parse_and_build(
+    args: argparse.Namespace,
+    root: Path,
+    *,
+    n_override: int | None = None,
+) -> ParsedRun:
     """
     根据 args 构造 Parameters、FieldSettings、Vision，并返回 ParsedRun。
+
+    Parameters
+    ----------
+    n_override
+        若指定，则本场模拟使用该离子数（用于 --N 多值时由 main 循环传入）。
     """
     # 1. 解析路径并加载配置（仅传文件名时用默认目录）
     def _resolve_path(arg: str, default_full: str, default_dir: str) -> str:
@@ -183,11 +220,15 @@ def parse_and_build(args: argparse.Namespace, root: Path) -> ParsedRun:
     config_path = _resolve_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
     cfg, _ = init_from_config(config_path)
 
+    n_values = getattr(args, "N", None)
+    if isinstance(n_values, list) and len(n_values) > 1 and getattr(args, "init_file", ""):
+        raise ValueError("指定 --init_file 时不支持多个 --N（初始态离子数固定）")
+
     # 2. 构建 Parameters
     from Interface.parameters import from_argparse
     from FieldConfiguration.loader import build_voltage_list, field_settings_from_config
 
-    params = from_argparse(args, cfg.dt)
+    params = from_argparse(args, cfg.dt, n_ions=n_override)
 
     # 3. 若指定 --init_file，从文件加载 r0、v0（单位 μm、m/s，转为无量纲）
     if getattr(args, "init_file", ""):

@@ -337,8 +337,14 @@ def main():
 
     parser = cli.create_parser()
     args = parser.parse_args()
-    parsed = cli.parse_and_build(args, _ROOT)
-    run(parsed)
+    n_list = getattr(args, "N", [50])
+    if not isinstance(n_list, list):
+        n_list = [int(n_list)]
+    for idx, n_ions in enumerate(n_list):
+        if len(n_list) > 1:
+            logger.info("批量模拟 %d/%d: N=%d", idx + 1, len(n_list), n_ions)
+        parsed = cli.parse_and_build(args, _ROOT, n_override=n_ions)
+        run(parsed)
 
 
 if __name__ == "__main__":
