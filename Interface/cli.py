@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -39,6 +40,111 @@ def _parse_n_list(value: str) -> list[int]:
         if n < 1:
             raise argparse.ArgumentTypeError(f"--N 须为正整数，当前: {n}")
         out.append(n)
+    return out
+
+
+_MAX_SAVE_TIME_RANGE_POINTS = 1_000_000
+
+
+def _split_top_level_commas(s: str) -> list[str]:
+    """按逗号切分，忽略括号内的逗号（供 range(a,b,c) 与列表混写）。"""
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for c in s:
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        if c == "," and depth == 0:
+            part = "".join(buf).strip()
+            if part:
+                parts.append(part)
+            buf = []
+        else:
+            buf.append(c)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _is_whole_number(x: float) -> bool:
+    return math.isfinite(x) and abs(x - round(x)) < 1e-9
+
+
+def _expand_range_times(start: float, stop: float, step: float) -> list[float]:
+    """
+    与 Python range 相同语义：stop 不包含；step 可为负。
+    起止与步长均为整数时走内置 range；否则为浮点序列。
+    """
+    if step == 0:
+        raise ValueError("range 的 step 不能为 0")
+    if _is_whole_number(start) and _is_whole_number(stop) and _is_whole_number(step):
+        ia, ib, ic = int(round(start)), int(round(stop)), int(round(step))
+        n = len(range(ia, ib, ic))
+        if n > _MAX_SAVE_TIME_RANGE_POINTS:
+            raise ValueError(
+                f"range 展开后点数过多 (>{_MAX_SAVE_TIME_RANGE_POINTS})"
+            )
+        return [float(t) for t in range(ia, ib, ic)]
+    out: list[float] = []
+    n = 0
+    if step > 0:
+        x = start
+        while x < stop - 1e-12 * max(1.0, abs(stop)) and n < _MAX_SAVE_TIME_RANGE_POINTS:
+            out.append(x)
+            x += step
+            n += 1
+    else:
+        x = start
+        while x > stop + 1e-12 * max(1.0, abs(stop)) and n < _MAX_SAVE_TIME_RANGE_POINTS:
+            out.append(x)
+            x += step
+            n += 1
+    if n >= _MAX_SAVE_TIME_RANGE_POINTS:
+        raise ValueError(
+            f"range 展开后点数过多 (>{_MAX_SAVE_TIME_RANGE_POINTS})"
+        )
+    return out
+
+
+def _parse_save_times_segment(seg: str) -> list[float]:
+    seg = seg.strip()
+    m = re.fullmatch(
+        r"range\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)",
+        seg,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        try:
+            start = float(m.group(1).strip())
+            stop = float(m.group(2).strip())
+            step = float(m.group(3).strip())
+        except ValueError as e:
+            raise ValueError(f"range(...) 中数值无效: {seg!r}") from e
+        return _expand_range_times(start, stop, step)
+    try:
+        return [float(seg)]
+    except ValueError as e:
+        raise ValueError(f"无效时刻: {seg!r}") from e
+
+
+def parse_save_times_us(raw: str) -> list[float]:
+    """
+    解析 --save_times_us：逗号分隔的微秒时刻，和/或 range(start,stop,step)
+    （与 Python range 相同，stop 不含；含括号时建议加引号以免 shell 误解析）。
+
+    示例：10,20,30 或 range(100,1100,100) 或 50,range(200,500,100),600
+    """
+    s = raw.strip()
+    if not s:
+        raise ValueError("内容为空")
+    out: list[float] = []
+    for part in _split_top_level_commas(s):
+        out.extend(_parse_save_times_segment(part))
+    if not out:
+        raise ValueError("未得到任何保存时刻")
     return out
 
 
@@ -144,7 +250,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--save_times_us",
         type=str,
         default=None,
-        help="需保存轨迹图的时刻 (μs)，逗号分隔如 10,20,30；无窗口，仅保存图片",
+        help=(
+            "需保存轨迹图的时刻 (μs)：逗号分隔如 10,20,30；"
+            "或 range(start,stop,step)（与 Python 相同，stop 不含），如 range(100,1100,100) 表示 100..1000；"
+            "可混写如 50,range(200,500,100)；含括号时建议加引号"
+        ),
     )
     parser.add_argument(
         "--save_fig_dir",
@@ -347,11 +457,11 @@ def parse_and_build(
     save_times_us: list[float] | None = None
     if args.save_times_us:
         try:
-            save_times_us = [float(s.strip()) for s in args.save_times_us.split(",") if s.strip()]
-        except ValueError:
+            save_times_us = parse_save_times_us(args.save_times_us)
+        except ValueError as e:
             raise ValueError(
-                f"--save_times_us 须为逗号分隔的浮点数，如 10,20,30，当前: {args.save_times_us!r}"
-            ) from None
+                f"--save_times_us 解析失败 ({args.save_times_us!r}): {e}"
+            ) from e
 
     # 8. 解析 save_fig_dir（未指定时用环境变量或默认）
     save_fig_dir = args.save_fig_dir or DEFAULT_SAVE_FIG_DIR

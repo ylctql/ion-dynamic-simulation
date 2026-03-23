@@ -271,7 +271,7 @@ python main.py [options]
 | `--y_range` | 20 | y 方向显示半宽 (μm) |
 | `--z_range` | 200 | z 方向显示半宽 (μm) |
 | `--save_final_image` | - | 最后一帧保存路径 |
-| `--save_times_us` | - | 需保存轨迹图的时刻 (μs)，逗号分隔如 10,20,30；无窗口，仅保存图片 |
+| `--save_times_us` | - | 需保存轨迹图的时刻 (μs)：逗号分隔如 10,20,30；或 `range(start,stop,step)`（与 Python 相同，stop 不含），如 `range(100,1100,100)` 即 100…1000；可混写；含括号时建议加引号；无窗口，仅保存图片 |
 | `--save_fig_dir` | saves/images/traj | 轨迹帧保存根目录，结构为 `{dir}/{device}/{离子数}/t{时间}us.png` |
 | `--save_rv_traj_dir` [DIR] | - | 指定时刻 r/v 保存根目录；指定但未传参时默认 saves/rv/traj；结构为 `{dir}/{device}/{离子数}/`；需 --save_times_us；不指定则不保存 |
 | `--save_rv_status_dir` [DIR] | - | 最后一帧 r/v 保存根目录；指定但未传参时默认 saves/rv/status；结构为 `{dir}/{device}/{离子数}/`；以最后一帧时间命名；不指定则不保存 |
