@@ -124,6 +124,14 @@ def _parse_save_times_segment(seg: str) -> list[float]:
         except ValueError as e:
             raise ValueError(f"range(...) 中数值无效: {seg!r}") from e
         return _expand_range_times(start, stop, step)
+    # start:stop:step — 无括号，避免 bash 将 ( 当作语法（未加引号的 range(...) 会报错）
+    if seg.count(":") == 2:
+        a, b, c = seg.split(":", 2)
+        try:
+            start, stop, step = float(a.strip()), float(b.strip()), float(c.strip())
+        except ValueError as e:
+            raise ValueError(f"无效 start:stop:step: {seg!r}") from e
+        return _expand_range_times(start, stop, step)
     try:
         return [float(seg)]
     except ValueError as e:
@@ -132,10 +140,10 @@ def _parse_save_times_segment(seg: str) -> list[float]:
 
 def parse_save_times_us(raw: str) -> list[float]:
     """
-    解析 --save_times_us：逗号分隔的微秒时刻，和/或 range(start,stop,step)
-    （与 Python range 相同，stop 不含；含括号时建议加引号以免 shell 误解析）。
+    解析 --save_times_us：逗号分隔的微秒时刻；或 range(start,stop,step)（须加引号以免 bash 解析括号）；
+    或 start:stop:step（与 Python range 相同，stop 不含，无需引号）。
 
-    示例：10,20,30 或 range(100,1100,100) 或 50,range(200,500,100),600
+    示例：10,20,30 或 'range(100,1100,100)' 或 100:1100:100 或 50,200:500:100,600
     """
     s = raw.strip()
     if not s:
@@ -252,8 +260,8 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "需保存轨迹图的时刻 (μs)：逗号分隔如 10,20,30；"
-            "或 range(start,stop,step)（与 Python 相同，stop 不含），如 range(100,1100,100) 表示 100..1000；"
-            "可混写如 50,range(200,500,100)；含括号时建议加引号"
+            "或 start:stop:step（同 Python range，stop 不含），如 100:1100:100 即 100..1000，无括号、bash 安全；"
+            "或 range(start,stop,step)（整段须加引号，否则 bash 会报括号语法错）；可混写"
         ),
     )
     parser.add_argument(

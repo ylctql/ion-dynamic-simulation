@@ -47,6 +47,13 @@ def test_parse_save_times_us_range():
     ]
 
 
+def test_parse_save_times_us_colon_range():
+    """start:stop:step — no parentheses, shell-safe"""
+    assert parse_save_times_us("100:1100:100") == [
+        float(x) for x in range(100, 1100, 100)
+    ]
+
+
 def test_parse_save_times_us_mixed():
     assert parse_save_times_us("50,range(200,500,100),600") == [
         50.0,

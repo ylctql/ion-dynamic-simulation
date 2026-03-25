@@ -271,7 +271,7 @@ python main.py [options]
 | `--y_range` | 20 | y-axis display half-width (μm) |
 | `--z_range` | 200 | z-axis display half-width (μm) |
 | `--save_final_image` | - | Path to save the last frame |
-| `--save_times_us` | - | Times (μs) to save trajectory frames: comma-separated e.g. 10,20,30; or `range(start,stop,step)` (Python semantics, stop exclusive), e.g. `range(100,1100,100)` → 100…1000; can mix; quote if shell would parse parentheses; headless, no live window |
+| `--save_times_us` | - | Times (μs) to save trajectory frames: comma-separated e.g. 10,20,30; or **`start:stop:step`** (Python `range` semantics, stop exclusive), e.g. `100:1100:100` → 100…1000, **no parentheses** (bash-safe); or `'range(100,1100,100)'` (must quote or bash treats `(` as syntax); can mix; headless, no live window |
 | `--save_fig_dir` | saves/images/traj | Root dir for trajectory frames; structure: `{dir}/{device}/{n_ions}/t{time}us.png` |
 | `--save_rv_traj_dir` [DIR] | - | Save r/v at save_times_us to DIR; default saves/rv/traj when specified without value; structure: `{dir}/{device}/{n_ions}/`; requires --save_times_us |
 | `--save_rv_status_dir` [DIR] | - | Save last-frame r/v to DIR; default saves/rv/status when specified without value; structure: `{dir}/{device}/{n_ions}/`; named by timestamp |
