@@ -49,13 +49,14 @@ env/
 Thumbs.db
 
 # 数据与输出
-data/
 data_cache/
 *.npy
-FieldConfiguration/configs/
+FieldConfiguration/configs/*
+!FieldConfiguration/configs/default.json
 
 # 势场格点数据
-data/
+data/*
+!data/monolithic20241118.csv
 
 # 保存的结果
 saves/
