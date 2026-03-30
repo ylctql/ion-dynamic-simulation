@@ -3,7 +3,7 @@
 
 通过势场拟合与能量最小化求离子晶格的平衡构型。
 
-- fit_potential_3d_quartic: 直接拟合 V(x,y,z) 的 3D 四次多项式
+- fit_potential_3d_quartic: 拟合外势；fit_mode: none(125)/even(27)/quartic(35)/quartic_even(10)/quadratic(4)
 - eval_fit_3d, grad_fit_3d: 拟合势场的求值与梯度
 - trap/coulomb/total energy: 外势能、库伦势能与总势能
 """

@@ -133,7 +133,7 @@ python field_visualize.py --vary z --smooth-axes none
 
 `equilibrium` 模块用于计算离子晶格平衡位置，流程为：
 
-1. 对总外势进行 3D 四次多项式拟合（`fit_potential_3d_quartic`）
+1. 对总外势进行 3D 多项式拟合（`fit_potential_3d_quartic`，默认 `--fit-mode none` 为 125 项张量积）
 2. 构建总势能 `U_total = U_trap + U_coulomb`
 3. 使用 L-BFGS-B 最小化 `U_total` 得到平衡位置
 
@@ -193,6 +193,7 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::
 | `--fit-n-pts-x` | 100 | 3D 拟合 x 轴采样点数 |
 | `--fit-n-pts-y` | 40 | 3D 拟合 y 轴采样点数 |
 | `--fit-n-pts-z` | 300 | 3D 拟合 z 轴采样点数 |
+| `--fit-mode` | none | 3D 势拟合：`none` 各变量≤4 张量积 **125** 项；`even` 在 125 项中去掉任一指为奇数的项 **27** 项；`quartic` 总次数≤4 **35** 项；`quartic_even` **10** 项；`quadratic` 常数+三个平方 **4** 项（x,y,z 为无量纲 u,v,w） |
 | `--softening-um` | 0.001 | 库仑软化长度（μm） |
 | `--phonon` | - | 在平衡位置处求解声子模式（对角化动力学矩阵） |
 | `--mass-amu` | 135.0 | 声子求解质量（amu，默认 Ba135） |
@@ -207,7 +208,7 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::
 | `--plot-mode-vector` | - | 弹出指定声子模式本征向量窗口（zox 平面）；可选模式序号（按频率降序），默认 `0`；窗口支持滑条 / 文本框 / 左右键 |
 | `--plot-mode-vector-out` | - | 保存模式向量图；不带路径时默认 `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
 | `--plot-mode-vector-arrow-scale` | 1.0 | `--plot-mode-vector` 的箭头长度倍率（>0） |
-| `--plot-point-size` | - | `--plot` 与 `--plot-mode-vector` 的散点大小；必须 >0；不指定时各图使用默认大小 |
+| `--plot-point-size` | - | `--plot` 与 `--plot-mode-vector` 的散点大小（matplotlib `scatter` 的 `s`）；必须 >0；不指定时二者默认均为 **15** |
 | `--maxiter` | 500 | 优化最大迭代步数 |
 | `--tol` | 1e-10 | 收敛阈值（`ftol`，无量纲） |
 | `--seed` | 42 | 随机初始化种子 |
@@ -301,7 +302,7 @@ ism-main/
 │   ├── plots.py       # 势场与阱频扫描绘图
 │   └── cli.py         # 参数解析与主流程
 ├── equilibrium/       # 平衡构型求解模块
-│   ├── potential_fit_3d.py  # 3D 四次势场拟合与梯度
+│   ├── potential_fit_3d.py  # 3D 势场多项式拟合与梯度
 │   ├── energy.py      # 外势/库仑/总势能（eV）
 │   ├── phonon.py      # Hessian 构建与声子模式求解
 │   ├── find_equilibrium.py  # CLI：最小化总势求平衡位置

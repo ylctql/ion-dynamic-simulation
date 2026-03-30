@@ -1,12 +1,20 @@
 """
-总势场 3D 四次多项式拟合
+总势场 3D 多项式拟合（缩放坐标 u,v,w）
 
-fit_potential_3d_quartic: 直接拟合 V(x,y,z) 为完整 3D 四次多项式
-V(x,y,z) = Σ c_ijk x^i y^j z^k, i,j,k ≤ 4
+fit_potential_3d_quartic: V_shifted = Σ c_{ijk} u^i v^j w^k，由 fit_mode 选基底：
+- none（默认）：0≤i,j,k≤4 张量积，5³=125 项；
+- even：在 125 项上删去 i,j,k 任一为奇数的项（仅全偶次），27 项；
+- quartic：总次数 i+j+k≤4，35 项；
+- quartic_even：quartic 上仅保留 i,j,k 全偶，10 项；
+- quadratic：常数 + u²,v²,w²，4 项。
+
+系数存 (5,5,5)，未用位置为 0，与 numpy polynomial.polyval3d 兼容。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -16,22 +24,161 @@ from numpy.polynomial import polynomial as P
 DEGREE_QUARTIC = 4
 
 
+def quartic_3d_exponents_total_degree(max_total: int = DEGREE_QUARTIC) -> tuple[tuple[int, int, int], ...]:
+    """
+    三元总次数基底：所有 (i,j,k) 满足 i+j+k ≤ max_total，按总次数 s 递增，再按 i、j 字典序枚举。
+    max_total=4 时共 C(4+3,3)=35 项。
+    """
+    out: list[tuple[int, int, int]] = []
+    for s in range(max_total + 1):
+        for i in range(s + 1):
+            for j in range(s + 1 - i):
+                k = s - i - j
+                out.append((i, j, k))
+    return tuple(out)
+
+
+QUARTIC_3D_EXPS: tuple[tuple[int, int, int], ...] = quartic_3d_exponents_total_degree(DEGREE_QUARTIC)
+N_QUARTIC_3D_TERMS = len(QUARTIC_3D_EXPS)
+
+# 各变量次数分别 ≤4：张量积基底，与 polyvander3d([4,4,4]) 列序一致（i 最外层）
+TENSOR_MAXDEG4_EXPS: tuple[tuple[int, int, int], ...] = tuple(
+    (i, j, k) for i in range(5) for j in range(5) for k in range(5)
+)
+N_TENSOR_MAXDEG4_TERMS = len(TENSOR_MAXDEG4_EXPS)
+
+# 二次模型：常数项 + u², v², w²（JSON 标签仍为 1, x^2, y^2, z^2）
+QUADRATIC_FIT_EXPS: tuple[tuple[int, int, int], ...] = (
+    (0, 0, 0),
+    (2, 0, 0),
+    (0, 2, 0),
+    (0, 0, 2),
+)
+
+
+def normalize_fit_mode(fit_mode: str | None) -> str | None:
+    """
+    None / 'none'：张量积 125 项；'even'：125 项中去奇次（27 项）；
+    'quartic'：总次数≤4（35）；'quartic_even'：quartic + 全偶（10）；
+    'quadratic'：常数 + 轴二次（4）。
+    """
+    if fit_mode is None:
+        return None
+    s = str(fit_mode).strip().lower()
+    if s in ("", "none"):
+        return None
+    if s == "even":
+        return "even"
+    if s == "quartic":
+        return "quartic"
+    if s == "quartic_even":
+        return "quartic_even"
+    if s == "quadratic":
+        return "quadratic"
+    raise ValueError(
+        f"fit_mode={fit_mode!r} 不受支持，请使用 none、even、quartic、quartic_even、quadratic"
+    )
+
+
+def fit_mode_basis_exponents(fit_mode: str | None) -> tuple[tuple[int, int, int], ...]:
+    """按 fit_mode 返回拟合用单项式指数 (i,j,k)，对应 u^i v^j w^k。"""
+    key = normalize_fit_mode(fit_mode)
+    if key is None:
+        return TENSOR_MAXDEG4_EXPS
+    if key == "even":
+        return tuple(
+            (i, j, k)
+            for (i, j, k) in TENSOR_MAXDEG4_EXPS
+            if i % 2 == 0 and j % 2 == 0 and k % 2 == 0
+        )
+    if key == "quartic":
+        return QUARTIC_3D_EXPS
+    if key == "quartic_even":
+        return tuple(
+            (i, j, k)
+            for (i, j, k) in QUARTIC_3D_EXPS
+            if i % 2 == 0 and j % 2 == 0 and k % 2 == 0
+        )
+    if key == "quadratic":
+        return QUADRATIC_FIT_EXPS
+    raise RuntimeError("unreachable")
+
+
+def _monomial_factor(var: str, exp: int) -> str:
+    if exp <= 0:
+        return ""
+    if exp == 1:
+        return var
+    return f"{var}^{exp}"
+
+
+def quartic_3d_term_label(i: int, j: int, k: int) -> str:
+    """
+    项名字符串：monomial x^i y^j z^k，
+    其中 x,y,z 表示缩放位移 u,v,w（即 (x_phys-x0)/L 等）。
+    """
+    parts: list[str] = []
+    for var, exp in (("x", i), ("y", j), ("z", k)):
+        fac = _monomial_factor(var, exp)
+        if fac:
+            parts.append(fac)
+    return "*".join(parts) if parts else "1"
+
+
+def quartic_fit_coeff_map(fit: FitResult3D) -> dict[str, float]:
+    """拟合系数表：项名 -> 数值（与本次拟合所用 basis_exps 顺序一致）。"""
+    out: dict[str, float] = {}
+    c = fit.coeffs
+    for i, j, k in fit.basis_exps:
+        key = quartic_3d_term_label(i, j, k)
+        out[key] = float(c[i, j, k])
+    return out
+
+
+def write_potential_fit_coeff_json(
+    fit: FitResult3D,
+    path: Path | str,
+    *,
+    csv: str | Path | None = None,
+    config: str | Path | None = None,
+) -> None:
+    """
+    将四次拟合各阶项系数写入 JSON。
+
+    文件结构：csv、config、fit_mode，随后 coefficients（项名 -> float）。
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    csv_name = Path(csv).name if csv else ""
+    config_name = Path(config).name if config else ""
+    payload: dict[str, object] = {
+        "csv": csv_name,
+        "config": config_name,
+        "fit_mode": fit.fit_mode if fit.fit_mode else "none",
+        "coefficients": quartic_fit_coeff_map(fit),
+    }
+    with p.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
 @dataclass
 class FitResult3D:
     """
     3D 四次多项式拟合结果
 
-    势场模型: V_shifted(x,y,z) = Σ c_ijk u^i v^j w^k，其中 u=(x-x0)/L, v=(y-y0)/L, w=(z-z0)/L
-    为数值稳定，拟合在缩放坐标 [-1,1] 上进行。L 为半跨度。
-    其中 V_shifted = V_true - V_min_ref（将零点平移到参考最小势）。
-    坐标单位: μm
+    势场模型: V_shifted = Σ c_ijk u^i v^j w^k，u=(x-x0)/L, v=(y-y0)/L, w=(z-z0)/L，
+    仅 fit_mode 所选基底中的项非零（见 fit_mode_basis_exponents）；(5,5,5) 存储。
+    为数值稳定，拟合在缩放坐标上进行。L 为半跨度。
+    V_shifted = V_true - V_min_ref（将零点平移到参考最小势）。坐标单位: μm
     """
 
-    coeffs: np.ndarray  # shape (5,5,5)，对应 (u,v,w) 的系数
+    coeffs: np.ndarray  # shape (5,5,5)，c[i,j,k] 对应 u^i v^j w^k；未使用的项恒为 0
     center_um: tuple[float, float, float]
     scale_um: float  # L，坐标缩放半跨度
     potential_offset_V: float  # 参考最小势 V_min_ref（被减去）
     r_squared: float
+    fit_mode: str | None = None  # 本此拟合模式键；None 表示 none（125 项张量）
+    basis_exps: tuple[tuple[int, int, int], ...] = field(default_factory=lambda: TENSOR_MAXDEG4_EXPS)
 
 
 def fit_potential_3d_quartic(
@@ -41,12 +188,12 @@ def fit_potential_3d_quartic(
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
     n_pts_per_axis: int | tuple[int, int, int] = 8,
     potential_offset_V: float | None = None,
+    fit_mode: str | None = None,
 ) -> FitResult3D:
     """
-    直接对总势场做 3D 四次多项式拟合，并将势能零点平移到参考最小势。
+    对总势场在缩放坐标下做多项式最小二乘拟合，并将势能零点平移到参考最小势。
 
-    模型: V_shifted(x,y,z) = Σ c_ijk x^i y^j z^k, 0 ≤ i,j,k ≤ 4
-    共 5×5×5 = 125 项，使用最小二乘拟合。
+    基底由 fit_mode 决定（见模块文档）。
 
     Parameters
     ----------
@@ -61,9 +208,13 @@ def fit_potential_3d_quartic(
         默认 (-50, 50) 每轴
     n_pts_per_axis : int | tuple[int, int, int]
         采样点数。可传单个整数（x/y/z 相同），或传 (nx, ny, nz) 分别指定三轴采样点数。
-        为保证 125 项拟合稳定，建议每轴 >= 6。
+        基函数多时须保证有效网格点数 ≥ 未知数个数。
     potential_offset_V : float | None
         势能零点平移参考值 V_min_ref（单位 V）。若为 None，则退化为当前拟合采样点的最小势。
+    fit_mode : str | None
+        'none'：0≤i,j,k≤4 张量积（125）。'even'：其上去掉任一指为奇次的项（27）。
+        'quartic'：i+j+k≤4（35）。'quartic_even'：quartic 的全偶子集（10）。
+        'quadratic'：常数 + u²,v²,w²（4）。
 
     Returns
     -------
@@ -114,13 +265,19 @@ def fit_potential_3d_quartic(
     ])
     V_true = compute_V_total(r_norm)
 
-    # 设计矩阵与最小二乘（在缩放坐标上）
-    deg = [DEGREE_QUARTIC, DEGREE_QUARTIC, DEGREE_QUARTIC]
-    V_mat = P.polyvander3d(u_flat, v_flat, w_flat, deg)
+    mode_key = normalize_fit_mode(fit_mode)
+    basis_exps = fit_mode_basis_exponents(fit_mode)
+    n_basis = len(basis_exps)
+
+    # 设计矩阵：fit_mode 选定基，缩放坐标 u,v,w
+    V_mat = np.empty((u_flat.size, n_basis), dtype=float)
+    for col, (i, j, k) in enumerate(basis_exps):
+        V_mat[:, col] = (u_flat**i) * (v_flat**j) * (w_flat**k)
     valid = np.isfinite(V_true)
-    if np.sum(valid) < 125:
+    if np.sum(valid) < n_basis:
         raise ValueError(
-            f"有效采样点 {np.sum(valid)} 不足，至少需 125 点拟合 3D 四次多项式。"
+            f"有效采样点 {np.sum(valid)} 不足，至少需 {n_basis} 点拟合"
+            f"（fit_mode={mode_key or 'none'}，当前基底项数 {n_basis}）。"
             f"请增大 n_pts_per_axis（当前网格 {nx}x{ny}x{nz}）或检查势场范围。"
         )
     V_mat_valid = V_mat[valid]
@@ -135,10 +292,7 @@ def fit_potential_3d_quartic(
 
     coefs_flat, residuals, rank, s = np.linalg.lstsq(V_mat_valid, V_shifted_valid, rcond=None)
     coefs = np.zeros((5, 5, 5))
-    for idx in range(125):
-        i = idx // 25
-        j = (idx % 25) // 5
-        k = idx % 5
+    for idx, (i, j, k) in enumerate(basis_exps):
         coefs[i, j, k] = coefs_flat[idx]
 
     # R²
@@ -153,6 +307,8 @@ def fit_potential_3d_quartic(
         scale_um=scale_um,
         potential_offset_V=v_min_ref,
         r_squared=r_squared,
+        fit_mode=mode_key,
+        basis_exps=basis_exps,
     )
 
 

@@ -54,6 +54,16 @@ def main() -> None:
         help="沿每轴采样点数，默认 100",
     )
     parser.add_argument(
+        "--fit-mode",
+        type=str,
+        default="none",
+        choices=["none", "even", "quartic", "quartic_even", "quadratic"],
+        help=(
+            "none=125 项张量；even=27 项全偶；quartic=35 项总次数≤4；"
+            "quartic_even=10 项；quadratic=4 项（均为缩放坐标 u,v,w）"
+        ),
+    )
+    parser.add_argument(
         "--plot-fit-report",
         action="store_true",
         help="生成拟合可视化报告（1D/2D/残差/梯度误差）并保存图片",
@@ -189,6 +199,7 @@ def main() -> None:
         eval_fit_3d,
         fit_potential_3d_quartic,
         grad_fit_3d,
+        write_potential_fit_coeff_json,
     )
 
     fit = fit_potential_3d_quartic(
@@ -198,6 +209,13 @@ def main() -> None:
         range_um=range_um,
         n_pts_per_axis=args.n_pts,
         potential_offset_V=v_min_grid,
+        fit_mode=args.fit_mode,
+    )
+    write_potential_fit_coeff_json(
+        fit,
+        _ROOT / "equilibrium" / "results" / "potential_fit_coeff.json",
+        csv=csv_path,
+        config=config_path,
     )
 
     print("=" * 60)
@@ -210,8 +228,13 @@ def main() -> None:
     print()
     print(f"拟合优度 R²: {fit.r_squared:.6f}")
     print()
-    print("模型: V(x,y,z) = Σ c_ijk u^i v^j w^k, u=(x-x0)/L, v=(y-y0)/L, w=(z-z0)/L")
-    print(f"  缩放半跨度 L = {fit.scale_um:.1f} μm, 系数数组 shape (5,5,5)")
+    mode_disp = fit.fit_mode if fit.fit_mode else "none"
+    sym_note = f"，fit_mode={mode_disp}（{len(fit.basis_exps)} 项）"
+    print(
+        "模型: V_shifted = Σ c_ijk u^i v^j w^k"
+        f"{sym_note}, u=(x-x0)/L, v=(y-y0)/L, w=(z-z0)/L"
+    )
+    print(f"  缩放半跨度 L = {fit.scale_um:.1f} μm, 系数存 shape (5,5,5)，未参与拟合的幂次为 0")
     print(f"  势能零点平移: V_shifted = V_true - V_min_grid = V_true - ({fit.potential_offset_V:.6e} V)")
     print()
     # 验证：在中心点求值

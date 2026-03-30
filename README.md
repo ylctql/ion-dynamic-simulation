@@ -133,7 +133,7 @@ python field_visualize.py --vary z --smooth-axes none
 
 The `equilibrium` module computes ion crystal equilibrium positions by:
 
-1. Fitting total trap potential with a 3D quartic polynomial (`fit_potential_3d_quartic`)
+1. Fitting total trap potential with a 3D polynomial (`fit_potential_3d_quartic`; default `--fit-mode none` uses a 125-term tensor-product basis)
 2. Building total energy `U_total = U_trap + U_coulomb`
 3. Minimizing `U_total` with L-BFGS-B
 
@@ -190,9 +190,10 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::
 | `--x_range` | -50,50 | x range for fit/optimization in μm |
 | `--y_range` | -20,20 | y range for fit/optimization in μm |
 | `--z_range` | -150,150 | z range for fit/optimization in μm |
-| `--fit-n-pts-x` | 100 | Sample points along x-axis for 3D quartic fit |
-| `--fit-n-pts-y` | 40 | Sample points along y-axis for 3D quartic fit |
-| `--fit-n-pts-z` | 300 | Sample points along z-axis for 3D quartic fit |
+| `--fit-n-pts-x` | 100 | Sample points along x-axis for 3D potential fit |
+| `--fit-n-pts-y` | 40 | Sample points along y-axis for 3D potential fit |
+| `--fit-n-pts-z` | 300 | Sample points along z-axis for 3D potential fit |
+| `--fit-mode` | none | 3D potential fit basis: `none` — per-axis degree ≤4 tensor product **125** terms; `even` — drop monomials with any odd exponent among the 125 → **27** terms; `quartic` — total degree ≤4 **35** terms; `quartic_even` **10** terms; `quadratic` — constant + three squares **4** terms (labels x,y,z mean dimensionless u,v,w) |
 | `--softening-um` | 0.001 | Coulomb softening length in μm |
 | `--phonon` | - | Solve phonon modes at equilibrium (diagonalize dynamical matrix) |
 | `--mass-amu` | 135.0 | Ion mass for phonon solver (amu, default Ba135) |
@@ -207,7 +208,7 @@ python -m equilibrium.find_equilibrium --N 120 --phonon --hessian-slice 0::3,2::
 | `--plot-mode-vector` | - | Show one phonon mode eigenvector on zox plane; optional mode index (descending by frequency), default `0`; window mode supports slider / textbox / left-right keys |
 | `--plot-mode-vector-out` | - | Save mode-vector plot; with no path uses default `equilibrium/results/mode_vector/{N}_{slice}_mode{k}.png` |
 | `--plot-mode-vector-arrow-scale` | 1.0 | Arrow length multiplier for `--plot-mode-vector` (>0) |
-| `--plot-point-size` | - | Scatter point size for `--plot` and `--plot-mode-vector`; must be >0; if omitted, each plot uses its own default size |
+| `--plot-point-size` | - | Scatter size (matplotlib `scatter` `s`) for `--plot` and `--plot-mode-vector`; must be >0; if omitted, both default to **15** |
 | `--maxiter` | 500 | Max optimization iterations |
 | `--tol` | 1e-10 | Relative convergence tolerance (`ftol`, dimensionless) |
 | `--seed` | 42 | RNG seed when random initialization is used |
@@ -301,7 +302,7 @@ ism-main/
 │   ├── plots.py       # Potential and freq-scan plotting
 │   └── cli.py         # Argument parsing and main flow
 ├── equilibrium/       # Equilibrium-position solver
-│   ├── potential_fit_3d.py  # 3D quartic potential fit and gradient
+│   ├── potential_fit_3d.py  # 3D polynomial potential fit and gradient
 │   ├── energy.py      # Trap/Coulomb/total energy in eV
 │   ├── phonon.py      # Hessian construction and phonon mode solver
 │   ├── find_equilibrium.py  # CLI: minimize total energy for equilibrium

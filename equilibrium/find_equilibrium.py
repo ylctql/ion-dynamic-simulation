@@ -148,7 +148,7 @@ def _plot_equilibrium_layout(
     x = r_um[:, 0]
 
     mode = (color_mode or "none").lower()
-    scatter_kwargs: dict = {"s": 22 if point_size is None else float(point_size), "alpha": 0.9}
+    scatter_kwargs: dict = {"s": 15 if point_size is None else float(point_size), "alpha": 0.9}
     # 尽量对齐 Plotter 约定：none / y_pos / v2 / isotope
     if mode in ("none", ""):
         scatter_kwargs["c"] = "tab:red"
@@ -452,7 +452,7 @@ def _plot_phonon_mode_vector_zox(
     _figw = _max_dim if _ratio >= 1.0 else max(3.0, _max_dim * _ratio)
     _figh = _max_dim if _ratio < 1.0 else max(3.0, _max_dim / _ratio)
     fig, ax = plt.subplots(1, 1, figsize=(_figw, _figh))
-    scatter_size = 42 if point_size is None else float(point_size)
+    scatter_size = 15 if point_size is None else float(point_size)
     sc = ax.scatter(z, x, c=amp_norm, cmap="viridis", s=scatter_size, alpha=0.95)
     cbar = fig.colorbar(sc, ax=ax)
     cbar.set_label("Mode amplitude (normalized)")
@@ -615,6 +615,16 @@ def main() -> None:
     parser.add_argument("--fit-n-pts-x", type=int, default=100, help="3D 拟合 x 轴采样点数，默认 100")
     parser.add_argument("--fit-n-pts-y", type=int, default=40, help="3D 拟合 y 轴采样点数，默认 40")
     parser.add_argument("--fit-n-pts-z", type=int, default=300, help="3D 拟合 z 轴采样点数，默认 300")
+    parser.add_argument(
+        "--fit-mode",
+        type=str,
+        default="none",
+        choices=["none", "even", "quartic", "quartic_even", "quadratic"],
+        help=(
+            "3D 势拟合：none=各变量≤4 张量积 125 项；even=其上删奇次指数 27 项；"
+            "quartic=总次数≤4 共 35 项；quartic_even=quartic 全偶 10 项；quadratic=4 项"
+        ),
+    )
     parser.add_argument("--softening-um", type=float, default=0.001, help="库伦软化长度 (μm)，默认 0.001")
     parser.add_argument("--phonon", action="store_true", help="在平衡位置处计算 Hessian 并提取声子模式")
     parser.add_argument(
@@ -690,7 +700,7 @@ def main() -> None:
         "--plot-point-size",
         type=float,
         default=None,
-        help="绘图散点大小（可同时作用于 --plot 与 --plot-mode-vector；不传则各用默认值）",
+        help="绘图散点大小（可同时作用于 --plot 与 --plot-mode-vector；不传则二者均默认 15）",
     )
     parser.add_argument(
         "--save-hessian-data",
@@ -742,7 +752,10 @@ def main() -> None:
 
     from equilibrium.energy import total_energy_and_grad
     from equilibrium.phonon import solve_phonon_modes, total_hessian
-    from equilibrium.potential_fit_3d import fit_potential_3d_quartic
+    from equilibrium.potential_fit_3d import (
+        fit_potential_3d_quartic,
+        write_potential_fit_coeff_json,
+    )
 
     def _resolve_path(arg: str, default_full: str, default_dir: str) -> str:
         if not arg:
@@ -801,6 +814,13 @@ def main() -> None:
         range_um=range_um,
         n_pts_per_axis=(args.fit_n_pts_x, args.fit_n_pts_y, args.fit_n_pts_z),
         potential_offset_V=v_min_grid,
+        fit_mode=args.fit_mode,
+    )
+    write_potential_fit_coeff_json(
+        fit,
+        _ROOT / "equilibrium" / "results" / "potential_fit_coeff.json",
+        csv=csv_path,
+        config=config_path,
     )
 
     n_ions = int(args.N)
@@ -856,7 +876,11 @@ def main() -> None:
     print("离子晶格平衡构型求解")
     print("=" * 68)
     print(f"N = {n_ions}, q = {args.charge:+.3f} e")
-    print(f"拟合 R² = {fit.r_squared:.6f}, scale L = {fit.scale_um:.1f} μm")
+    fit_mode_disp = fit.fit_mode if fit.fit_mode else "none"
+    print(
+        f"拟合 R² = {fit.r_squared:.6f}, scale L = {fit.scale_um:.1f} μm, "
+        f"fit_mode={fit_mode_disp}（{len(fit.basis_exps)} 项）"
+    )
     print(f"势能零点平移: V_shifted = V_true - V_min_grid = V_true - ({fit.potential_offset_V:.6e} V)")
     print(f"初始总能量: {e0:.6e} eV")
 
