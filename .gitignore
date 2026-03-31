@@ -58,6 +58,10 @@ FieldConfiguration/configs/*
 data/*
 !data/monolithic20241118.csv
 
+# 离子初始位置数据
+bilayer/r0_single_layer/*
+!bilayer/r0_single_layer/r1.npz
+!bilayer/r0_single_layer/r2.npz
 # 保存的结果
 saves/
 
@@ -65,3 +69,4 @@ saves/
 benchmark/benchmark_results/
 tests/test_results/
 equilibrium/results/
+bilayer/out/
