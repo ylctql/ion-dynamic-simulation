@@ -163,6 +163,10 @@ def _create_backend_and_start(
     p = parsed.params
     cfg = parsed.config
     r0 = p.get_r0()
+    if p.bilayer:
+        from Interface.bilayer_init import apply_bilayer_y_split
+
+        r0 = apply_bilayer_y_split(r0, p.N, p.bilayer_y0_um, cfg.dl)
     v0 = p.get_v0()
     charge = np.asarray(p.q, dtype=np.float64)
     mass = np.asarray(p.m, dtype=np.float64)

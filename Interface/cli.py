@@ -163,6 +163,9 @@ DEFAULT_SAVE_FIG_DIR = os.environ.get("ISM_DEFAULT_SAVE_FIG_DIR", "saves/images/
 # 仅传文件名时使用的默认目录（写死，便于日常只传文件名）
 DEFAULT_CSV_DIR = "data"
 DEFAULT_CONFIG_DIR = "FieldConfiguration/configs"
+# --bilayer 且未传 --csv / --config 时使用的默认场文件（相对上述目录）
+DEFAULT_BILAYER_CSV = "bilayer8.csv"
+DEFAULT_BILAYER_CONFIG = "bilayer8.json"
 
 if TYPE_CHECKING:
     from Interface.parameters import Parameters
@@ -196,6 +199,24 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--t0", type=float, default=0.0, help="起始时间 (μs)")
     parser.add_argument("--time", type=float, default=None, help="模拟终止时刻 (μs)，不传则无限运行")
     parser.add_argument("--plot", action="store_true", help="启用实时绘图")
+    parser.add_argument(
+        "--bilayer",
+        action="store_true",
+        help=(
+            "双层离子晶格：未指定 --csv/--config 时默认使用 data/bilayer8.csv 与 "
+            "FieldConfiguration/configs/bilayer8.json；初态在随机/加载位置基础上，"
+            "索引 0:N/2 沿 +y、N/2:N 沿 -y 各平移 --bilayer-y0（μm）；"
+            "绘图改为两片 z-x 面并标注各层 σ_y"
+        ),
+    )
+    parser.add_argument(
+        "--bilayer-y0",
+        type=float,
+        default=100.0,
+        metavar="UM",
+        dest="bilayer_y0",
+        help="--bilayer 时每层 y 向平移量（μm），默认 100",
+    )
     parser.add_argument("--interval", type=float, default=1.0, help="帧间隔 (dt 单位)")
     parser.add_argument("--step", type=int, default=10, help="每帧积分步数")
     parser.add_argument("--batch", type=int, default=50, help="每批帧数，增大可减少 batch 边界等待造成的卡顿")
@@ -335,7 +356,19 @@ def parse_and_build(
             return str(root / default_dir / arg)
         return str(root / arg) if not p.is_absolute() else arg
 
-    config_path = _resolve_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
+    config_input = (getattr(args, "config", "") or "").strip()
+    csv_input = (getattr(args, "csv", "") or "").strip()
+    if getattr(args, "bilayer", False):
+        if not config_input:
+            config_input = DEFAULT_BILAYER_CONFIG
+            logger.info(
+                "bilayer：未指定 --config，使用默认 %s", DEFAULT_BILAYER_CONFIG
+            )
+        if not csv_input:
+            csv_input = DEFAULT_BILAYER_CSV
+            logger.info("bilayer：未指定 --csv，使用默认 %s", DEFAULT_BILAYER_CSV)
+
+    config_path = _resolve_path(config_input, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
     cfg, _ = init_from_config(config_path)
 
     n_values = getattr(args, "N", None)
@@ -347,6 +380,9 @@ def parse_and_build(
     from FieldConfiguration.loader import build_voltage_list, field_settings_from_config
 
     params = from_argparse(args, cfg.dt, n_ions=n_override)
+
+    if getattr(args, "bilayer", False) and params.N % 2 != 0:
+        raise ValueError("启用 --bilayer 时离子数 N 必须为偶数")
 
     # 3. 若指定 --init_file，从文件加载 r0、v0（单位 μm、m/s，转为无量纲）
     if getattr(args, "init_file", ""):
@@ -408,7 +444,7 @@ def parse_and_build(
             )
 
     # 4. 构建 FieldSettings
-    csv_path = _resolve_path(args.csv, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
+    csv_path = _resolve_path(csv_input, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
     csv_exists = Path(csv_path).exists()
 
     if csv_exists:
@@ -448,12 +484,18 @@ def parse_and_build(
         use_isotope = params.alpha > 0 or getattr(args, "isotope", None) is not None
         color_mode = "isotope" if use_isotope else None
 
-    # 6. 解析 plot_fig（有效值: xoy, zoy, zox）
+    # 6. 解析 plot_fig（有效值: xoy, zoy, zox）；bilayer 时由 DataPlotter 固定为双 z-x 面
     valid_views: set[str] = {"xoy", "zoy", "zox"}
-    if args.plot_fig is not None:
+    if getattr(args, "bilayer", False) and args.plot_fig is not None:
+        logger.warning(
+            "已启用 --bilayer，忽略 --plot_fig（将使用两片 z-x 投影，不绘制 zoy）"
+        )
+    if args.plot_fig is not None and not getattr(args, "bilayer", False):
         raw = [s.strip().lower() for s in args.plot_fig.split(",") if s.strip()]
         filtered = [v for v in raw if v in valid_views] or ["zoy", "zox"]
         plot_fig = cast(list[PlotFig], filtered)
+    elif getattr(args, "bilayer", False) and (args.plot or args.save_times_us):
+        plot_fig = cast(list[PlotFig], ["zox", "zox"])
     else:
         # save_times_us 需 plotter 才能保存，指定时启用 plot_fig（无窗口模式）
         plot_fig = cast(list[PlotFig], ["zoy", "zox"]) if (args.plot or args.save_times_us) else None
@@ -515,6 +557,7 @@ def parse_and_build(
         save_fig_dir=save_fig_dir,
         save_rv_traj_dir=save_rv_traj_dir,
         save_rv_status_dir=save_rv_status_dir,
+        bilayer=bool(getattr(args, "bilayer", False)),
     )
 
     return ParsedRun(

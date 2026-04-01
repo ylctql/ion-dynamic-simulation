@@ -88,6 +88,35 @@ def get_colors(
     return np.full(N, "red", dtype=object)
 
 
+def get_colors_layerwise_y_pos(
+    r: np.ndarray,
+    split: int,
+    cmap_name: str = "RdBu",
+) -> np.ndarray:
+    """
+    双层绘图：各层独立按 y 做 Min-Max 归一化后着色（与 bilayer_prompt 一致）。
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import Normalize
+
+    n = int(r.shape[0])
+    split = int(split)
+    if split < 0 or split > n:
+        raise ValueError(f"split={split} 与 N={n} 不兼容")
+    cmap = plt.get_cmap(cmap_name)
+    colors = np.zeros((n, 4), dtype=float)
+    for sl in (slice(0, split), slice(split, n)):
+        y = np.asarray(r[sl, 1], dtype=float)
+        if y.size == 0:
+            continue
+        lo, hi = float(np.min(y)), float(np.max(y))
+        if hi <= lo:
+            hi = lo + 1e-30
+        norm = Normalize(vmin=lo, vmax=hi)
+        colors[sl] = cmap(norm(y))
+    return colors
+
+
 def get_mass_indices(mass: np.ndarray) -> np.ndarray:
     """
     将质量数组映射为同位素索引

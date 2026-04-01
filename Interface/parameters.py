@@ -41,6 +41,10 @@ class Parameters:
     alpha: float = 0.0  # 参杂比例，>0 时按 Ba133/134/135/136/137/138 分配质量
     isotope_type: str | None = None  # 单同位素模式：指定种类时 alpha 为该同位素丰度，其余为 Ba135
 
+    # ----- 双层晶格初态（在 main 中于 get_r0 之后施加平移）-----
+    bilayer: bool = False
+    bilayer_y0_um: float = 100.0  # 一半离子 +y、一半 -y 的平移量（μm）
+
     def __post_init__(self) -> None:
         """根据 N 和 alpha 补全 m, q；根据 r0, v0 决定是否随机初始化"""
         self._ensure_arrays()
@@ -186,4 +190,6 @@ def from_argparse(args, dt: float, *, n_ions: int | None = None) -> Parameters:
         duration=duration_dt,
         device="cuda" if getattr(args, "device", "cpu") == "cuda" else "cpu",
         calc_method=getattr(args, "calc_method", "VV"),
+        bilayer=bool(getattr(args, "bilayer", False)),
+        bilayer_y0_um=float(getattr(args, "bilayer_y0", 100.0)),
     )

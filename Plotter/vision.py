@@ -63,6 +63,10 @@ class Vision:
     ym_plot: float = 20.0  # y 方向偏离中心最大值（半宽）
     zm_plot: float = 200.0  # z 方向偏离中心最大值（半宽）
 
+    # ----- 双层晶格绘图 -----
+    bilayer: bool = False
+    """True：两子图均为 z-x 投影，分别显示索引两半离子；不绘 zoy"""
+
     # ----- 离子颜色 -----
     color_mode: ColorMode = None
     """
@@ -83,6 +87,7 @@ class Vision:
         """
         return {
             "plot_fig": self.plot_fig,
+            "bilayer": self.bilayer,
             "color_mode": self.color_mode,
             "ion_size": self.ion_size,
             "x_range": self.xm_plot,

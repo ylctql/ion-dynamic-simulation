@@ -25,6 +25,7 @@ from Plotter.color import (
     ISOTOPE_COLORS,
     ISOTOPE_LABELS,
     get_colors,
+    get_colors_layerwise_y_pos,
     get_mass_indices,
 )
 
@@ -46,6 +47,7 @@ class DataPlotter:
         *,
         interval: float = 0.04,
         plot_fig: list[PlotFig] | None = None,
+        bilayer: bool = False,
         color_mode: ColorMode = None,
         ion_size: float = 5.0,
         x_range: float = 100.0,
@@ -79,6 +81,8 @@ class DataPlotter:
             绘图刷新间隔（秒）
         plot_fig : list[str] | None
             子图视角，如 ["zoy", "zox"] 表示两子图；None 则默认 ["zoy", "zox"]
+        bilayer : bool
+            True 时使用两片 z-x 投影，分别显示索引 0:N/2 与 N/2:N
         color_mode : None | "y_pos" | "v2" | "isotope"
             离子颜色模式
         ion_size : float
@@ -110,7 +114,16 @@ class DataPlotter:
         self.queue_control = queue_control
         self.frame_init = frame_init
         self.interval = interval
-        self.plot_fig = plot_fig or ["zoy", "zox"]
+        self.bilayer = bilayer
+        if self.bilayer:
+            n_ions = len(frame_init.r)
+            self._bilayer_split = n_ions // 2
+            if self._bilayer_split * 2 != n_ions:
+                raise ValueError("bilayer 绘图需要离子数 N 为偶数")
+            self.plot_fig = ["zox", "zox"]
+        else:
+            self._bilayer_split = None
+            self.plot_fig = plot_fig or ["zoy", "zox"]
         self.color_mode = color_mode
         self.ion_size = ion_size
         self.x_range = x_range
@@ -140,11 +153,6 @@ class DataPlotter:
         # 质量 -> 同位素索引（用于图例）
         self.mass_indices = get_mass_indices(mass) if mass is not None else None
 
-        # 初始颜色
-        colors_init = get_colors(
-            frame_init.r, frame_init.v, color_mode, mass, cmap_name="RdBu"
-        )
-
         # 创建子图
         n_axes = len(self.plot_fig)
         if n_axes == 1:
@@ -153,22 +161,159 @@ class DataPlotter:
         else:
             self.fig, self.ax = plt.subplots(n_axes, 1, figsize=(10, 5 * n_axes))
 
-        self.artists: list = []
-        for i, view in enumerate(self.plot_fig):
-            ax = self.ax[i]
-            xy = self._get_xy(frame_init.r, view)
-            sc = ax.scatter(xy[:, 0], xy[:, 1], s=ion_size, c=colors_init)
-            self.artists.append(sc)
-            self._set_axis_limits(ax, view)
-            self._set_axis_labels(ax, view)
+        colors_init = self._compute_colors(frame_init.r, frame_init.v)
+
+        self.artists = []
+        if self.bilayer:
+            split = self._bilayer_split
+            assert split is not None
+            r_um_init = frame_init.r * self._dl_um
+            xy0 = np.column_stack((r_um_init[:split, 2], r_um_init[:split, 0]))
+            xy1 = np.column_stack((r_um_init[split:, 2], r_um_init[split:, 0]))
+            ax0, ax1 = self.ax[0], self.ax[1]
+            sc0 = ax0.scatter(
+                xy0[:, 0], xy0[:, 1], s=ion_size, c=colors_init[:split]
+            )
+            sc1 = ax1.scatter(
+                xy1[:, 0], xy1[:, 1], s=ion_size, c=colors_init[split:]
+            )
+            self.artists = [sc0, sc1]
+            for ax in (ax0, ax1):
+                self._set_axis_limits(ax, "zox")
+                self._set_axis_labels(ax, "zox")
             if mass is not None and self.mass_indices is not None:
-                self._add_isotope_legend(ax)
+                self._add_isotope_legend(ax0)
+            t0_us = frame_init.timestamp * self._dt_us
+            n_ions = r_um_init.shape[0]
+            title0, title1 = self._bilayer_titles_for_r_um(
+                t0_us, split, n_ions, r_um_init
+            )
+            ax0.set_title(title0, fontsize=14)
+            ax1.set_title(title1, fontsize=14)
+        else:
+            for i, view in enumerate(self.plot_fig):
+                ax = self.ax[i]
+                xy = self._get_xy(frame_init.r, view)
+                sc = ax.scatter(xy[:, 0], xy[:, 1], s=ion_size, c=colors_init)
+                self.artists.append(sc)
+                self._set_axis_limits(ax, view)
+                self._set_axis_labels(ax, view)
+                if mass is not None and self.mass_indices is not None:
+                    self._add_isotope_legend(ax)
+
+        # 出界统计标注（参与 blit 以保证实时刷新）
+        self._oob_texts: list = []
+        _bbox = dict(boxstyle="round", facecolor="wheat", alpha=0.85)
+        for ax in self.ax:
+            txt = ax.text(
+                0.02,
+                0.98,
+                "",
+                transform=ax.transAxes,
+                va="top",
+                ha="left",
+                fontsize=11,
+                bbox=_bbox,
+            )
+            self._oob_texts.append(txt)
+        self._update_oob_labels(frame_init.r * self._dl_um)
 
         time.sleep(0.5)
-        self.bm = BlitManager(self.fig.canvas, self.artists)
+        self.bm = BlitManager(self.fig.canvas, (*self.artists, *self._oob_texts))
 
         if show_plot:
             plt.show(block=False)
+
+    def _oob_counts_3d(
+        self,
+        r_um: np.ndarray,
+        *,
+        y_center_um: float | None = None,
+    ) -> tuple[int, int]:
+        """
+        统计在给定长方体视域之外离子数 (Out-of-bounds count, total).
+
+        x/z: x0_plot±x_range, z0_plot±z_range（μm）.
+        y: y0_plot±y_range 当 y_center_um 为 None；
+        否则为 y_center_um±y_range（供 bilayer 每层以该层 y 均值为基准）。
+        """
+        if r_um.size == 0:
+            return 0, 0
+        r_um = np.asarray(r_um, dtype=float)
+        x, y, z = r_um[:, 0], r_um[:, 1], r_um[:, 2]
+        xmin, xmax = self.x0_plot - self.x_range, self.x0_plot + self.x_range
+        if y_center_um is None:
+            ymin, ymax = self.y0_plot - self.y_range, self.y0_plot + self.y_range
+        else:
+            yc = float(y_center_um)
+            ymin, ymax = yc - self.y_range, yc + self.y_range
+        zmin, zmax = self.z0_plot - self.z_range, self.z0_plot + self.z_range
+        inside = (
+            (x >= xmin)
+            & (x <= xmax)
+            & (y >= ymin)
+            & (y <= ymax)
+            & (z >= zmin)
+            & (z <= zmax)
+        )
+        n_total = int(r_um.shape[0])
+        n_out = int(n_total - np.sum(inside))
+        return n_out, n_total
+
+    def _update_oob_labels(self, r_um: np.ndarray) -> None:
+        """更新各子图上的出界计数标注；bilayer 时每层 y 窗口以该层 y 均值为中心。"""
+        if self.bilayer:
+            split = self._bilayer_split
+            assert split is not None
+            layer0 = np.asarray(r_um[:split], dtype=float)
+            layer1 = np.asarray(r_um[split:], dtype=float)
+            mean_y0 = float(np.mean(layer0[:, 1])) if layer0.size else 0.0
+            mean_y1 = float(np.mean(layer1[:, 1])) if layer1.size else 0.0
+            n0, t0 = self._oob_counts_3d(layer0, y_center_um=mean_y0)
+            n1, t1 = self._oob_counts_3d(layer1, y_center_um=mean_y1)
+            self._oob_texts[0].set_text(f"Out of bounds {n0}/{t0}")
+            self._oob_texts[1].set_text(f"Out of bounds {n1}/{t1}")
+        else:
+            n, t = self._oob_counts_3d(r_um)
+            label = f"Out of bounds {n}/{t}"
+            for txt in self._oob_texts:
+                txt.set_text(label)
+
+    @staticmethod
+    def _bilayer_titles_for_r_um(
+        t_us: float,
+        split: int,
+        n_ions: int,
+        r_um: np.ndarray,
+    ) -> tuple[str, str]:
+        """双层图子标题：每层 y（μm）的均值与标准差（对齐 bilayer_prompt）。"""
+        y0 = np.asarray(r_um[:split, 1], dtype=float)
+        y1 = np.asarray(r_um[split:, 1], dtype=float)
+        m0, s0 = float(np.mean(y0)), float(np.std(y0))
+        m1, s1 = float(np.mean(y1)), float(np.std(y1))
+        t0 = (
+            f"t = {t_us:.3f} μs  |  layer [0:{split})  "
+            f"μ_y = {m0:.3f} μm, σ_y = {s0:.3f} μm"
+        )
+        t1 = (
+            f"t = {t_us:.3f} μs  |  layer [{split}:{n_ions})  "
+            f"μ_y = {m1:.3f} μm, σ_y = {s1:.3f} μm"
+        )
+        return t0, t1
+
+    def _compute_colors(self, r: np.ndarray, v: np.ndarray) -> np.ndarray:
+        if self.bilayer and self.color_mode == "y_pos":
+            assert self._bilayer_split is not None
+            return get_colors_layerwise_y_pos(
+                r, self._bilayer_split, cmap_name="RdBu"
+            )
+        return get_colors(
+            r,
+            v,
+            cast(ColorMode, self.color_mode),
+            self.mass,
+            cmap_name="RdBu",
+        )
 
     def _get_xy(self, r: np.ndarray, view: PlotFig) -> np.ndarray:
         """根据视角返回 (x_display, y_display)，单位 um"""
@@ -259,21 +404,35 @@ class DataPlotter:
             f = item
 
         # 更新各子图
-        colors = get_colors(
-            f.r,
-            f.v,
-            cast(ColorMode, self.color_mode),
-            self.mass,
-            cmap_name="RdBu",
-        )
-        for i, view in enumerate(self.plot_fig):
-            xy = self._get_xy(f.r, view)
-            self.artists[i].set_offsets(xy)
-            self.artists[i].set_facecolor(colors)
-            self.ax[i].set_title(
-                f"t = {f.timestamp * self._dt_us:.3f} μs",
-                fontsize=14,
+        colors = self._compute_colors(f.r, f.v)
+        t_us = f.timestamp * self._dt_us
+        if self.bilayer:
+            split = self._bilayer_split
+            assert split is not None
+            r_um = f.r * self._dl_um
+            xy0 = np.column_stack((r_um[:split, 2], r_um[:split, 0]))
+            xy1 = np.column_stack((r_um[split:, 2], r_um[split:, 0]))
+            self.artists[0].set_offsets(xy0)
+            self.artists[1].set_offsets(xy1)
+            self.artists[0].set_facecolor(colors[:split])
+            self.artists[1].set_facecolor(colors[split:])
+            n_ions = r_um.shape[0]
+            title0, title1 = self._bilayer_titles_for_r_um(
+                t_us, split, n_ions, r_um
             )
+            self.ax[0].set_title(title0, fontsize=14)
+            self.ax[1].set_title(title1, fontsize=14)
+            self._update_oob_labels(r_um)
+        else:
+            for i, view in enumerate(self.plot_fig):
+                xy = self._get_xy(f.r, view)
+                self.artists[i].set_offsets(xy)
+                self.artists[i].set_facecolor(colors)
+                self.ax[i].set_title(
+                    f"t = {t_us:.3f} μs",
+                    fontsize=14,
+                )
+            self._update_oob_labels(f.r * self._dl_um)
 
         # 输出时间
         time_us = f.timestamp * self._dt_us
