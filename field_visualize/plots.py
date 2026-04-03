@@ -18,6 +18,7 @@ from .core import (
     compute_potentials,
     norm_to_um,
     set_ylim_from_data,
+    um_to_norm,
 )
 
 CoordAxis = Literal["x", "y", "z"]
@@ -258,6 +259,219 @@ def plot_1d(
         plt.tight_layout()
         _save_or_show(None, "_rf_amp", fig2, out_path)
         plt.close()
+
+
+def plot_bilayer(
+    potential_interps: list,
+    field_interps: list,
+    voltage_list: list,
+    cfg,
+    y0_um: float,
+    x_range: tuple[float, float],
+    z_range: tuple[float, float],
+    n_pts: tuple[int, int] = (100, 100),
+    mode: Literal["heatmap", "3d"] = "heatmap",
+    offset_min: bool = False,
+    show_rf_amp: bool = False,
+    out_path: str | None = None,
+) -> None:
+    """
+    在 y = ±y0 的 zox 平面上去采样并绘制静电势、赝势、总电势。
+    复用 build_grid_2d / compute_potentials / apply_offset_min，布局为两行（±y0）× 三列（DC / pseudo / total）。
+    图中横轴为 z、纵轴为 x；n_pts 仍为 (nx, nz)。
+    """
+    import matplotlib.pyplot as plt
+
+    nx_pts, nz_pts = n_pts[0], n_pts[1]
+    y_pos_norm = um_to_norm(y0_um, cfg.dl)
+    y_neg_norm = um_to_norm(-y0_um, cfg.dl)
+    # 先 z 后 x：pcolormesh / plot_surface 的 X→横向 z，Y→纵向 x
+    vary_axes: tuple[CoordAxis, CoordAxis] = ("z", "x")
+
+    slices: list[tuple[float, float]] = [
+        (y0_um, y_pos_norm),
+        (-y0_um, y_neg_norm),
+    ]
+
+    cc1_um: np.ndarray | None = None
+    cc2_um: np.ndarray | None = None
+    layers_data: list[
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ] = []
+
+    for _y_um, y_const_norm in slices:
+        r, (cc1, cc2) = build_grid_2d(
+            vary_axes,
+            z_range,
+            x_range,
+            y_const_norm,
+            (nz_pts, nx_pts),
+        )
+        V_dc, V_rf_amp, V_pseudo, V_total = compute_potentials(
+            potential_interps, field_interps, voltage_list, cfg, r
+        )
+        if offset_min:
+            V_dc, V_pseudo, V_total = apply_offset_min(V_dc, V_pseudo, V_total)
+        if cc1_um is None:
+            cc1_um = norm_to_um(cc1, cfg.dl)
+            cc2_um = norm_to_um(cc2, cfg.dl)
+        layers_data.append(
+            (
+                V_dc.reshape(cc1.shape),
+                V_rf_amp.reshape(cc1.shape),
+                V_pseudo.reshape(cc1.shape),
+                V_total.reshape(cc1.shape),
+            )
+        )
+
+    assert cc1_um is not None and cc2_um is not None
+
+    def _vmin_vmax(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
+        stacked = np.concatenate([a.ravel(), b.ravel()])
+        valid = stacked[~np.isnan(stacked)]
+        if valid.size == 0:
+            return 0.0, 1.0
+        return float(np.min(valid)), float(np.max(valid))
+
+    V_dc_p, V_rf_p, V_ps_p, V_tot_p = layers_data[0]
+    V_dc_n, V_rf_n, V_ps_n, V_tot_n = layers_data[1]
+    vm_dc = _vmin_vmax(V_dc_p, V_dc_n)
+    vm_ps = _vmin_vmax(V_ps_p, V_ps_n)
+    vm_tot = _vmin_vmax(V_tot_p, V_tot_n)
+    vm_rf = _vmin_vmax(V_rf_p, V_rf_n)
+
+    titles_row = [
+        "Static potential",
+        "RF pseudopotential",
+        "Total potential",
+    ]
+    suptitle_base = f"Potential in x–z plane at y = ±{abs(y0_um):.3g} μm"
+
+    if mode == "heatmap":
+        fig, axes = plt.subplots(2, 3, figsize=(14, 9))
+        for row, (y_um, _ync), (V_dc_2d, _V_rf, V_ps_2d, V_tot_2d) in zip(
+            range(2),
+            slices,
+            layers_data,
+        ):
+            y_label = f"y = {y_um:+.3g} μm"
+            row_vmin_vmax = (vm_dc, vm_ps, vm_tot)
+            row_data = (V_dc_2d, V_ps_2d, V_tot_2d)
+            for col in range(3):
+                ax = axes[row, col]
+                data = row_data[col]
+                vmin, vmax = row_vmin_vmax[col]
+                im = ax.pcolormesh(
+                    cc1_um,
+                    cc2_um,
+                    data,
+                    shading="auto",
+                    cmap="RdBu_r",
+                    vmin=vmin,
+                    vmax=vmax,
+                )
+                cbar = plt.colorbar(im, ax=ax, orientation="horizontal")
+                cbar.set_label("V")
+                ax.set_xlabel("z (μm)")
+                ax.set_ylabel("x (μm)")
+                ax.set_aspect("equal")
+                ax.set_title(f"{titles_row[col]} ({y_label})")
+        fig.suptitle(suptitle_base)
+        plt.tight_layout()
+        if out_path:
+            os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        _save_or_show(None, "_potentials", fig, out_path)
+        plt.close(fig)
+
+        if show_rf_amp:
+            fig2, axes2 = plt.subplots(2, 1, figsize=(7, 10))
+            for ax, (y_um, _ync), V_rf_2d in zip(
+                axes2,
+                slices,
+                (V_rf_p, V_rf_n),
+            ):
+                im = ax.pcolormesh(
+                    cc1_um,
+                    cc2_um,
+                    V_rf_2d,
+                    shading="auto",
+                    cmap="RdBu_r",
+                    vmin=vm_rf[0],
+                    vmax=vm_rf[1],
+                )
+                cbar = plt.colorbar(im, ax=ax, orientation="horizontal")
+                cbar.set_label("V")
+                ax.set_xlabel("z (μm)")
+                ax.set_ylabel("x (μm)")
+                ax.set_aspect("equal")
+                y_label = f"y = {y_um:+.3g} μm"
+                ax.set_title(f"RF amplitude ({y_label})")
+            fig2.suptitle(suptitle_base)
+            plt.tight_layout()
+            _save_or_show(None, "_rf_amp", fig2, out_path)
+            plt.close(fig2)
+    else:
+        fig = plt.figure(figsize=(14, 9))
+        for row, (y_um, _ync), (V_dc_2d, _V_rf, V_ps_2d, V_tot_2d) in zip(
+            range(2),
+            slices,
+            layers_data,
+        ):
+            y_label = f"y = {y_um:+.3g} μm"
+            row_data = (V_dc_2d, V_ps_2d, V_tot_2d)
+            row_vmin_vmax = (vm_dc, vm_ps, vm_tot)
+            for col in range(3):
+                ax = fig.add_subplot(2, 3, row * 3 + col + 1, projection="3d")
+                data = row_data[col]
+                vmin, vmax = row_vmin_vmax[col]
+                surf = ax.plot_surface(
+                    cc1_um,
+                    cc2_um,
+                    data,
+                    cmap="RdBu_r",
+                    alpha=0.9,
+                    vmin=vmin,
+                    vmax=vmax,
+                )
+                fig.colorbar(surf, ax=ax, shrink=0.5, label="V")
+                ax.set_xlabel("z (μm)")
+                ax.set_ylabel("x (μm)")
+                ax.set_zlabel("Potential (V)")
+                ax.set_title(f"{titles_row[col]} ({y_label})")
+        fig.suptitle(suptitle_base)
+        plt.tight_layout()
+        if out_path:
+            os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        _save_or_show(None, "_potentials", fig, out_path)
+        plt.close(fig)
+
+        if show_rf_amp:
+            fig2 = plt.figure(figsize=(14, 9))
+            for row, (y_um, _ync), V_rf_2d in zip(
+                range(2),
+                slices,
+                (V_rf_p, V_rf_n),
+            ):
+                ax = fig2.add_subplot(2, 1, row + 1, projection="3d")
+                surf = ax.plot_surface(
+                    cc1_um,
+                    cc2_um,
+                    V_rf_2d,
+                    cmap="RdBu_r",
+                    alpha=0.9,
+                    vmin=vm_rf[0],
+                    vmax=vm_rf[1],
+                )
+                fig2.colorbar(surf, ax=ax, shrink=0.5, label="V")
+                ax.set_xlabel("z (μm)")
+                ax.set_ylabel("x (μm)")
+                ax.set_zlabel("Potential (V)")
+                y_label = f"y = {y_um:+.3g} μm"
+                ax.set_title(f"RF amplitude ({y_label})")
+            fig2.suptitle(suptitle_base)
+            plt.tight_layout()
+            _save_or_show(None, "_rf_amp", fig2, out_path)
+            plt.close(fig2)
 
 
 def plot_2d(

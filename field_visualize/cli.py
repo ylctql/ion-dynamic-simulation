@@ -9,7 +9,13 @@ from pathlib import Path
 import numpy as np
 
 from .core import apply_savgol_smooth, um_to_norm
-from .plots import plot_1d, plot_2d, plot_freq_scan_1d, plot_freq_scan_2d
+from .plots import (
+    plot_1d,
+    plot_2d,
+    plot_bilayer,
+    plot_freq_scan_1d,
+    plot_freq_scan_2d,
+)
 from .trap_freq import (
     compute_freq_scan_1d,
     compute_freq_scan_2d,
@@ -31,8 +37,18 @@ def main() -> None:
     from FieldParser.csv_reader import read as read_csv
 
     parser = argparse.ArgumentParser(description="电场电势可视化")
-    parser.add_argument("--csv", type=str, default="", help="电场 CSV 路径")
-    parser.add_argument("--config", type=str, default="", help="电压配置 JSON 路径")
+    parser.add_argument(
+        "--csv",
+        type=str,
+        default="",
+        help="电场 CSV 路径；--bilayer 且未指定时默认 data/bilayer8.csv",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="",
+        help="电压配置 JSON；--bilayer 且未指定时默认 FieldConfiguration/configs/bilayer8.json",
+    )
     parser.add_argument(
         "--vary",
         type=str,
@@ -141,9 +157,23 @@ def main() -> None:
         metavar="WINDOW,POLY",
         help="Savitzky-Golay 滤波器参数：窗口长度与多项式阶数，逗号分隔，默认 11,3",
     )
+    parser.add_argument(
+        "--bilayer",
+        action="store_true",
+        help="双层模式：在 y=±y0 的 zox 平面 (x,z) 上绘制势场，须配合 --y0；未指定 --config/--csv 时默认 bilayer8.json 与 bilayer8.csv",
+    )
+    parser.add_argument(
+        "--y0",
+        type=float,
+        default=None,
+        metavar="UM",
+        help="双层模式：半间距 y0 (μm)，绘制 y=+y0 与 y=-y0 两个截面",
+    )
     args = parser.parse_args()
 
     from Interface.cli import (
+        DEFAULT_BILAYER_CONFIG,
+        DEFAULT_BILAYER_CSV,
         DEFAULT_CONFIG_PATH,
         DEFAULT_CSV_PATH,
         DEFAULT_CONFIG_DIR,
@@ -158,8 +188,16 @@ def main() -> None:
             return str(root / default_dir / arg)
         return str(root / arg) if not p.is_absolute() else arg
 
-    config_path = _resolve_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
-    csv_path = _resolve_path(args.csv, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
+    config_arg = args.config
+    csv_arg = args.csv
+    if args.bilayer:
+        if not config_arg.strip():
+            config_arg = DEFAULT_BILAYER_CONFIG
+        if not csv_arg.strip():
+            csv_arg = DEFAULT_BILAYER_CSV
+
+    config_path = _resolve_path(config_arg, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
+    csv_path = _resolve_path(csv_arg, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
     if not Path(csv_path).is_absolute():
         csv_path = str(root / csv_path)
     if not Path(config_path).is_absolute():
@@ -221,6 +259,20 @@ def main() -> None:
         if dim == 1:
             return int(parts[0]) if parts else 50
         return (int(parts[0]), int(parts[1])) if len(parts) >= 2 else (50, 50)
+
+    def parse_n_pts(s: str, dim: int):
+        if not s.strip():
+            return 500 if dim == 1 else (100, 100)
+        parts = [p.strip() for p in s.split(",")]
+        if dim == 1:
+            if len(parts) != 1:
+                raise ValueError("1D 时 --n_pts 须为单个整数 (如 500)")
+            return int(parts[0])
+        if dim == 2:
+            if len(parts) != 2:
+                raise ValueError("2D 时 --n_pts 须为两个整数 (如 100,100)")
+            return int(parts[0]), int(parts[1])
+        raise ValueError("--vary 须为单坐标或两个坐标")
 
     if args.freq_scan:
         scan_parts = [p.strip().lower() for p in args.freq_scan.split(",")]
@@ -290,6 +342,28 @@ def main() -> None:
             raise ValueError("--freq-scan 须为单轴 (x/y/z) 或双轴 (如 x,y)")
         return
 
+    if args.bilayer:
+        if args.y0 is None:
+            parser.error("--bilayer 须指定 --y0 (μm)")
+        xr = (um_to_norm(xr_um[0], dl), um_to_norm(xr_um[1], dl))
+        zr = (um_to_norm(zr_um[0], dl), um_to_norm(zr_um[1], dl))
+        n_pts = parse_n_pts(args.n_pts, 2)
+        plot_bilayer(
+            potential_interps,
+            field_interps,
+            voltage_list,
+            cfg,
+            y0_um=args.y0,
+            x_range=xr,
+            z_range=zr,
+            n_pts=n_pts,
+            mode=args.mode,
+            offset_min=args.offset,
+            show_rf_amp=args.show_rf_amp,
+            out_path=args.out,
+        )
+        return
+
     if args.freq:
         freqs = compute_trap_freqs_at_point(
             potential_interps,
@@ -315,20 +389,6 @@ def main() -> None:
             else:
                 print("  %s: %.4f MHz" % (k, v))
         return
-
-    def parse_n_pts(s: str, dim: int):
-        if not s.strip():
-            return 500 if dim == 1 else (100, 100)
-        parts = [p.strip() for p in s.split(",")]
-        if dim == 1:
-            if len(parts) != 1:
-                raise ValueError("1D 时 --n_pts 须为单个整数 (如 500)")
-            return int(parts[0])
-        if dim == 2:
-            if len(parts) != 2:
-                raise ValueError("2D 时 --n_pts 须为两个整数 (如 100,100)")
-            return int(parts[0]), int(parts[1])
-        raise ValueError("--vary 须为单坐标或两个坐标")
 
     xc = um_to_norm(xc_um, dl)
     yc = um_to_norm(yc_um, dl)

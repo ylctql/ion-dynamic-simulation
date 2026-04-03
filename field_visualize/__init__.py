@@ -16,7 +16,7 @@ from .core import (
     set_ylim_from_data,
     um_to_norm,
 )
-from .plots import plot_1d, plot_2d, plot_freq_scan_1d, plot_freq_scan_2d
+from .plots import plot_1d, plot_2d, plot_bilayer, plot_freq_scan_1d, plot_freq_scan_2d
 from .trap_freq import (
     compute_freq_scan_1d,
     compute_freq_scan_2d,
@@ -41,6 +41,7 @@ __all__ = [
     "compute_freq_scan_2d",
     "plot_1d",
     "plot_2d",
+    "plot_bilayer",
     "plot_freq_scan_1d",
     "plot_freq_scan_2d",
 ]
