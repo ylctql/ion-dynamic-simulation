@@ -17,7 +17,7 @@ if str(_ROOT) not in sys.path:
 
 from Plotter.color import get_colors
 
-# 默认与 main/DataPlotter 保存结构一致：{root}/{device}/{N}/t{time}us.npz
+# 默认与 main/DataPlotter 保存结构一致：{root}/{device}/{N}/t{time 两位小数}us.npz
 DEFAULT_TRAJ_DIR = _ROOT / "saves/rv/traj/cuda/10000"
 
 _NPZ_NAME_RE = re.compile(r"^t([\d.]+)us\.npz$", re.IGNORECASE)

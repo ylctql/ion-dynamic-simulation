@@ -184,6 +184,8 @@ class ParsedRun:
     config: Config
     smooth_axes: tuple[str, ...] | None = None
     smooth_sg: tuple[int, int] = (11, 3)
+    continuous_sampling: bool = False
+    continuous_sampling_frames: int = 1
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -220,6 +222,23 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", type=float, default=1.0, help="帧间隔 (dt 单位)")
     parser.add_argument("--step", type=int, default=10, help="每帧积分步数")
     parser.add_argument("--batch", type=int, default=50, help="每批帧数，增大可减少 batch 边界等待造成的卡顿")
+    parser.add_argument(
+        "--continuous-sampling",
+        action="store_true",
+        help=(
+            "连续采样：自初始帧起将每一帧 r/v 存为 npz，达到指定帧数后结束；"
+            "目录 continuous_sampling/t0{起始时间 μs 一位小数，如 30.0}_interval{interval}_step{step}/frame{i}.npz；"
+            "后处理示例见 motion_analysis/micromotion_analysis.ipynb"
+        ),
+    )
+    parser.add_argument(
+        "--continuous-sampling-frames",
+        type=int,
+        default=1,
+        metavar="N",
+        dest="continuous_sampling_frames",
+        help="连续采样模式下保存的总帧数（含 queue 中的初始帧），默认 1",
+    )
     parser.add_argument("--alpha", type=float, default=0.0, help="同位素参杂比例；单同位素模式下为该同位素丰度")
     parser.add_argument(
         "--isotope",
@@ -232,7 +251,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--init_file",
         type=str,
         default="",
-        help="初始 r0/v0 的 .npz 路径，须含 r/v；含 t_us 或文件名 t{X}us.npz 时自动设 t0 以衔接 RF 相位",
+        help=(
+            "初始 r0/v0 的 .npz 路径，须含 r/v；离子数 N 以文件中 r 的行为准，与 --N 不一致时忽略 --N；"
+            "含 t_us 或文件名 t{X}us.npz 时自动设 t0 以衔接 RF 相位"
+        ),
     )
     parser.add_argument(
         "--device",
@@ -381,9 +403,6 @@ def parse_and_build(
 
     params = from_argparse(args, cfg.dt, n_ions=n_override)
 
-    if getattr(args, "bilayer", False) and params.N % 2 != 0:
-        raise ValueError("启用 --bilayer 时离子数 N 必须为偶数")
-
     # 3. 若指定 --init_file，从文件加载 r0、v0（单位 μm、m/s，转为无量纲）
     if getattr(args, "init_file", ""):
         init_path = args.init_file
@@ -405,10 +424,17 @@ def parse_and_build(
             raise ValueError(f"v 须为 (N, 3)，当前形状: {v_si.shape}")
         if r_um.shape[0] != v_si.shape[0]:
             raise ValueError(f"r 与 v 的 N 不一致: {r_um.shape[0]} vs {v_si.shape[0]}")
-        if r_um.shape[0] != params.N:
-            raise ValueError(
-                f"--init_file 中 N={r_um.shape[0]} 与 --N={params.N} 不一致"
+        n_file = int(r_um.shape[0])
+        if n_file != params.N:
+            logger.info(
+                "--init_file 中含 N=%d 个离子，以文件为准并忽略命令行 --N（原 N=%d）",
+                n_file,
+                params.N,
             )
+            params.N = n_file
+            params.m = None
+            params.q = None
+            params._ensure_arrays()
         # μm -> 无量纲: r_dim = r_um * 1e-6 / dl
         # m/s -> 无量纲: v_dim = v_si * dt / dl
         params.r0 = (r_um * 1e-6 / cfg.dl).astype(float, order="C")
@@ -442,6 +468,9 @@ def parse_and_build(
                 "init_file 未包含时刻信息且未指定 --t0，使用 t0=0；"
                 "若 checkpoint 来自其他时刻，请指定 --t0 以确保 RF 相位正确衔接"
             )
+
+    if getattr(args, "bilayer", False) and params.N % 2 != 0:
+        raise ValueError("启用 --bilayer 时离子数 N 必须为偶数")
 
     # 4. 构建 FieldSettings
     csv_path = _resolve_path(csv_input, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
@@ -543,6 +572,18 @@ def parse_and_build(
         except (ValueError, IndexError):
             smooth_sg = (11, 3)
 
+    continuous_sampling = bool(getattr(args, "continuous_sampling", False))
+    continuous_sampling_frames = int(getattr(args, "continuous_sampling_frames", 1))
+    if continuous_sampling and continuous_sampling_frames < 1:
+        raise ValueError("--continuous-sampling-frames 须为 >= 1 的整数")
+    if continuous_sampling:
+        if args.plot:
+            logger.warning("连续采样模式下忽略 --plot")
+        if args.save_times_us:
+            logger.warning("连续采样模式下忽略 --save_times_us")
+        plot_fig = None
+        save_times_us = None
+
     # 11. 构建 Vision
     vision = Vision(
         plot_fig=plot_fig,
@@ -570,4 +611,6 @@ def parse_and_build(
         config=cfg,
         smooth_axes=smooth_axes,
         smooth_sg=smooth_sg,
+        continuous_sampling=continuous_sampling,
+        continuous_sampling_frames=continuous_sampling_frames,
     )

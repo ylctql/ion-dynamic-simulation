@@ -64,6 +64,8 @@ bilayer/r0_single_layer/*
 !bilayer/r0_single_layer/r2.npz
 # 保存的结果
 saves/
+continuous_sampling/
+secular_sampling/
 
 # 性能测试结果
 benchmark/benchmark_results/

@@ -4,6 +4,7 @@ DataPlotter：实时绘图类
 从 queue_data 接收 Frame，使用 BlitManager 与 color 模块实现高效动画
 """
 import logging
+import math
 import multiprocessing as mp
 import os
 import queue
@@ -67,6 +68,7 @@ class DataPlotter:
         target_time_dt: float | None = None,
         show_plot: bool = True,
         device: str = "cpu",
+        backend_interval: float = 1.0,
     ):
         """
         Parameters
@@ -109,6 +111,8 @@ class DataPlotter:
             目标演化时间（dt 单位），达到后发送 STOP
         show_plot : bool
             是否弹出窗口实时显示
+        backend_interval : float
+            与 ComputeKernel 一致：相邻输出帧在无量纲时间上的间隔（--interval，单位 dt）
         """
         self.queue_data = queue_data
         self.queue_control = queue_control
@@ -149,6 +153,37 @@ class DataPlotter:
         # 无量纲坐标转 um
         self._dl_um = dl * 1e6
         self._dt_us = dt * 1e6
+
+        self.backend_interval = float(backend_interval)
+        self._output_stride_us = self.backend_interval * self._dt_us
+        self._save_times_fulfilled: set[int] = set()
+        if save_times_us and len(save_times_us) >= 2:
+            st = sorted(float(x) for x in save_times_us)
+            self._min_save_gap_us = min(
+                st[i + 1] - st[i] for i in range(len(st) - 1)
+            )
+            if self._min_save_gap_us <= 0:
+                self._min_save_gap_us = math.inf
+        else:
+            self._min_save_gap_us = math.inf
+        half_stride = 0.5 * self._output_stride_us
+        if math.isfinite(self._min_save_gap_us):
+            self._save_capture_tol_us = half_stride + 0.45 * self._min_save_gap_us
+        else:
+            self._save_capture_tol_us = max(half_stride, 1e-6)
+        if (
+            save_times_us
+            and len(save_times_us) >= 2
+            and math.isfinite(self._min_save_gap_us)
+            and self._output_stride_us > self._min_save_gap_us * 1.01
+        ):
+            logger.warning(
+                "输出帧间隔 (%.4g μs) 大于 --save-times-us 最小间隔 (%.4g μs)；"
+                "部分目标时刻可能没有足够近的输出帧，请减小 --interval（dt 单位）使 "
+                "interval×dt×1e6 不大于保存步长，或接受最近帧快照。",
+                self._output_stride_us,
+                self._min_save_gap_us,
+            )
 
         # 质量 -> 同位素索引（用于图例）
         self.mass_indices = get_mass_indices(mass) if mass is not None else None
@@ -441,20 +476,43 @@ class DataPlotter:
             self.last_output_time_us = time_us
 
         # 保存指定时刻（save_times_us 为需保存的时刻列表，μs）
+        # 原实现用 max(0.5*dt,0.01)μs 作容差：dt 为积分步时常导致容差≈0.01，与输出帧间隔
+        # (backend_interval×dt×1e6) 无关。若输出间隔为 0.11 μs 而目标间距 0.1 μs，会出现
+        # 连续文件时间差 0.11 μs；若容差过大还会在单帧上错误匹配多个目标。现改为：在尚未
+        # 命中的目标中选与当前仿真时刻最近者，且距离不超过由输出步长与保存步长共同决定的捕获半径。
         if self.save_times_us is not None:
-            tolerance_us = max(0.5 * self._dt_us, 0.01)
-            for t_save_us in self.save_times_us:
-                if abs(time_us - t_save_us) < tolerance_us:
+            pending = [
+                i
+                for i in range(len(self.save_times_us))
+                if i not in self._save_times_fulfilled
+            ]
+            if pending:
+                i_best = min(
+                    pending,
+                    key=lambda i: (
+                        abs(time_us - float(self.save_times_us[i])),
+                        i,
+                    ),
+                )
+                t_nom = float(self.save_times_us[i_best])
+                d = abs(time_us - t_nom)
+                if d <= self._save_capture_tol_us:
                     n_ions = len(f.r)
                     out_dir = os.path.join(self.save_fig_dir, self.device, str(n_ions))
                     os.makedirs(out_dir, exist_ok=True)
-                    path = os.path.join(out_dir, f"t{time_us:.1f}us.png")
+                    tag = f"t{t_nom:.2f}us"
+                    path = os.path.join(out_dir, f"{tag}.png")
                     self.fig.savefig(path, dpi=150, bbox_inches="tight")
-                    logger.info("已保存: %s", path)
+                    logger.info(
+                        "已保存: %s (目标 %.4f μs, 仿真时刻 %.4f μs)",
+                        path,
+                        t_nom,
+                        time_us,
+                    )
                     if self.save_rv_traj_dir:
                         rv_dir = os.path.join(self.save_rv_traj_dir, self.device)
-                        self._save_rv(f, n_ions, rv_dir, f"t{time_us:.1f}us")
-                    break
+                        self._save_rv(f, n_ions, rv_dir, tag)
+                    self._save_times_fulfilled.add(i_best)
 
         # 达到目标时间：保存最后一帧并停止
         if (
@@ -532,5 +590,5 @@ class DataPlotter:
         if self.save_rv_status_dir and f is not None:
             time_us = f.timestamp * self._dt_us
             rv_dir = os.path.join(self.save_rv_status_dir, self.device)
-            self._save_rv(f, len(f.r), rv_dir, f"t{time_us:.1f}us")
+            self._save_rv(f, len(f.r), rv_dir, f"t{time_us:.2f}us")
         return f

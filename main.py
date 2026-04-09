@@ -177,7 +177,11 @@ def _create_backend_and_start(
     queue_data = mp.Queue(maxsize=50)
 
     # time_end_dt 为演化终止时刻 (dt 单位)，--time 指定模拟终止时刻 (μs)
-    time_end_dt = t0 + duration if np.isfinite(duration) else np.inf
+    # 连续采样按帧数结束，不启用 --time 截止（backend 运行至 STOP）
+    if parsed.continuous_sampling:
+        time_end_dt = float("inf")
+    else:
+        time_end_dt = t0 + duration if np.isfinite(duration) else float("inf")
     backend = CalculationBackend(
         step=parsed.step,
         interval=parsed.interval,
@@ -202,6 +206,70 @@ def _create_backend_and_start(
     return proc, frame_init, queue_control, queue_data
 
 
+def _continuous_sampling_dir(root: Path, t0_us: float, interval: float, step: int) -> Path:
+    """continuous_sampling/t0{start μs, .2f}_interval{interval}_step{step}/（与 t{X}us.npz 两位小数一致）"""
+    return root / "continuous_sampling" / f"t0{t0_us:.2f}_interval{interval}_step{step}"
+
+
+def _save_continuous_frame_npz(f: Frame, path: Path, cfg) -> None:
+    """与 _save_rv_only 相同物理量：r (μm)、v (m/s)、t_us"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    r_um = np.asarray(f.r, dtype=np.float64) * cfg.dl * 1e6
+    v_m_s = np.asarray(f.v, dtype=np.float64) * cfg.dl / cfg.dt
+    time_us = f.timestamp * cfg.dt * 1e6
+    np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
+
+
+def _consume_continuous_sampling(
+    queue_data: mp.Queue,
+    queue_control: mp.Queue,
+    proc: mp.Process,
+    *,
+    out_dir: Path,
+    cfg,
+    n_frames: int,
+    dt_si: float,
+) -> Frame | None:
+    """
+    从 queue_data 读取帧，依次保存为 frame0..frame{n-1}.npz；
+    达到 n_frames 后发送 STOP 并排空队列。
+    """
+    f_last: Frame | None = None
+    saved = 0
+    last_output_time_us = -10.0
+    while saved < n_frames:
+        item = _get_from_queue(queue_data, proc)
+        if item is None:
+            continue
+        if item is False:
+            logger.warning(
+                "连续采样在后端结束前仅保存 %d/%d 帧",
+                saved,
+                n_frames,
+            )
+            break
+        assert isinstance(item, Frame)
+        f_last = item
+        frame_path = out_dir / f"frame{saved}.npz"
+        _save_continuous_frame_npz(f_last, frame_path, cfg)
+        logger.info("连续采样: %s", frame_path)
+        saved += 1
+        time_us = f_last.timestamp * dt_si * 1e6
+        if time_us - last_output_time_us >= 10.0:
+            logger.info("Simulation Time: %.3f μs", time_us)
+            last_output_time_us = time_us
+        if saved >= n_frames:
+            queue_control.put(Message(CommandType.STOP))
+            break
+
+    drained = _consume_queue_until_done(
+        queue_data, queue_control, proc, target_time_dt=None, dt_si=None
+    )
+    if drained is not None:
+        f_last = drained
+    return f_last
+
+
 def _save_rv_only(vision: Vision, f_last: Frame, cfg, device: str) -> None:
     """仅保存 r/v 数据（无绘图），用于无 plotter 时最后一帧，以时间命名"""
     if not vision.save_rv_status_dir:
@@ -211,7 +279,7 @@ def _save_rv_only(vision: Vision, f_last: Frame, cfg, device: str) -> None:
     time_us = f_last.timestamp * cfg.dt * 1e6
     dir_path = os.path.join(vision.save_rv_status_dir, device, str(len(f_last.r)))
     os.makedirs(dir_path, exist_ok=True)
-    path = os.path.join(dir_path, f"t{time_us:.1f}us.npz")
+    path = os.path.join(dir_path, f"t{time_us:.2f}us.npz")
     np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
     logger.info("已保存 r/v: %s", path)
 
@@ -248,7 +316,7 @@ def _save_final_image(
     if vision.save_rv_status_dir:
         time_us = f_last.timestamp * cfg.dt * 1e6
         rv_dir = os.path.join(vision.save_rv_status_dir, device)
-        plotter._save_rv(f_last, len(f_last.r), rv_dir, f"t{time_us:.1f}us")
+        plotter._save_rv(f_last, len(f_last.r), rv_dir, f"t{time_us:.2f}us")
 
 
 def run(parsed: ParsedRun) -> Frame | None:
@@ -291,10 +359,30 @@ def run(parsed: ParsedRun) -> Frame | None:
     duration = parsed.params.duration_in_dt()
     target_time_dt = t0 + duration if np.isfinite(duration) else None
 
+    if parsed.continuous_sampling:
+        t0_us = parsed.params.t0_in_dt() * cfg.dt * 1e6
+        out_dir = _continuous_sampling_dir(
+            _ROOT, t0_us, parsed.interval, parsed.step
+        )
+        f_last = _consume_continuous_sampling(
+            queue_data,
+            queue_control,
+            proc,
+            out_dir=out_dir,
+            cfg=cfg,
+            n_frames=parsed.continuous_sampling_frames,
+            dt_si=cfg.dt,
+        )
+        proc.join()
+        if f_last is not None:
+            logger.info("Simulation Time: %.3f μs", f_last.timestamp * cfg.dt * 1e6)
+        return f_last
+
     if parsed.vision.plot_fig is not None:
         plotter_kwargs = parsed.vision.to_dataplot_kwargs(cfg.dl, cfg.dt, mass)
         plotter_kwargs["target_time_dt"] = target_time_dt
         plotter_kwargs["device"] = actual_device
+        plotter_kwargs["backend_interval"] = parsed.interval
         if not plotter_kwargs.get("show_plot", True):
             import matplotlib
             matplotlib.use("Agg")
@@ -348,6 +436,14 @@ def main():
         if len(n_list) > 1:
             logger.info("批量模拟 %d/%d: N=%d", idx + 1, len(n_list), n_ions)
         parsed = cli.parse_and_build(args, _ROOT, n_override=n_ions)
+        if parsed.continuous_sampling and len(n_list) > 1:
+            t0_us = parsed.params.t0_in_dt() * parsed.config.dt * 1e6
+            logger.warning(
+                "连续采样多场共用目录 %s，后运行的结果会覆盖先写入的 frame*.npz",
+                _continuous_sampling_dir(
+                    _ROOT, t0_us, parsed.interval, parsed.step
+                ),
+            )
         run(parsed)
 
 
