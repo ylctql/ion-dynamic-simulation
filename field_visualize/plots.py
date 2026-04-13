@@ -8,7 +8,13 @@ from typing import Literal
 
 import numpy as np
 
-from FieldParser.potential_fit import eval_fit, fit_potential_1d, get_center_and_k2
+from FieldConfiguration.constants import m as ION_MASS
+from FieldParser.potential_fit import (
+    eval_fit,
+    fit_potential_1d,
+    get_center_and_k2,
+    k2_to_trap_freq_MHz,
+)
 
 from .core import (
     AXIS_INDEX,
@@ -208,6 +214,7 @@ def plot_1d(
     ax1.plot(coord_um, V_total, label="Total potential", color="red", linestyle="--")
 
     fit_labels: list[str] = []
+    trap_freq_note: str | None = None
     if fit_degree is not None and fit_degree in (2, 4):
         for V_arr, label, color in [
             (V_dc, "DC fit", "blue"),
@@ -227,11 +234,36 @@ def plot_1d(
                 )
                 center, k2 = get_center_and_k2(fit_result, fit_degree)
                 fit_labels.append(f"{label}: center={center:.1f} μm, k2={k2:.2e}")
+                if (
+                    label == "Total fit"
+                    and fit_degree == 2
+                    and k2 > 0
+                ):
+                    f_mhz = k2_to_trap_freq_MHz(k2, ION_MASS)
+                    if np.isfinite(f_mhz):
+                        trap_freq_note = (
+                            f"Trap frequency along {vary_axis}: {f_mhz:.4f} MHz"
+                        )
             except (ValueError, np.linalg.LinAlgError, RuntimeError):
                 pass
         if fit_labels:
             ax1.set_title(
                 f"{title_base} — Potentials\n" + "; ".join(fit_labels), fontsize=9
+            )
+        if trap_freq_note is not None:
+            ax1.text(
+                0.02,
+                0.98,
+                trap_freq_note,
+                transform=ax1.transAxes,
+                fontsize=10,
+                verticalalignment="top",
+                bbox={
+                    "boxstyle": "round,pad=0.35",
+                    "facecolor": "white",
+                    "edgecolor": "red",
+                    "alpha": 0.9,
+                },
             )
 
     ax1.set_xlabel(f"{vary_axis} (μm)")
