@@ -7,8 +7,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# 长度单位换算：CSV 中坐标为 mm
+# 长度单位换算：CSV 数值 → SI 米；表头未识别时默认按 mm
 _UNITS = {"m": 1e0, "cm": 1e-2, "mm": 1e-3, "um": 1e-6}
+
+
+def _length_unit_label_to_meters(unit_label: str) -> float:
+    """
+    将 % Length unit 列中的写法转为「CSV 坐标值 × 该因子 = SI 米」。
+    兼容 COMSOL 等导出的 µm（U+00B5）、μm（U+03BC）与 ASCII um。
+    """
+    s = unit_label.strip()
+    s = s.replace("\u00b5", "u").replace("\u03bc", "u")
+    return _UNITS.get(s.lower(), 1e-3)
 
 
 def read(
@@ -51,7 +61,7 @@ def read(
                 break
             row = line.strip().split(",")
             if row and row[0].strip() == r"% Length unit" and len(row) >= 2:
-                unit_l = _UNITS.get(row[1].strip(), 1e-3)
+                unit_l = _length_unit_label_to_meters(row[1])
                 break
             if row and row[0].strip() == r"% x":
                 break

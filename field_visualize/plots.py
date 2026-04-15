@@ -28,6 +28,42 @@ from .core import (
 )
 
 CoordAxis = Literal["x", "y", "z"]
+_DcRfMode = Literal["both", "dc_only", "pseudo_only", "both_zero"]
+
+
+def _max_abs_finite(V: np.ndarray) -> float:
+    a = np.asarray(V)
+    m = a[np.isfinite(a)]
+    if m.size == 0:
+        return 0.0
+    return float(np.max(np.abs(m)))
+
+
+def _classify_dc_rf_coverage(
+    V_dc: np.ndarray, V_pseudo: np.ndarray, *, eps: float = 1e-12
+) -> _DcRfMode:
+    """按当前采样网格判断 DC / RF 赝势是否可忽略（|V|<=eps 视为全空间为 0）。"""
+    dc_m = _max_abs_finite(V_dc)
+    ps_m = _max_abs_finite(V_pseudo)
+    dc_z = dc_m <= eps
+    ps_z = ps_m <= eps
+    if dc_z and ps_z:
+        return "both_zero"
+    if dc_z:
+        return "pseudo_only"
+    if ps_z:
+        return "dc_only"
+    return "both"
+
+
+def _note_for_dc_rf_mode(mode: _DcRfMode) -> str | None:
+    if mode == "pseudo_only":
+        return "Note: static potential (DC) is zero everywhere on this grid."
+    if mode == "dc_only":
+        return "Note: RF pseudopotential is zero everywhere on this grid."
+    if mode == "both_zero":
+        return "Note: DC and RF pseudopotential are both zero on this grid."
+    return None
 
 
 def _save_or_show(path: str | None, suffix: str, fig, out_path: str | None = None) -> None:
@@ -203,24 +239,48 @@ def plot_1d(
     if offset_min:
         V_dc, V_pseudo, V_total = apply_offset_min(V_dc, V_pseudo, V_total)
 
+    decomp_mode = _classify_dc_rf_coverage(V_dc, V_pseudo)
+    decomp_note = _note_for_dc_rf_mode(decomp_mode)
+
     x_um = norm_to_um(x_const, cfg.dl)
     y_um = norm_to_um(y_const, cfg.dl)
     z_um = norm_to_um(z_const, cfg.dl)
     title_base = f"Potential vs {vary_axis} (x={x_um:.1f} μm, y={y_um:.1f} μm, z={z_um:.1f} μm)"
 
     fig1, ax1 = plt.subplots(figsize=(8, 5))
-    ax1.plot(coord_um, V_dc, label="Static potential (DC)", color="blue")
-    ax1.plot(coord_um, V_pseudo, label="RF pseudopotential", color="green")
-    ax1.plot(coord_um, V_total, label="Total potential", color="red", linestyle="--")
+    y_series: list[np.ndarray] = []
+    if decomp_mode == "both":
+        ax1.plot(coord_um, V_dc, label="Static potential (DC)", color="blue")
+        ax1.plot(coord_um, V_pseudo, label="RF pseudopotential", color="green")
+        ax1.plot(coord_um, V_total, label="Total potential", color="red", linestyle="--")
+        y_series = [V_dc, V_pseudo, V_total]
+    elif decomp_mode == "dc_only":
+        ax1.plot(coord_um, V_dc, label="Static potential (DC)", color="blue")
+        y_series = [V_dc]
+    elif decomp_mode == "pseudo_only":
+        ax1.plot(coord_um, V_pseudo, label="RF pseudopotential", color="green")
+        y_series = [V_pseudo]
+    else:
+        ax1.plot(coord_um, V_total, label="Total potential", color="red", linestyle="--")
+        y_series = [V_total]
 
     fit_labels: list[str] = []
     trap_freq_note: str | None = None
     if fit_degree is not None and fit_degree in (2, 4):
-        for V_arr, label, color in [
-            (V_dc, "DC fit", "blue"),
-            (V_pseudo, "Pseudopotential fit", "green"),
-            (V_total, "Total fit", "red"),
-        ]:
+        fit_specs: list[tuple[np.ndarray, str, str]] = []
+        if decomp_mode == "both":
+            fit_specs = [
+                (V_dc, "DC fit", "blue"),
+                (V_pseudo, "Pseudopotential fit", "green"),
+                (V_total, "Total fit", "red"),
+            ]
+        elif decomp_mode == "dc_only":
+            fit_specs = [(V_dc, "DC fit", "blue")]
+        elif decomp_mode == "pseudo_only":
+            fit_specs = [(V_pseudo, "Pseudopotential fit", "green")]
+        else:
+            fit_specs = [(V_total, "Total fit", "red")]
+        for V_arr, label, color in fit_specs:
             try:
                 fit_result, r2 = fit_potential_1d(coord_um, V_arr, degree=fit_degree)
                 V_fit = eval_fit(coord_um, fit_result, fit_degree)
@@ -247,9 +307,10 @@ def plot_1d(
             except (ValueError, np.linalg.LinAlgError, RuntimeError):
                 pass
         if fit_labels:
-            ax1.set_title(
-                f"{title_base} — Potentials\n" + "; ".join(fit_labels), fontsize=9
-            )
+            _t = f"{title_base} — Potentials\n" + "; ".join(fit_labels)
+            if decomp_note:
+                _t += "\n" + decomp_note
+            ax1.set_title(_t, fontsize=9)
         if trap_freq_note is not None:
             ax1.text(
                 0.02,
@@ -271,8 +332,11 @@ def plot_1d(
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     if not fit_labels:
-        ax1.set_title(f"{title_base} — Potentials")
-    set_ylim_from_data(ax1, np.concatenate([V_dc, V_pseudo, V_total]))
+        _main = f"{title_base} — Potentials"
+        if decomp_note:
+            _main += "\n" + decomp_note
+        ax1.set_title(_main)
+    set_ylim_from_data(ax1, np.concatenate(y_series))
     plt.tight_layout()
     if out_path:
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -372,27 +436,36 @@ def plot_bilayer(
     vm_tot = _vmin_vmax(V_tot_p, V_tot_n)
     vm_rf = _vmin_vmax(V_rf_p, V_rf_n)
 
-    titles_row = [
-        "Static potential",
-        "RF pseudopotential",
-        "Total potential",
-    ]
+    dc_stack = np.concatenate([V_dc_p.ravel(), V_dc_n.ravel()])
+    ps_stack = np.concatenate([V_ps_p.ravel(), V_ps_n.ravel()])
+    decomp_mode = _classify_dc_rf_coverage(dc_stack, ps_stack)
+    decomp_note = _note_for_dc_rf_mode(decomp_mode)
+
+    if decomp_mode == "both":
+        col_defs: list[tuple[str, tuple[float, float], int]] = [
+            ("Static potential", vm_dc, 0),
+            ("RF pseudopotential", vm_ps, 2),
+            ("Total potential", vm_tot, 3),
+        ]
+    elif decomp_mode == "dc_only":
+        col_defs = [("Static potential", vm_dc, 0)]
+    elif decomp_mode == "pseudo_only":
+        col_defs = [("RF pseudopotential", vm_ps, 2)]
+    else:
+        col_defs = [("Total potential", vm_tot, 3)]
+
+    ncols = len(col_defs)
     suptitle_base = f"Potential in x–z plane at y = ±{abs(y0_um):.3g} μm"
+    suptitle_full = suptitle_base + (f"\n{decomp_note}" if decomp_note else "")
+    fig_w = 5 * ncols + 2
 
     if mode == "heatmap":
-        fig, axes = plt.subplots(2, 3, figsize=(14, 9))
-        for row, (y_um, _ync), (V_dc_2d, _V_rf, V_ps_2d, V_tot_2d) in zip(
-            range(2),
-            slices,
-            layers_data,
-        ):
+        fig, axes = plt.subplots(2, ncols, figsize=(fig_w, 9), squeeze=False)
+        for row, (y_um, _ync), pack in zip(range(2), slices, layers_data):
             y_label = f"y = {y_um:+.3g} μm"
-            row_vmin_vmax = (vm_dc, vm_ps, vm_tot)
-            row_data = (V_dc_2d, V_ps_2d, V_tot_2d)
-            for col in range(3):
+            for col, (title_h, (vmin, vmax), idx) in enumerate(col_defs):
                 ax = axes[row, col]
-                data = row_data[col]
-                vmin, vmax = row_vmin_vmax[col]
+                data = pack[idx]
                 im = ax.pcolormesh(
                     cc1_um,
                     cc2_um,
@@ -407,8 +480,8 @@ def plot_bilayer(
                 ax.set_xlabel("z (μm)")
                 ax.set_ylabel("x (μm)")
                 ax.set_aspect("equal")
-                ax.set_title(f"{titles_row[col]} ({y_label})")
-        fig.suptitle(suptitle_base)
+                ax.set_title(f"{title_h} ({y_label})")
+        fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -438,24 +511,17 @@ def plot_bilayer(
                 ax.set_aspect("equal")
                 y_label = f"y = {y_um:+.3g} μm"
                 ax.set_title(f"RF amplitude ({y_label})")
-            fig2.suptitle(suptitle_base)
+            fig2.suptitle(suptitle_full)
             plt.tight_layout()
             _save_or_show(None, "_rf_amp", fig2, out_path)
             plt.close(fig2)
     else:
-        fig = plt.figure(figsize=(14, 9))
-        for row, (y_um, _ync), (V_dc_2d, _V_rf, V_ps_2d, V_tot_2d) in zip(
-            range(2),
-            slices,
-            layers_data,
-        ):
+        fig = plt.figure(figsize=(fig_w, 9))
+        for row, (y_um, _ync), pack in zip(range(2), slices, layers_data):
             y_label = f"y = {y_um:+.3g} μm"
-            row_data = (V_dc_2d, V_ps_2d, V_tot_2d)
-            row_vmin_vmax = (vm_dc, vm_ps, vm_tot)
-            for col in range(3):
-                ax = fig.add_subplot(2, 3, row * 3 + col + 1, projection="3d")
-                data = row_data[col]
-                vmin, vmax = row_vmin_vmax[col]
+            for col, (title_h, (vmin, vmax), idx) in enumerate(col_defs):
+                ax = fig.add_subplot(2, ncols, row * ncols + col + 1, projection="3d")
+                data = pack[idx]
                 surf = ax.plot_surface(
                     cc1_um,
                     cc2_um,
@@ -469,8 +535,8 @@ def plot_bilayer(
                 ax.set_xlabel("z (μm)")
                 ax.set_ylabel("x (μm)")
                 ax.set_zlabel("Potential (V)")
-                ax.set_title(f"{titles_row[col]} ({y_label})")
-        fig.suptitle(suptitle_base)
+                ax.set_title(f"{title_h} ({y_label})")
+        fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -478,7 +544,7 @@ def plot_bilayer(
         plt.close(fig)
 
         if show_rf_amp:
-            fig2 = plt.figure(figsize=(14, 9))
+            fig2 = plt.figure(figsize=(fig_w, 9))
             for row, (y_um, _ync), V_rf_2d in zip(
                 range(2),
                 slices,
@@ -500,7 +566,7 @@ def plot_bilayer(
                 ax.set_zlabel("Potential (V)")
                 y_label = f"y = {y_um:+.3g} μm"
                 ax.set_title(f"RF amplitude ({y_label})")
-            fig2.suptitle(suptitle_base)
+            fig2.suptitle(suptitle_full)
             plt.tight_layout()
             _save_or_show(None, "_rf_amp", fig2, out_path)
             plt.close(fig2)
@@ -539,18 +605,40 @@ def plot_2d(
     V_pseudo_2d = V_pseudo.reshape(cc1.shape)
     V_total_2d = V_total.reshape(cc1.shape)
 
+    decomp_mode = _classify_dc_rf_coverage(V_dc, V_pseudo)
+    decomp_note = _note_for_dc_rf_mode(decomp_mode)
+
     other = next(c for c in "xyz" if c not in vary_axes)
     suptitle_base = f"Potential distribution ({other}={const_um:.1f} μm)"
+    suptitle_full = (
+        suptitle_base + (f"\n{decomp_note}" if decomp_note else "")
+    )
 
     if mode == "heatmap":
-        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
-        axes_flat = [axes[0, 0], axes[0, 1], axes[1, 0]]
-        axes[1, 1].set_visible(False)
-        for ax, data, title in zip(
-            axes_flat,
-            [V_dc_2d, V_pseudo_2d, V_total_2d],
-            ["Static potential", "RF pseudopotential", "Total potential"],
-        ):
+        if decomp_mode == "both":
+            fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+            axes_flat = [axes[0, 0], axes[0, 1], axes[1, 0]]
+            axes[1, 1].set_visible(False)
+            for ax, data, title in zip(
+                axes_flat,
+                [V_dc_2d, V_pseudo_2d, V_total_2d],
+                ["Static potential", "RF pseudopotential", "Total potential"],
+            ):
+                im = ax.pcolormesh(cc1_um, cc2_um, data, shading="auto", cmap="RdBu_r")
+                cbar = plt.colorbar(im, ax=ax, orientation="horizontal")
+                cbar.set_label("V")
+                ax.set_xlabel(f"{a1} (μm)")
+                ax.set_ylabel(f"{a2} (μm)")
+                ax.set_aspect("equal")
+                ax.set_title(title)
+        else:
+            fig, ax = plt.subplots(figsize=(6, 5.5))
+            if decomp_mode == "dc_only":
+                data, title = V_dc_2d, "Static potential"
+            elif decomp_mode == "pseudo_only":
+                data, title = V_pseudo_2d, "RF pseudopotential"
+            else:
+                data, title = V_total_2d, "Total potential"
             im = ax.pcolormesh(cc1_um, cc2_um, data, shading="auto", cmap="RdBu_r")
             cbar = plt.colorbar(im, ax=ax, orientation="horizontal")
             cbar.set_label("V")
@@ -558,7 +646,7 @@ def plot_2d(
             ax.set_ylabel(f"{a2} (μm)")
             ax.set_aspect("equal")
             ax.set_title(title)
-        fig.suptitle(suptitle_base)
+        fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -574,27 +662,42 @@ def plot_2d(
             ax.set_ylabel(f"{a2} (μm)")
             ax.set_aspect("equal")
             ax.set_title("RF amplitude")
-            fig2.suptitle(suptitle_base)
+            fig2.suptitle(suptitle_full)
             plt.tight_layout()
             _save_or_show(None, "_rf_amp", fig2, out_path)
             plt.close(fig2)
     else:
-        fig = plt.figure(figsize=(10, 10))
-        for i, (data, title) in enumerate(
-            [
-                (V_dc_2d, "Static potential"),
-                (V_pseudo_2d, "RF pseudopotential"),
-                (V_total_2d, "Total potential"),
-            ]
-        ):
-            ax = fig.add_subplot(2, 2, i + 1, projection="3d")
+        if decomp_mode == "both":
+            fig = plt.figure(figsize=(10, 10))
+            for i, (data, title) in enumerate(
+                [
+                    (V_dc_2d, "Static potential"),
+                    (V_pseudo_2d, "RF pseudopotential"),
+                    (V_total_2d, "Total potential"),
+                ]
+            ):
+                ax = fig.add_subplot(2, 2, i + 1, projection="3d")
+                ax.plot_surface(cc1_um, cc2_um, data, cmap="RdBu_r", alpha=0.9)
+                ax.set_xlabel(f"{a1} (μm)")
+                ax.set_ylabel(f"{a2} (μm)")
+                ax.set_zlabel("Potential (V)")
+                ax.set_title(title)
+            fig.add_subplot(2, 2, 4).set_visible(False)
+        else:
+            fig = plt.figure(figsize=(7, 5))
+            ax = fig.add_subplot(111, projection="3d")
+            if decomp_mode == "dc_only":
+                data, title = V_dc_2d, "Static potential"
+            elif decomp_mode == "pseudo_only":
+                data, title = V_pseudo_2d, "RF pseudopotential"
+            else:
+                data, title = V_total_2d, "Total potential"
             ax.plot_surface(cc1_um, cc2_um, data, cmap="RdBu_r", alpha=0.9)
             ax.set_xlabel(f"{a1} (μm)")
             ax.set_ylabel(f"{a2} (μm)")
             ax.set_zlabel("Potential (V)")
             ax.set_title(title)
-        fig.add_subplot(2, 2, 4).set_visible(False)
-        fig.suptitle(suptitle_base)
+        fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -609,7 +712,7 @@ def plot_2d(
             ax.set_ylabel(f"{a2} (μm)")
             ax.set_zlabel("Potential (V)")
             ax.set_title("RF amplitude")
-            fig2.suptitle(suptitle_base)
+            fig2.suptitle(suptitle_full)
             plt.tight_layout()
             _save_or_show(None, "_rf_amp", fig2, out_path)
             plt.close(fig2)
