@@ -98,6 +98,11 @@ def main() -> None:
         help="显示 RF 幅度图像（默认不显示）",
     )
     parser.add_argument(
+        "--mark-potential-min",
+        action="store_true",
+        help="在势场图上标出总势（DC+赝势）在当前采样网格上的最小值位置",
+    )
+    parser.add_argument(
         "--fit",
         type=int,
         default=None,
@@ -361,6 +366,7 @@ def main() -> None:
             offset_min=args.offset,
             show_rf_amp=args.show_rf_amp,
             out_path=args.out,
+            mark_potential_min=args.mark_potential_min,
         )
         return
 
@@ -416,6 +422,7 @@ def main() -> None:
             show_rf_amp=args.show_rf_amp,
             fit_degree=args.fit,
             out_path=args.out,
+            mark_potential_min=args.mark_potential_min,
         )
     elif len(vary_parts) == 2:
         a1, a2 = vary_parts[0], vary_parts[1]
@@ -439,6 +446,7 @@ def main() -> None:
             offset_min=args.offset,
             show_rf_amp=args.show_rf_amp,
             out_path=args.out,
+            mark_potential_min=args.mark_potential_min,
         )
     else:
         raise ValueError("--vary 须为单坐标 (x/y/z) 或两个坐标 (如 x,y)")

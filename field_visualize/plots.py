@@ -66,6 +66,141 @@ def _note_for_dc_rf_mode(mode: _DcRfMode) -> str | None:
     return None
 
 
+def _index_argmin_valid_1d(V: np.ndarray) -> int | None:
+    V = np.asarray(V, dtype=float)
+    m = np.isfinite(V)
+    if not np.any(m):
+        return None
+    masked = np.where(m, V, np.inf)
+    return int(np.argmin(masked))
+
+
+def _index_argmin_valid_2d(V: np.ndarray) -> tuple[int, int] | None:
+    V = np.asarray(V, dtype=float)
+    m = np.isfinite(V)
+    if not np.any(m):
+        return None
+    masked = np.where(m, V, np.inf)
+    flat = int(np.argmin(masked.ravel()))
+    ij = np.unravel_index(flat, V.shape)
+    return int(ij[0]), int(ij[1])
+
+
+def _col_for_total_min_marker(
+    col_defs: list[tuple[str, tuple[float, float], int]],
+) -> int:
+    """Column index where total potential (idx 3) is drawn; else last column."""
+    for col, (_title, _vm, idx) in enumerate(col_defs):
+        if idx == 3:
+            return col
+    return len(col_defs) - 1
+
+
+def _mark_total_min_1d(
+    ax,
+    coord_um: np.ndarray,
+    V_total: np.ndarray,
+    vary_axis: CoordAxis,
+) -> None:
+    i = _index_argmin_valid_1d(V_total)
+    if i is None:
+        return
+    x_m = float(coord_um[i])
+    v_m = float(V_total[i])
+    ax.axvline(x_m, color="black", linestyle="--", alpha=0.45, linewidth=1.0)
+    ax.scatter(
+        [x_m],
+        [v_m],
+        s=85,
+        c="magenta",
+        edgecolors="black",
+        linewidths=0.6,
+        zorder=6,
+    )
+    ax.annotate(
+        f"min total: {vary_axis}={x_m:.3f} μm, V={v_m:.4f} V",
+        xy=(x_m, v_m),
+        xytext=(8, 12),
+        textcoords="offset points",
+        fontsize=8,
+        bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.92},
+        arrowprops={"arrowstyle": "->", "color": "0.3", "lw": 0.8},
+    )
+
+
+def _mark_total_min_2d_heatmap(
+    ax,
+    V_tot: np.ndarray,
+    cc1_um: np.ndarray,
+    cc2_um: np.ndarray,
+    lab1: str,
+    lab2: str,
+) -> None:
+    ij = _index_argmin_valid_2d(V_tot)
+    if ij is None:
+        return
+    i, j = ij
+    u1 = float(cc1_um[i, j])
+    u2 = float(cc2_um[i, j])
+    v = float(V_tot[i, j])
+    ax.scatter(
+        [u1],
+        [u2],
+        s=100,
+        c="magenta",
+        edgecolors="black",
+        linewidths=0.7,
+        zorder=10,
+    )
+    ax.annotate(
+        f"min total: {lab1}={u1:.2f}, {lab2}={u2:.2f} μm\nV={v:.4f} V",
+        xy=(u1, u2),
+        xytext=(10, 10),
+        textcoords="offset points",
+        fontsize=8,
+        bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.92},
+        arrowprops={"arrowstyle": "->", "color": "0.3", "lw": 0.8},
+    )
+
+
+def _mark_total_min_2d_surface(
+    ax,
+    V_tot: np.ndarray,
+    cc1_um: np.ndarray,
+    cc2_um: np.ndarray,
+    lab1: str,
+    lab2: str,
+) -> None:
+    ij = _index_argmin_valid_2d(V_tot)
+    if ij is None:
+        return
+    i, j = ij
+    u1 = float(cc1_um[i, j])
+    u2 = float(cc2_um[i, j])
+    v = float(V_tot[i, j])
+    ax.scatter(
+        [u1],
+        [u2],
+        [v],
+        s=90,
+        c="magenta",
+        edgecolors="black",
+        linewidths=0.6,
+        zorder=10,
+    )
+    zlim = ax.get_zlim3d()
+    span = float(zlim[1] - zlim[0])
+    dz = 0.02 * span if np.isfinite(span) and span > 0 else 0.01
+    ax.text(
+        u1,
+        u2,
+        v + dz,
+        f"min total: {lab1}={u1:.2f}, {lab2}={u2:.2f} μm\nV={v:.4f} V",
+        fontsize=7,
+        color="black",
+    )
+
+
 def _save_or_show(path: str | None, suffix: str, fig, out_path: str | None = None) -> None:
     import matplotlib.pyplot as plt
 
@@ -224,6 +359,7 @@ def plot_1d(
     show_rf_amp: bool = False,
     fit_degree: int | None = None,
     out_path: str | None = None,
+    mark_potential_min: bool = False,
 ) -> None:
     """1D 绘图：电势随单坐标变化"""
     import matplotlib.pyplot as plt
@@ -337,6 +473,8 @@ def plot_1d(
             _main += "\n" + decomp_note
         ax1.set_title(_main)
     set_ylim_from_data(ax1, np.concatenate(y_series))
+    if mark_potential_min:
+        _mark_total_min_1d(ax1, coord_um, V_total, vary_axis)
     plt.tight_layout()
     if out_path:
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -370,6 +508,7 @@ def plot_bilayer(
     offset_min: bool = False,
     show_rf_amp: bool = False,
     out_path: str | None = None,
+    mark_potential_min: bool = False,
 ) -> None:
     """
     在 y = ±y0 的 zox 平面上去采样并绘制静电势、赝势、总电势。
@@ -458,11 +597,13 @@ def plot_bilayer(
     suptitle_base = f"Potential in x–z plane at y = ±{abs(y0_um):.3g} μm"
     suptitle_full = suptitle_base + (f"\n{decomp_note}" if decomp_note else "")
     fig_w = 5 * ncols + 2
+    mark_col = _col_for_total_min_marker(col_defs)
 
     if mode == "heatmap":
         fig, axes = plt.subplots(2, ncols, figsize=(fig_w, 9), squeeze=False)
         for row, (y_um, _ync), pack in zip(range(2), slices, layers_data):
             y_label = f"y = {y_um:+.3g} μm"
+            V_tot_layer = pack[3]
             for col, (title_h, (vmin, vmax), idx) in enumerate(col_defs):
                 ax = axes[row, col]
                 data = pack[idx]
@@ -481,6 +622,8 @@ def plot_bilayer(
                 ax.set_ylabel("x (μm)")
                 ax.set_aspect("equal")
                 ax.set_title(f"{title_h} ({y_label})")
+                if mark_potential_min and col == mark_col:
+                    _mark_total_min_2d_heatmap(ax, V_tot_layer, cc1_um, cc2_um, "z", "x")
         fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
@@ -519,6 +662,7 @@ def plot_bilayer(
         fig = plt.figure(figsize=(fig_w, 9))
         for row, (y_um, _ync), pack in zip(range(2), slices, layers_data):
             y_label = f"y = {y_um:+.3g} μm"
+            V_tot_layer = pack[3]
             for col, (title_h, (vmin, vmax), idx) in enumerate(col_defs):
                 ax = fig.add_subplot(2, ncols, row * ncols + col + 1, projection="3d")
                 data = pack[idx]
@@ -536,6 +680,8 @@ def plot_bilayer(
                 ax.set_ylabel("x (μm)")
                 ax.set_zlabel("Potential (V)")
                 ax.set_title(f"{title_h} ({y_label})")
+                if mark_potential_min and col == mark_col:
+                    _mark_total_min_2d_surface(ax, V_tot_layer, cc1_um, cc2_um, "z", "x")
         fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
@@ -586,6 +732,7 @@ def plot_2d(
     offset_min: bool = False,
     show_rf_amp: bool = False,
     out_path: str | None = None,
+    mark_potential_min: bool = False,
 ) -> None:
     """2D 绘图：热力图或三维曲面"""
     import matplotlib.pyplot as plt
@@ -631,6 +778,10 @@ def plot_2d(
                 ax.set_ylabel(f"{a2} (μm)")
                 ax.set_aspect("equal")
                 ax.set_title(title)
+            if mark_potential_min:
+                _mark_total_min_2d_heatmap(
+                    axes_flat[2], V_total_2d, cc1_um, cc2_um, a1, a2
+                )
         else:
             fig, ax = plt.subplots(figsize=(6, 5.5))
             if decomp_mode == "dc_only":
@@ -646,6 +797,8 @@ def plot_2d(
             ax.set_ylabel(f"{a2} (μm)")
             ax.set_aspect("equal")
             ax.set_title(title)
+            if mark_potential_min:
+                _mark_total_min_2d_heatmap(ax, V_total_2d, cc1_um, cc2_um, a1, a2)
         fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
@@ -682,6 +835,8 @@ def plot_2d(
                 ax.set_ylabel(f"{a2} (μm)")
                 ax.set_zlabel("Potential (V)")
                 ax.set_title(title)
+                if mark_potential_min and title == "Total potential":
+                    _mark_total_min_2d_surface(ax, V_total_2d, cc1_um, cc2_um, a1, a2)
             fig.add_subplot(2, 2, 4).set_visible(False)
         else:
             fig = plt.figure(figsize=(7, 5))
@@ -697,6 +852,8 @@ def plot_2d(
             ax.set_ylabel(f"{a2} (μm)")
             ax.set_zlabel("Potential (V)")
             ax.set_title(title)
+            if mark_potential_min:
+                _mark_total_min_2d_surface(ax, V_total_2d, cc1_um, cc2_um, a1, a2)
         fig.suptitle(suptitle_full)
         plt.tight_layout()
         if out_path:
