@@ -22,10 +22,11 @@ dev = [
 [project.scripts]
 ism-main = "main:main"
 field-visualize = "field_visualize:main"
+ion-image-sim = "ImgSimulation.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["Interface*", "FieldConfiguration*", "FieldParser*", "ComputeKernel*", "Plotter*"]
+include = ["Interface*", "FieldConfiguration*", "FieldParser*", "ComputeKernel*", "Plotter*", "ImgSimulation*"]
 
 [tool.setuptools]
 py-modules = ["utils", "setup_path", "field_visualize"]

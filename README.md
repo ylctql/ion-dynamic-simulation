@@ -14,6 +14,7 @@ Ion trap dynamics simulation with modular architecture. Simulates ion crystal dy
 - **Real-time plotting**: Live visualization with matplotlib
 - **Field visualization**: Standalone tool for electric potential distribution (static, RF pseudopotential, total) in 1D or 2D (heatmap / 3D surface)
 - **Equilibrium solver**: Fit 3D trap potential and minimize total energy (trap + Coulomb) to find ion crystal equilibrium positions
+- **Single-frame ion imaging (`ImgSimulation`)**: CCD/CMOS-style images from ion trajectories—Gaussian beam exposure, PSF blur, shot/readout noise, optional normalization—driven by JSON or Python API (same `Config` and trap-field conventions as `main.py` when trap force is enabled)
 
 ## Requirements
 
@@ -54,6 +55,71 @@ See [BUILD.md](BUILD.md) for more build options.
 ```bash
 python main.py --N 50 --time 10 --plot
 ```
+
+## ImgSimulation (single-frame sensor images)
+
+This module simulates **one** integrated image (not a live trajectory movie): run `ionsim` over a time window, map 2D ion positions (µm) into a pixel grid weighted by a Gaussian beam, apply a Gaussian PSF, optionally add sensor noise, then optionally normalize (`max` / `minmax` / `none`).
+
+### Processing pipeline
+
+1. **Dynamics** — `ionsim_calculate_trajectory` with the same dimensionless units and `FieldConfiguration.constants.Config` (`dt`, `dl`, …) as the main app. Coulomb interaction is always in the kernel. The **external trap** is supplied as a Python force callable (from `_zero_force` or `main._build_force` via `json_dynamics`), wrapped for C++.
+2. **Exposure** — Convert dimensionless `r` to µm; accumulate beam-weighted dwell time on the camera grid (`geometry` → `illumination` → `integrate`).
+3. **Imaging** — Gaussian PSF (`psf_sigma_px`), then optional noise (`noise_model`), then `normalize_image`.
+
+### Package layout
+
+| Module | Role |
+|--------|------|
+| `api.py` | User surface: `run_ion_image`, `load_ion_image_json`, `run_ion_image_from_json_file`, `render_single_frame`, `run_ion_image_from_parsed`, re-exports |
+| `pipeline.py` | `render_single_frame` / `render_single_frame_from_parsed`; connects ionsim → exposure → PSF → noise → normalize |
+| `json_config.py` | `load_ion_image_json` → frozen `IonImageJsonBundle`; path resolution (JSON dir, then repo root) |
+| `json_dynamics.py` | Resolves `dynamics` (initial `r0`/`v0`, `charge`/`mass`, …) and `dynamics.force` (`zero` vs `trap`) using the same npz / µm / `Parameters` rules as the main workflow where applicable |
+| `types.py` | `CameraParams`, `BeamParams`, `NoiseParams`, `IntegrationParams` |
+| `geometry.py` | Pixel FOV ↔ physical (µm) coordinates |
+| `illumination.py` | 2D Gaussian beam (1/e² radius `w_um`) |
+| `integrate.py` | Exposure sum along trajectory samples |
+| `psf.py` | Gaussian blur in pixel space |
+| `noise_model.py` | Shot / readout / background |
+| `normalize.py` | Display-scale normalization |
+| `visualize.py` | `show_ion_frame` (matplotlib) |
+| `cli.py` | Entry for `python -m ImgSimulation` |
+| `configs/example_ion_image.json` | Example JSON (smoke / template) |
+
+### JSON configuration
+
+`load_ion_image_json` expects `version: 1` and resolves paths relative to the JSON file first, then the repository root.
+
+- **`paths`** — **`field_config`** (required): voltage / constants JSON for `init_from_config` (same role as `main.py --config`). **`field_csv`**: electric field grid CSV (same as `main.py --csv`). **Required** when `dynamics.force` is `"trap"`; optional for `"zero"` (no Python trap force; Coulomb remains in ionsim).
+- **`trap`** (optional) — Smoothing for `main._build_force`: `smooth_axes` (e.g. `"z"` or `"none"`), `smooth_sg` `[window, polyorder]` (e.g. `[11, 3]`), matching the main simulation’s Savitzky–Golay handling on the field grid.
+- **`dynamics`** — Force model and initial state (aligned with `Interface.parameters.Parameters` / `--init_file`):
+  - **`force`**: `"zero"` / `"none"` — Python trap force disabled. `"trap"` / `"field"` / … — build trap force from `paths.field_csv` + `paths.field_config` and per-ion `charge`.
+  - **Initial state** (first matching branch): **`init_file`** or **`init_npz`** with keys `r` (µm, shape `(N,3)`) and `v` (m/s); or **`r0_um`** + **`v0_m_s`**; or legacy **dimensionless** **`r0`** + **`v0`** (grid units); or **`init_random`** with **`N`** plus `init_center_um` / `init_range_um` or `init_range`, optional `init_seed`, optional `bilayer` / `bilayer_y0_um`.
+  - **`charge`**, **`mass`**, **`alpha`**, **`isotope`** / **`isotope_type`**: same interpretation as main `Parameters` (including doping) when arrays are expanded.
+- **`camera`**, **`beam`**, **`noise`**, **`integration`**, **`imaging`** (PSF width, `normalize_mode`, percentile controls), **`simulation`** (`use_cuda`, `calc_method`, **`use_zero_force`**, `apply_sensor_noise`, `n_step_pre`), **`display`**.
+
+**`simulation.use_zero_force`:** This flag is passed into **ionsim**. When `true`, the integrator uses **no external trap force from the wrapped Python callable** (historical name shared with `main.py`). For `dynamics.force: "trap"`, set **`use_zero_force` to `false`** so the interpolated field actually drives the ions; keep it `true` for pure Coulomb tests with `_zero_force`.
+
+### Python API
+
+```python
+from pathlib import Path
+from ImgSimulation.api import load_ion_image_json, run_ion_image_from_json_file
+
+img = run_ion_image_from_json_file("ImgSimulation/configs/example_ion_image.json")
+bundle = load_ion_image_json(Path("ImgSimulation/configs/example_ion_image.json"))
+img2 = bundle.call_run_ion_image()
+```
+
+For fully programmatic control, use `run_ion_image` / `render_single_frame` with a `Config`, a force callable, and NumPy `r0`, `v0`, `charge`, `mass`. To share **one** setup with the main CLI, use `Interface.cli.parse_and_build` and `run_ion_image_from_parsed`.
+
+### Command line
+
+```bash
+python -m ImgSimulation ImgSimulation/configs/example_ion_image.json --no-show -o out.png
+# optional: --project-root, --show / --no-show, -o/--output, --no-block
+```
+
+Requires a successful **`ionsim`** build (`python build.py`). Example test: `pytest tests/test_imgsimulation.py` (import-skips if ionsim is unavailable).
 
 ## Field Visualization
 
@@ -301,6 +367,21 @@ ism-main/
 │   ├── trap_freq.py   # Trap frequency computation
 │   ├── plots.py       # Potential and freq-scan plotting
 │   └── cli.py         # Argument parsing and main flow
+├── ImgSimulation/     # Single-frame CCD/CMOS-style ion image simulation
+│   ├── api.py         # run_ion_image, JSON loaders, re-exports
+│   ├── pipeline.py    # ionsim → exposure → PSF → noise
+│   ├── json_config.py # load_ion_image_json, IonImageJsonBundle
+│   ├── json_dynamics.py # dynamics + trap force resolution from JSON
+│   ├── types.py       # CameraParams, BeamParams, NoiseParams, IntegrationParams
+│   ├── geometry.py    # FOV and coordinate mapping
+│   ├── illumination.py# Gaussian beam on sensor plane
+│   ├── integrate.py   # Exposure along trajectory
+│   ├── psf.py         # Gaussian PSF
+│   ├── noise_model.py # Sensor noise
+│   ├── normalize.py   # Image normalization
+│   ├── visualize.py   # Matplotlib display / save
+│   ├── cli.py         # python -m ImgSimulation
+│   └── configs/       # example_ion_image.json
 ├── equilibrium/       # Equilibrium-position solver
 │   ├── potential_fit_3d.py  # 3D polynomial potential fit and gradient
 │   ├── energy.py      # Trap/Coulomb/total energy in eV

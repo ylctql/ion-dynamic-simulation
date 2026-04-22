@@ -71,6 +71,66 @@ def _wrap_force(
     return wrapped
 
 
+def ionsim_calculate_trajectory(
+    r_in: np.ndarray,
+    v_in: np.ndarray,
+    q_in: np.ndarray,
+    m_in: np.ndarray,
+    *,
+    step: int,
+    time_start: float,
+    time_end: float,
+    force: Callable[..., np.ndarray],
+    use_cuda: bool = False,
+    calc_method: str = "RK4",
+    use_zero_force: bool = False,
+) -> tuple[list, list]:
+    """
+    Wrap ``ionsim.calculate_trajectory``.
+
+    Older pybind builds only accept ``(r, v, charge, mass, step, time_start, time_end, force)``.
+    In that case ``use_cuda`` / ``calc_method`` are ignored, and ``use_zero_force`` is emulated
+    with a Python callback that returns zeros.
+    """
+    try:
+        return ionsim.calculate_trajectory(
+            r_in,
+            v_in,
+            q_in,
+            m_in,
+            step=step,
+            time_start=time_start,
+            time_end=time_end,
+            force=force,
+            use_cuda=use_cuda,
+            calc_method=calc_method,
+            use_zero_force=use_zero_force,
+        )
+    except TypeError:
+        pass
+
+    if use_zero_force:
+        n = int(r_in.shape[0])
+
+        def _zero(_r: np.ndarray, _v: np.ndarray, _t: float) -> np.ndarray:
+            return np.zeros((n, 3), dtype=np.float64, order="F")
+
+        f_call = _zero
+    else:
+        f_call = force
+
+    return ionsim.calculate_trajectory(
+        r_in,
+        v_in,
+        q_in,
+        m_in,
+        step=step,
+        time_start=time_start,
+        time_end=time_end,
+        force=f_call,
+    )
+
+
 class CalculationBackend:
     """
     动力学模拟后端
@@ -203,7 +263,7 @@ class CalculationBackend:
             # 排查用：SKIP_FORCE_CALLBACK=1 时跳过 Python force 回调
             skip_force = os.environ.get("SKIP_FORCE_CALLBACK") == "1"
 
-            r_list, v_list = ionsim.calculate_trajectory(
+            r_list, v_list = ionsim_calculate_trajectory(
                 r_in,
                 v_in,
                 q_in,

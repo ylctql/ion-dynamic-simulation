@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "description": "Example single-frame ion image (smoke / demo). dynamics: same ideas as main Parameters (init_file .npz with r,v in μm and m/s; or r0_um/v0_m_s; or legacy dimensionless r0/v0; or init_random with N). paths.field_csv is optional when dynamics.force is zero; set it and use dynamics.force trap for trap field from CSV + field_config; then set simulation.use_zero_force to false. trap.smooth_* matches main _build_force.",
+  "paths": {
+    "field_config": "FieldConfiguration/configs/default.json",
+    "field_csv": "data/monolithic20241118.csv"
+  },
+  "trap": {
+    "smooth_axes": "z",
+    "smooth_sg": [11, 3]
+  },
+  "dynamics": {
+    "force": "trap",
+    "r0": [[0, 0, 0]],
+    "v0": [[0, 0, 0]],
+    "charge": [1.0],
+    "mass": [1.0]
+  },
+  "camera": {
+    "pixel_um": 0.5,
+    "l": 64,
+    "h": 64,
+    "x0_um": 0.0,
+    "y0_um": 0.0
+  },
+  "beam": {
+    "w_um": 50.0,
+    "xb_um": 0.0,
+    "yb_um": 0.0,
+    "I": 10000
+  },
+  "noise": {
+    "shot_factor": 1,
+    "shot_scale": 1e10,
+    "readout_factor": 1e6,
+    "readout_sigma": 1.0,
+    "bg_offset": 0.0,
+    "seed": 42
+  },
+  "integration": {
+    "t_start_us": 0.0,
+    "t_cum_us": 20.0,
+    "n_step": 600
+  },
+  "imaging": {
+    "psf_sigma_px": 2.0,
+    "normalize_mode": "max",
+    "normalize_eps": 1e-12,
+    "normalize_q_low": 0.1,
+    "normalize_q_high": 99.9,
+    "normalize_q_scale": 99.9
+  },
+  "simulation": {
+    "use_cuda": false,
+    "calc_method": "VV",
+    "use_zero_force": true,
+    "apply_sensor_noise": true,
+    "n_step_pre": null
+  },
+  "display": {
+    "show": false,
+    "show_block": true,
+    "figure_path": null,
+    "show_title": "Ion image (simulation)"
+  }
+}

@@ -7,6 +7,8 @@ import os
 from typing import Literal
 
 import numpy as np
+from scipy.ndimage import gaussian_filter, maximum_filter, minimum_filter, uniform_filter1d
+from scipy.signal import argrelextrema
 
 from FieldConfiguration.constants import m as ION_MASS
 from FieldParser.potential_fit import (
@@ -29,6 +31,22 @@ from .core import (
 
 CoordAxis = Literal["x", "y", "z"]
 _DcRfMode = Literal["both", "dc_only", "pseudo_only", "both_zero"]
+
+# Total-potential markers: global minimum vs noise-robust local minima
+_MARK_GLOBAL_COLOR = "#c910c9"
+_MARK_LOCAL_COLOR = "#009e73"
+_MAX_LOCAL_MARKERS = 48
+# Offset cycles (points) for local-min annotations to reduce overlap
+_ANN_LOCAL_OFFSETS_1D2D: list[tuple[int, int]] = [
+    (10, 12),
+    (-55, 8),
+    (10, -22),
+    (-60, -15),
+    (28, 4),
+    (-35, 20),
+    (18, -28),
+    (-50, -25),
+]
 
 
 def _max_abs_finite(V: np.ndarray) -> float:
@@ -86,6 +104,113 @@ def _index_argmin_valid_2d(V: np.ndarray) -> tuple[int, int] | None:
     return int(ij[0]), int(ij[1])
 
 
+def _local_min_indices_1d_robust(
+    V: np.ndarray,
+    *,
+    global_idx: int | None,
+) -> np.ndarray:
+    """
+    1D：平滑后使用 argrelextrema 找相对极小，再用邻域「阱深」与差分噪声水平抑制格点噪声；
+    不依赖全区间幅值，避免边界大值抬高 prominence 阈值。
+    """
+    V = np.asarray(V, dtype=float)
+    n = V.size
+    if n < 9:
+        return np.array([], dtype=int)
+    finite = np.isfinite(V)
+    if not np.any(finite):
+        return np.array([], dtype=int)
+    med = float(np.median(V[finite]))
+    Vw = np.where(finite, V, med)
+    win = min(7, n if n % 2 == 1 else n - 1)
+    win = max(3, win | 1)
+    Vs = uniform_filter1d(Vw, size=win, mode="nearest")
+    order = max(3, min(n // 20, 24))
+    cand = argrelextrema(Vs, np.less, order=order)[0]
+    if cand.size == 0:
+        return np.array([], dtype=int)
+    m = max(2, n // 12)
+    d1 = np.diff(Vs[m:-m]) if n > 2 * m + 1 else np.diff(Vs)
+    noise = float(np.median(np.abs(d1))) if d1.size else 1e-12
+    depth_floor = max(1e-12, 2.0 * noise)
+    out: list[int] = []
+    sep = max(2, order // 2)
+    for i in cand:
+        i = int(i)
+        if global_idx is not None and abs(i - global_idx) <= sep:
+            continue
+        lo, hi = max(0, i - order), min(n, i + order + 1)
+        depth = float(np.max(Vs[lo:hi]) - Vs[i])
+        if depth < depth_floor:
+            continue
+        out.append(i)
+    if not out:
+        return np.array([], dtype=int)
+    out_arr = np.array(out, dtype=int)
+    if out_arr.size > _MAX_LOCAL_MARKERS:
+        vv = Vs[out_arr]
+        keep = np.argsort(vv)[:_MAX_LOCAL_MARKERS]
+        out_arr = out_arr[keep]
+    return out_arr
+
+
+def _local_min_ij_2d_robust(
+    V: np.ndarray,
+    *,
+    global_ij: tuple[int, int] | None,
+    sigma: float = 1.15,
+    min_foot: int = 5,
+    min_sep_px: float = 4.0,
+) -> list[tuple[int, int]]:
+    """
+    2D：平滑后用语义学邻域极小 + 相对邻域「阱高」；阈值用残差中位数估计噪声，避免大边界值抬高全图 span。
+    """
+    V = np.asarray(V, dtype=float)
+    finite = np.isfinite(V)
+    if not np.any(finite):
+        return []
+    med = float(np.median(V[finite]))
+    Vw = np.where(finite, V, med)
+    h, w = Vw.shape
+    sig = float(sigma)
+    Vs = gaussian_filter(Vw, sigma=(sig, sig), mode="nearest")
+    blur = gaussian_filter(Vs, sigma=(1.2, 1.2), mode="nearest")
+    noise2d = float(np.median(np.abs(Vs - blur)))
+    if noise2d < 1e-30:
+        noise2d = 1e-30
+    f = min(min_foot, min(h, w))
+    f = max(3, f | 1)
+    mf = minimum_filter(Vs, size=f, mode="nearest")
+    g = min(max(f + 4, 9), min(h, w))
+    g = max(3, g | 1)
+    neigh_hi = maximum_filter(Vs, size=g, mode="nearest")
+    prom = neigh_hi - Vs
+    atol = max(1e-12, 1.5 * noise2d)
+    depth_floor = max(1e-12, 4.0 * noise2d)
+    cand = finite & (Vs - mf <= atol) & (prom >= depth_floor)
+    ij_all = np.argwhere(cand)
+    if ij_all.size == 0:
+        return []
+    vals = Vs[ij_all[:, 0], ij_all[:, 1]]
+    order = np.argsort(vals)
+    ij_all = ij_all[order]
+    gi = gj = -10**9
+    if global_ij is not None:
+        gi, gj = int(global_ij[0]), int(global_ij[1])
+    picked: list[tuple[int, int]] = []
+    r_excl = min_sep_px * 0.85
+    for ij in ij_all:
+        i, j = int(ij[0]), int(ij[1])
+        if np.hypot(i - gi, j - gj) < r_excl:
+            continue
+        if any(np.hypot(i - pi, j - pj) < min_sep_px for pi, pj in picked):
+            continue
+        picked.append((i, j))
+        if len(picked) >= _MAX_LOCAL_MARKERS:
+            break
+    return picked
+
+
 def _col_for_total_min_marker(
     col_defs: list[tuple[str, tuple[float, float], int]],
 ) -> int:
@@ -102,23 +227,24 @@ def _mark_total_min_1d(
     V_total: np.ndarray,
     vary_axis: CoordAxis,
 ) -> None:
-    i = _index_argmin_valid_1d(V_total)
-    if i is None:
+    i_g = _index_argmin_valid_1d(V_total)
+    if i_g is None:
         return
-    x_m = float(coord_um[i])
-    v_m = float(V_total[i])
+    x_m = float(coord_um[i_g])
+    v_m = float(V_total[i_g])
     ax.axvline(x_m, color="black", linestyle="--", alpha=0.45, linewidth=1.0)
     ax.scatter(
         [x_m],
         [v_m],
         s=85,
-        c="magenta",
+        c=_MARK_GLOBAL_COLOR,
         edgecolors="black",
         linewidths=0.6,
         zorder=6,
+        label="Global minimum (total)",
     )
     ax.annotate(
-        f"min total: {vary_axis}={x_m:.3f} μm, V={v_m:.4f} V",
+        f"global min: {vary_axis}={x_m:.3f} μm, V={v_m:.4f} V",
         xy=(x_m, v_m),
         xytext=(8, 12),
         textcoords="offset points",
@@ -126,6 +252,37 @@ def _mark_total_min_1d(
         bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.92},
         arrowprops={"arrowstyle": "->", "color": "0.3", "lw": 0.8},
     )
+    loc_idx = _local_min_indices_1d_robust(V_total, global_idx=i_g)
+    if loc_idx.size > 0:
+        ax.scatter(
+            coord_um[loc_idx],
+            V_total[loc_idx],
+            s=52,
+            c=_MARK_LOCAL_COLOR,
+            edgecolors="black",
+            linewidths=0.45,
+            zorder=5,
+            label="Local minima (robust)",
+        )
+        for k, idx in enumerate(loc_idx):
+            xi = float(coord_um[int(idx)])
+            vi = float(V_total[int(idx)])
+            ox, oy = _ANN_LOCAL_OFFSETS_1D2D[k % len(_ANN_LOCAL_OFFSETS_1D2D)]
+            ax.annotate(
+                f"local min: {vary_axis}={xi:.3f} μm, V={vi:.4f} V",
+                xy=(xi, vi),
+                xytext=(ox, oy),
+                textcoords="offset points",
+                fontsize=7,
+                bbox={
+                    "boxstyle": "round,pad=0.2",
+                    "facecolor": "white",
+                    "edgecolor": _MARK_LOCAL_COLOR,
+                    "alpha": 0.92,
+                    "linewidth": 0.8,
+                },
+                arrowprops={"arrowstyle": "->", "color": "0.35", "lw": 0.7},
+            )
 
 
 def _mark_total_min_2d_heatmap(
@@ -136,10 +293,10 @@ def _mark_total_min_2d_heatmap(
     lab1: str,
     lab2: str,
 ) -> None:
-    ij = _index_argmin_valid_2d(V_tot)
-    if ij is None:
+    ij_g = _index_argmin_valid_2d(V_tot)
+    if ij_g is None:
         return
-    i, j = ij
+    i, j = ij_g
     u1 = float(cc1_um[i, j])
     u2 = float(cc2_um[i, j])
     v = float(V_tot[i, j])
@@ -147,13 +304,13 @@ def _mark_total_min_2d_heatmap(
         [u1],
         [u2],
         s=100,
-        c="magenta",
+        c=_MARK_GLOBAL_COLOR,
         edgecolors="black",
         linewidths=0.7,
         zorder=10,
     )
     ax.annotate(
-        f"min total: {lab1}={u1:.2f}, {lab2}={u2:.2f} μm\nV={v:.4f} V",
+        f"global min: {lab1}={u1:.2f}, {lab2}={u2:.2f} μm\nV={v:.4f} V",
         xy=(u1, u2),
         xytext=(10, 10),
         textcoords="offset points",
@@ -161,6 +318,39 @@ def _mark_total_min_2d_heatmap(
         bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.92},
         arrowprops={"arrowstyle": "->", "color": "0.3", "lw": 0.8},
     )
+    local_ij = _local_min_ij_2d_robust(V_tot, global_ij=ij_g)
+    if local_ij:
+        u1s = [float(cc1_um[ii, jj]) for ii, jj in local_ij]
+        u2s = [float(cc2_um[ii, jj]) for ii, jj in local_ij]
+        ax.scatter(
+            u1s,
+            u2s,
+            s=58,
+            c=_MARK_LOCAL_COLOR,
+            edgecolors="black",
+            linewidths=0.5,
+            zorder=9,
+        )
+        for k, (ii, jj) in enumerate(local_ij):
+            uu1 = float(cc1_um[ii, jj])
+            uu2 = float(cc2_um[ii, jj])
+            vv = float(V_tot[ii, jj])
+            ox, oy = _ANN_LOCAL_OFFSETS_1D2D[k % len(_ANN_LOCAL_OFFSETS_1D2D)]
+            ax.annotate(
+                f"local min: {lab1}={uu1:.2f}, {lab2}={uu2:.2f} μm\nV={vv:.4f} V",
+                xy=(uu1, uu2),
+                xytext=(ox, oy),
+                textcoords="offset points",
+                fontsize=7,
+                bbox={
+                    "boxstyle": "round,pad=0.2",
+                    "facecolor": "white",
+                    "edgecolor": _MARK_LOCAL_COLOR,
+                    "alpha": 0.92,
+                    "linewidth": 0.8,
+                },
+                arrowprops={"arrowstyle": "->", "color": "0.35", "lw": 0.7},
+            )
 
 
 def _mark_total_min_2d_surface(
@@ -171,10 +361,10 @@ def _mark_total_min_2d_surface(
     lab1: str,
     lab2: str,
 ) -> None:
-    ij = _index_argmin_valid_2d(V_tot)
-    if ij is None:
+    ij_g = _index_argmin_valid_2d(V_tot)
+    if ij_g is None:
         return
-    i, j = ij
+    i, j = ij_g
     u1 = float(cc1_um[i, j])
     u2 = float(cc2_um[i, j])
     v = float(V_tot[i, j])
@@ -183,7 +373,7 @@ def _mark_total_min_2d_surface(
         [u2],
         [v],
         s=90,
-        c="magenta",
+        c=_MARK_GLOBAL_COLOR,
         edgecolors="black",
         linewidths=0.6,
         zorder=10,
@@ -195,10 +385,63 @@ def _mark_total_min_2d_surface(
         u1,
         u2,
         v + dz,
-        f"min total: {lab1}={u1:.2f}, {lab2}={u2:.2f} μm\nV={v:.4f} V",
+        f"global min: {lab1}={u1:.2f}, {lab2}={u2:.2f} μm\nV={v:.4f} V",
         fontsize=7,
         color="black",
     )
+    local_ij = _local_min_ij_2d_robust(V_tot, global_ij=ij_g)
+    for k, (ii, jj) in enumerate(local_ij):
+        uu1 = float(cc1_um[ii, jj])
+        uu2 = float(cc2_um[ii, jj])
+        vv = float(V_tot[ii, jj])
+        ax.scatter(
+            [uu1],
+            [uu2],
+            [vv],
+            s=55,
+            c=_MARK_LOCAL_COLOR,
+            edgecolors="black",
+            linewidths=0.45,
+            zorder=9,
+        )
+        dz_k = dz * (1.15 + 0.12 * float(k))
+        ax.text(
+            uu1,
+            uu2,
+            vv + dz_k,
+            f"local min: {lab1}={uu1:.2f}, {lab2}={uu2:.2f} μm\nV={vv:.4f} V",
+            fontsize=6,
+            color="black",
+        )
+
+
+def _add_fig_legend_potential_markers(fig) -> None:
+    """图例：总势全局最小 vs 鲁棒局部极小（用于 2D / bilayer 等多子图）。"""
+    from matplotlib.lines import Line2D
+
+    leg_el = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            markeredgecolor="black",
+            markerfacecolor=_MARK_GLOBAL_COLOR,
+            markersize=8,
+            label="Global minimum (total)",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            markeredgecolor="black",
+            markerfacecolor=_MARK_LOCAL_COLOR,
+            markersize=6,
+            label="Local minima (robust)",
+        ),
+    ]
+    fig.legend(handles=leg_el, loc="lower right", fontsize=7, framealpha=0.93)
 
 
 def _save_or_show(path: str | None, suffix: str, fig, out_path: str | None = None) -> None:
@@ -465,7 +708,6 @@ def plot_1d(
 
     ax1.set_xlabel(f"{vary_axis} (μm)")
     ax1.set_ylabel("Potential (V)")
-    ax1.legend()
     ax1.grid(True, alpha=0.3)
     if not fit_labels:
         _main = f"{title_base} — Potentials"
@@ -475,6 +717,7 @@ def plot_1d(
     set_ylim_from_data(ax1, np.concatenate(y_series))
     if mark_potential_min:
         _mark_total_min_1d(ax1, coord_um, V_total, vary_axis)
+    ax1.legend()
     plt.tight_layout()
     if out_path:
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -625,6 +868,8 @@ def plot_bilayer(
                 if mark_potential_min and col == mark_col:
                     _mark_total_min_2d_heatmap(ax, V_tot_layer, cc1_um, cc2_um, "z", "x")
         fig.suptitle(suptitle_full)
+        if mark_potential_min:
+            _add_fig_legend_potential_markers(fig)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -683,6 +928,8 @@ def plot_bilayer(
                 if mark_potential_min and col == mark_col:
                     _mark_total_min_2d_surface(ax, V_tot_layer, cc1_um, cc2_um, "z", "x")
         fig.suptitle(suptitle_full)
+        if mark_potential_min:
+            _add_fig_legend_potential_markers(fig)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -800,6 +1047,8 @@ def plot_2d(
             if mark_potential_min:
                 _mark_total_min_2d_heatmap(ax, V_total_2d, cc1_um, cc2_um, a1, a2)
         fig.suptitle(suptitle_full)
+        if mark_potential_min:
+            _add_fig_legend_potential_markers(fig)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -855,6 +1104,8 @@ def plot_2d(
             if mark_potential_min:
                 _mark_total_min_2d_surface(ax, V_total_2d, cc1_um, cc2_um, a1, a2)
         fig.suptitle(suptitle_full)
+        if mark_potential_min:
+            _add_fig_legend_potential_markers(fig)
         plt.tight_layout()
         if out_path:
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)

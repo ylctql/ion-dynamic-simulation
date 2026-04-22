@@ -100,7 +100,10 @@ def main() -> None:
     parser.add_argument(
         "--mark-potential-min",
         action="store_true",
-        help="在势场图上标出总势（DC+赝势）在当前采样网格上的最小值位置",
+        help=(
+            "在势场图上标出总势（DC+赝势）全局最小值，并用另一颜色标出经平滑/prominence "
+            "抑噪后的其它局部极小（当前采样网格）"
+        ),
     )
     parser.add_argument(
         "--fit",

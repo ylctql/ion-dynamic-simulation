@@ -14,6 +14,7 @@
 - **实时绘图**：基于 matplotlib 的实时可视化
 - **电势场可视化**：独立工具，可绘制静电势、RF 赝势、总电势的 1D 或 2D（热力图/三维曲面）分布
 - **平衡构型求解**：拟合 3D 阱势并最小化总势能（外势 + 库仑）得到离子晶格平衡位置
+- **单帧离子成像（`ImgSimulation`）**：由离子轨迹经高斯照明曝光、PSF 模糊、散粒/读出噪声与可选归一化，生成类 CCD/CMOS 单帧图像；支持 JSON 或 Python API，在启用阱力时与 `main.py` 的场文件与 `Config` 约定一致
 
 ## 环境要求
 
@@ -54,6 +55,71 @@ python build.py
 ```bash
 python main.py --N 50 --time 10 --plot
 ```
+
+## ImgSimulation（单帧传感器图像）
+
+在**一段时间窗**内对离子做 `ionsim` 积分，将离子在传感器平面上的二维位置（µm）映射到像素网格，并按高斯光束权重累积「曝光」，再经高斯 PSF、可选传感器噪声与可选归一化，得到**单张**图像（不是实时轨迹动画）。
+
+### 处理流程
+
+1. **动力学** — 使用与主程序相同的无量纲量与 `FieldConfiguration.constants.Config`（`dt`、`dl` 等）。库仑相互作用始终在 C++ 核里。**外阱力**由 Python 可调用对象提供（`_zero_force` 或通过 `json_dynamics` 调 `main._build_force`），再包装传入 ionsim。
+2. **曝光** — 将无量纲坐标换为 µm，沿轨迹样本对相机网格做光束加权积分（`geometry` → `illumination` → `integrate`）。
+3. **成像** — 像素域高斯 PSF（`psf_sigma_px`），可选噪声（`noise_model`），最后 `normalize_image`。
+
+### 模块说明
+
+| 文件 | 作用 |
+|------|------|
+| `api.py` | 对外入口：`run_ion_image`、`load_ion_image_json`、`run_ion_image_from_json_file`、`render_single_frame`、`run_ion_image_from_parsed` 等 |
+| `pipeline.py` | `render_single_frame` / `render_single_frame_from_parsed`；串联 ionsim → 曝光 → PSF → 噪声 → 归一化 |
+| `json_config.py` | `load_ion_image_json` → 不可变 `IonImageJsonBundle`；路径先相对 JSON 所在目录，再相对仓库根 |
+| `json_dynamics.py` | 解析 `dynamics`（初态 `r0`/`v0`、`charge`/`mass` 等）与 `dynamics.force`（`zero` 与 `trap`），与主流程在 npz / µm / `Parameters` 等规则上对齐 |
+| `types.py` | `CameraParams`、`BeamParams`、`NoiseParams`、`IntegrationParams` |
+| `geometry.py` | 像素视场与物理坐标（µm） |
+| `illumination.py` | 二维高斯光束（1/e² 半径 `w_um`） |
+| `integrate.py` | 沿轨迹累加曝光 |
+| `psf.py` | 像素域高斯 PSF |
+| `noise_model.py` | 散粒 / 读出 / 底电平 |
+| `normalize.py` | 显示用归一化 |
+| `visualize.py` | `show_ion_frame`（matplotlib） |
+| `cli.py` | `python -m ImgSimulation` 参数解析 |
+| `configs/example_ion_image.json` | 示例配置（冒烟 / 模板） |
+
+### JSON 配置要点
+
+`load_ion_image_json` 要求 `version: 1`。路径解析：先相对 JSON 文件目录，再相对仓库根。
+
+- **`paths`** — **`field_config`**（必填）：传给 `init_from_config` 的电压/常数 JSON（与 `main.py --config` 作用相同）。**`field_csv`**：电场格点 CSV（与 `main.py --csv` 相同）。当 **`dynamics.force` 为 `"trap"` 时必填**；为 `"zero"` 时可省略（不设 Python 阱力，库仑仍在 ionsim 中）。
+- **`trap`**（可选） — 传给 `main._build_force` 的光滑参数：`smooth_axes`（如 `"z"` 或 `"none"`）、`smooth_sg` `[窗口, 阶数]`（如 `[11, 3]`），与主模拟对格点势的 Savitzky–Golay 处理一致。
+- **`dynamics`** — 力模型与初态（与 `Interface.parameters.Parameters` / `--init_file` 对齐）：
+  - **`force`**：`"zero"` / `"none"` — 不用 Python 阱力。`"trap"` / `"field"` 等 — 由 `paths.field_csv` + `paths.field_config` 与离子 `charge` 构建阱力。
+  - **初态**（按优先级取第一个匹配）：**`init_file`** / **`init_npz`**，键 `r`（µm，`(N,3)`）与 `v`（m/s）；或 **`r0_um`** + **`v0_m_s`**；或**无量纲** **`r0`** + **`v0`**（格点单位，兼容旧 JSON）；或 **`init_random`** 且给定 **`N`**，以及 `init_center_um` / `init_range_um` 或 `init_range`，可选 `init_seed`、`bilayer` / `bilayer_y0_um`。
+  - **`charge`**、**`mass`**、**`alpha`**、**`isotope`** / **`isotope_type`**：与主程序 `Parameters` 一致（含掺杂展开等）。
+- **`camera`**、**`beam`**、**`noise`**、**`integration`**、**`imaging`**（PSF、归一化模式与分位数）、**`simulation`**（`use_cuda`、`calc_method`、**`use_zero_force`**、`apply_sensor_noise`、`n_step_pre`）、**`display`**。
+
+**`simulation.use_zero_force`：** 该标志传入 **ionsim**。为 `true` 时，积分器**不使用**包装进去的 Python 外阱力（命名与 `main.py` 历史行为一致）。若 JSON 中 **`dynamics.force` 为 `"trap"`** 且希望格点插值阱场驱动离子，请将 **`use_zero_force` 设为 `false`**；纯库仑测试配合 `_zero_force` 时可保持 `true`。
+
+### Python 接口示例
+
+```python
+from pathlib import Path
+from ImgSimulation.api import load_ion_image_json, run_ion_image_from_json_file
+
+img = run_ion_image_from_json_file("ImgSimulation/configs/example_ion_image.json")
+bundle = load_ion_image_json(Path("ImgSimulation/configs/example_ion_image.json"))
+img2 = bundle.call_run_ion_image()
+```
+
+完全由代码组装参数时，使用 `run_ion_image` / `render_single_frame` 传入 `Config`、力函数与 NumPy 初值。若与主程序 CLI 共用同一套解析结果，可用 `Interface.cli.parse_and_build` 再调用 `run_ion_image_from_parsed`。
+
+### 命令行
+
+```bash
+python -m ImgSimulation ImgSimulation/configs/example_ion_image.json --no-show -o out.png
+# 可选：--project-root、--show / --no-show、-o/--output、--no-block
+```
+
+需已编译 **`ionsim`**（`python build.py`）。测试：`pytest tests/test_imgsimulation.py`（若无法导入 ionsim 则跳过）。
 
 ## 电势场可视化
 
@@ -301,6 +367,21 @@ ism-main/
 │   ├── trap_freq.py   # 阱频计算
 │   ├── plots.py       # 势场与阱频扫描绘图
 │   └── cli.py         # 参数解析与主流程
+├── ImgSimulation/     # 单帧类 CCD/CMOS 离子图像模拟
+│   ├── api.py         # run_ion_image、JSON 加载、再导出
+│   ├── pipeline.py    # ionsim → 曝光 → PSF → 噪声
+│   ├── json_config.py # load_ion_image_json、IonImageJsonBundle
+│   ├── json_dynamics.py # JSON 中 dynamics 与阱力解析
+│   ├── types.py       # CameraParams、BeamParams 等
+│   ├── geometry.py    # 视场与坐标映射
+│   ├── illumination.py# 传感器平面高斯光束
+│   ├── integrate.py   # 沿轨迹曝光积分
+│   ├── psf.py         # 高斯 PSF
+│   ├── noise_model.py # 传感器噪声
+│   ├── normalize.py   # 图像归一化
+│   ├── visualize.py   # 显示与保存
+│   ├── cli.py         # python -m ImgSimulation
+│   └── configs/       # example_ion_image.json
 ├── equilibrium/       # 平衡构型求解模块
 │   ├── potential_fit_3d.py  # 3D 势场多项式拟合与梯度
 │   ├── energy.py      # 外势/库仑/总势能（eV）
