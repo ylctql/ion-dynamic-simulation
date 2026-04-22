@@ -15,13 +15,13 @@ class CameraParams:
     pixel_um : float
         Square pixel size (µm).
     l : int
-        Field of view in pixels along x.
+        Field of view in pixels along the **horizontal** image axis (simulation **z**).
     h : int
-        Field of view in pixels along y.
+        Field of view in pixels along the **vertical** image axis (simulation **x**).
     x0_um : float
-        World x of image center (µm), default 0.
+        World coordinate of image center (µm) on the **z** (column) axis, default 0.
     y0_um : float
-        World y of image center (µm), default 0.
+        World coordinate of image center (µm) on the **x** (row) axis, default 0.
     """
 
     pixel_um: float
@@ -40,9 +40,9 @@ class CameraParams:
 @dataclass(frozen=True)
 class BeamParams:
     """
-    Gaussian illumination in the ion plane. Intensity is I at peak (dimensionless, user scale).
-
-    w_um is the 1/e^2 radius of the beam (circular, symmetric).
+    Gaussian illumination in the 2D ion crystal plane. Intensity is I at peak
+    (dimensionless, user scale). Axes are simulation **z** (``xb_um``) and **x** (``yb_um``);
+    *w_um* is the 1/e^2 radius in that plane (circular, symmetric).
     """
 
     w_um: float

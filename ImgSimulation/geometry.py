@@ -1,6 +1,9 @@
 """
 World coordinates (µm) to pixel grid indices for the camera. Output image shape: (h, l).
-x increases with column; y increases with row (suitable for imshow with default origin).
+
+**Ion image convention (ImgSimulation):** the first world coordinate ``x_um`` (columns)
+is simulation **z**; the second ``y_um`` (rows) is simulation **x** (same as Plotter
+``zox``). ``x`` increases with column, ``y`` with row (``imshow`` + ``origin=lower``).
 """
 from __future__ import annotations
 
@@ -18,10 +21,11 @@ def world_um_to_fractional_col_row(
     h: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Map physical (x, y) in µm to fractional (column, row) in [0, l-1] x [0, h-1] frame.
+    Map physical coordinates in µm to fractional (column, row) in [0, l-1] x [0, h-1].
 
-    Column i center: x0 + (i - (l-1)/2) * pixel_um
-    Row j center:    y0 + (j - (h-1)/2) * pixel_um
+    In ImgSimulation, *x_um* is simulation **z** (columns) and *y_um* is simulation **x**
+    (rows). Column i center: x0 + (i - (l-1)/2) * pixel_um; row j center:
+    y0 + (j - (h-1)/2) * pixel_um.
     """
     xc = (x_um - x0_um) / pixel_um + 0.5 * (l - 1)
     yc = (y_um - y0_um) / pixel_um + 0.5 * (h - 1)

@@ -113,8 +113,8 @@ def show_ion_frame(
             aspect="equal",
             extent=extent,
         )
-        ax.set_xlabel("x (µm)")
-        ax.set_ylabel("y (µm)")
+        ax.set_xlabel("z (µm)")
+        ax.set_ylabel("x (µm)")
     else:
         im = ax.imshow(
             arr,
@@ -127,7 +127,15 @@ def show_ion_frame(
 
     ax.set_title(title)
     if show_colorbar:
-        fig.colorbar(im, ax=ax, label="Intensity (a.u.)", fraction=0.046, pad=0.04)
+        cbar = fig.colorbar(
+            im,
+            ax=ax,
+            orientation="horizontal",
+            location="bottom",
+            fraction=0.1,
+            pad=0.15,
+        )
+        cbar.ax.set_xlabel("Intensity (a.u.)", labelpad=6)
 
     if save_path is not None:
         out = Path(save_path)

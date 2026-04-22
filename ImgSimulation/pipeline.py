@@ -35,9 +35,15 @@ from .types import (
 )
 
 
-def _dimless_r_to_xy_um(r: np.ndarray, dl: float) -> np.ndarray:
-    """r: (N,3) dimless -> (N,2) in µm for x,y."""
-    return r[:, 0:2] * float(dl) * 1e6
+def _dimless_r_to_ion_image_plane_um(r: np.ndarray, dl: float) -> np.ndarray:
+    """
+    r: (N,3) dimensionless -> (N,2) in µm on the 2D ion crystal plane.
+
+    Matches Plotter ``zox``: image column (horizontal) = simulation **z** (``r[:,2]``);
+    image row (vertical) = simulation **x** (``r[:,0]``). Simulation **y** is not projected.
+    """
+    s = float(dl) * 1e6
+    return np.column_stack((r[:, 2] * s, r[:, 0] * s))
 
 
 def _run_trajectory(
@@ -161,12 +167,12 @@ def render_single_frame(
     dt_dim = t_total_dim / n_step
     dt_real_s = float(dt_dim * dt_si)
 
-    r_xy_list = []
+    r_plane_list: list[np.ndarray] = []
     for r in r_list:
         r = np.asarray(r, dtype=np.float64)
-        r_xy_list.append(_dimless_r_to_xy_um(r, config.dl))
+        r_plane_list.append(_dimless_r_to_ion_image_plane_um(r, config.dl))
 
-    exposure = integrate_exposure_xy_um(r_xy_list, camera, beam, dt_real_s)
+    exposure = integrate_exposure_xy_um(r_plane_list, camera, beam, dt_real_s)
     blurred = apply_gaussian_psf(exposure, psf_sigma_px)
     if not apply_sensor_noise:
         out = blurred

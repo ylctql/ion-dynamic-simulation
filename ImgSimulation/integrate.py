@@ -23,7 +23,8 @@ def integrate_exposure_xy_um(
     Parameters
     ----------
     r_xy_list : list of ndarray
-        Each array (N, 2) ion positions in µm (x, y). Length = n_step + 1.
+        Each array (N, 2) ion positions in µm on the imaging plane: column axis =
+        simulation **z**, row axis = simulation **x** (``zox``-style). Length = n_step + 1.
     dt_real_s : float
         Duration of one integrator sub-step in seconds (uniform).
     """

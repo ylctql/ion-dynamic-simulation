@@ -10,16 +10,15 @@
     "smooth_sg": [11, 3]
   },
   "dynamics": {
-    "force": "trap",
-    "r0": [[0, 0, 0]],
-    "v0": [[0, 0, 0]],
-    "charge": [1.0],
-    "mass": [1.0]
-  },
+  "force": "trap",
+  "N": 300,
+  "init_center_um": [0.0, 0.0, 0.0],
+  "init_range_um": 10.0
+},
   "camera": {
-    "pixel_um": 0.5,
-    "l": 64,
-    "h": 64,
+    "pixel_um": 0.15,
+    "l": 1024,
+    "h": 256,
     "x0_um": 0.0,
     "y0_um": 0.0
   },
@@ -32,15 +31,15 @@
   "noise": {
     "shot_factor": 1,
     "shot_scale": 1e10,
-    "readout_factor": 1e6,
+    "readout_factor": 1e7,
     "readout_sigma": 1.0,
     "bg_offset": 0.0,
     "seed": 42
   },
   "integration": {
-    "t_start_us": 0.0,
-    "t_cum_us": 20.0,
-    "n_step": 600
+    "t_start_us": 100.0,
+    "t_cum_us": 200.0,
+    "n_step": 20000
   },
   "imaging": {
     "psf_sigma_px": 2.0,
@@ -53,9 +52,9 @@
   "simulation": {
     "use_cuda": false,
     "calc_method": "VV",
-    "use_zero_force": true,
+    "use_zero_force": false,
     "apply_sensor_noise": true,
-    "n_step_pre": null
+    "n_step_pre": 10000
   },
   "display": {
     "show": false,
