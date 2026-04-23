@@ -95,7 +95,7 @@ This module simulates **one** integrated image (not a live trajectory movie): ru
   - **`force`**: `"zero"` / `"none"` — Python trap force disabled. `"trap"` / `"field"` / … — build trap force from `paths.field_csv` + `paths.field_config` and per-ion `charge`.
   - **Initial state** (first matching branch): **`init_file`** or **`init_npz`** with keys `r` (µm, shape `(N,3)`) and `v` (m/s); or **`r0_um`** + **`v0_m_s`**; or legacy **dimensionless** **`r0`** + **`v0`** (grid units); or **`init_random`** with **`N`** plus `init_center_um` / `init_range_um` or `init_range`, optional `init_seed`, optional `bilayer` / `bilayer_y0_um`.
   - **`charge`**, **`mass`**, **`alpha`**, **`isotope`** / **`isotope_type`**: same interpretation as main `Parameters` (including doping) when arrays are expanded.
-- **`camera`**, **`beam`**, **`noise`**, **`integration`**, **`imaging`** (PSF width, `normalize_mode`, percentile controls), **`simulation`** (`use_cuda`, `calc_method`, **`use_zero_force`**, `apply_sensor_noise`, `n_step_pre`), **`display`**.
+- **`camera`**, **`beam`**, **`noise`**, **`integration`** (incl. `n_step_per_us` / `n_step`, optional `n_step_pre`), **`imaging`** (PSF width, `normalize_mode`, percentile controls), **`simulation`** (`use_cuda`, `calc_method`, **`use_zero_force`**, `apply_sensor_noise`), **`display`**.
 
 **`simulation.use_zero_force`:** This flag is passed into **ionsim**. When `true`, the integrator uses **no external trap force from the wrapped Python callable** (historical name shared with `main.py`). For `dynamics.force: "trap"`, set **`use_zero_force` to `false`** so the interpolated field actually drives the ions; keep it `true` for pure Coulomb tests with `_zero_force`.
 

@@ -75,17 +75,36 @@ class NoiseParams:
 
 @dataclass(frozen=True)
 class IntegrationParams:
-    """Time window and number of integrator steps along [t_start, t_start + t_cum]."""
+    """
+    Time window and integrator substeps for the exposure leg ``[t_start, t_start + t_cum]``.
+
+    Step count for the exposure window is set **either** by ``n_step`` (total substeps)
+    **or** ``n_step_per_us`` (substeps per microsecond of ``t_cum_us``), not both.
+
+    When ``t_start_us > 0``, the preliminary leg ``[0, t_start]`` uses the **same**
+    ``n_step_per_us`` as the exposure leg: ``max(32, round(n_step_per_us * t_start_us))``
+    substeps, unless ``n_step_pre`` is set (fixed total substeps for that leg only).
+    If neither ``n_step_per_us`` nor ``n_step_pre`` applies, a dimensionless-time heuristic
+    is used.
+    """
 
     t_start_us: float
     t_cum_us: float
     n_step: int | None = None
+    n_step_per_us: float | None = None
+    n_step_pre: int | None = None
 
     def __post_init__(self) -> None:
         if self.t_cum_us <= 0:
             raise ValueError("t_cum_us must be positive")
         if self.n_step is not None and self.n_step < 1:
             raise ValueError("n_step must be >= 1 if given")
+        if self.n_step_pre is not None and self.n_step_pre < 1:
+            raise ValueError("n_step_pre must be >= 1 if given")
+        if self.n_step_per_us is not None and self.n_step_per_us <= 0:
+            raise ValueError("n_step_per_us must be positive if given")
+        if self.n_step is not None and self.n_step_per_us is not None:
+            raise ValueError("set only one of n_step (total) or n_step_per_us, not both")
 
 
 def default_n_step(t_cum_us: float, dt_si: float) -> int:

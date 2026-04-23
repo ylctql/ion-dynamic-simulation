@@ -32,6 +32,28 @@ def world_um_to_fractional_col_row(
     return np.asarray(xc, dtype=np.float64), np.asarray(yc, dtype=np.float64)
 
 
+def fractional_col_row_to_world_um(
+    col: float | np.ndarray,
+    row: float | np.ndarray,
+    *,
+    x0_um: float,
+    y0_um: float,
+    pixel_um: float,
+    l: int,
+    h: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Inverse of :func:`world_um_to_fractional_col_row`.
+
+    Returns ``(x_um, y_um)`` in µm: horizontal axis / column direction = simulation **z**,
+    vertical / row = simulation **x** (``zox``).
+    """
+    px = float(pixel_um)
+    x_out = (np.asarray(col, dtype=np.float64) - 0.5 * (l - 1)) * px + x0_um
+    y_out = (np.asarray(row, dtype=np.float64) - 0.5 * (h - 1)) * px + y0_um
+    return x_out, y_out
+
+
 def bilinear_splat2d(
     image: np.ndarray,
     col_f: float | np.ndarray,

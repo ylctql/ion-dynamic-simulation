@@ -11,6 +11,7 @@ import numpy as np
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
+from .geometry import fractional_col_row_to_world_um
 from .types import CameraParams
 
 
@@ -60,6 +61,7 @@ def show_ion_frame(
     block: bool = True,
     save_path: str | Path | None = None,
     dpi: float = 120.0,
+    equilibrium_positions_px: np.ndarray | None = None,
 ) -> "Figure":
     """
     Show a single 2D frame in an **interactive** matplotlib window (default).
@@ -80,6 +82,11 @@ def show_ion_frame(
         non-blocking cases.
     save_path : path-like, optional
         If set, also save the figure to this file (e.g. ``.png`` or ``.pdf``).
+    equilibrium_positions_px : ndarray, optional
+        If given with ``camera``, draw markers at time-averaged ion positions.
+        Shape (N, 2) with columns ``[col, row]`` as fractional pixel indices (same
+        convention as :func:`geometry.world_um_to_fractional_col_row`), for an image
+        of shape ``(h, l)``. Plotted by mapping to µm to match the axis ``extent``.
 
     Returns
     -------
@@ -126,6 +133,34 @@ def show_ion_frame(
         ax.set_ylabel("Row index (y)")
 
     ax.set_title(title)
+
+    if camera is not None and equilibrium_positions_px is not None:
+        eq = np.asarray(equilibrium_positions_px, dtype=np.float64)
+        if eq.ndim != 2 or eq.shape[1] != 2:
+            raise ValueError(
+                "equilibrium_positions_px must have shape (N, 2) with columns [col, row] (fractional pixels)"
+            )
+        z_um, x_um = fractional_col_row_to_world_um(
+            eq[:, 0],
+            eq[:, 1],
+            x0_um=float(camera.x0_um),
+            y0_um=float(camera.y0_um),
+            pixel_um=float(camera.pixel_um),
+            l=int(camera.l),
+            h=int(camera.h),
+        )
+        ax.scatter(
+            z_um,
+            x_um,
+            marker="+",
+            s=120,
+            c="cyan",
+            linewidths=1.4,
+            zorder=10,
+            label="Time-averaged position",
+        )
+        ax.legend(loc="upper right", fontsize=8, framealpha=0.85)
+
     if show_colorbar:
         cbar = fig.colorbar(
             im,

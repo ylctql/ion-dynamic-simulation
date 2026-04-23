@@ -9,6 +9,11 @@ Load single-frame simulation parameters from a JSON file (see ``configs/example_
 ``dynamics`` can match :class:`Interface.parameters.Parameters` / ``--init_file``:
 ``N``, ``init_file`` / ``r0_um``+``v0_m_s`` / legacy dimensionless ``r0``+``v0`` / random init; ``charge``, ``mass``, ``alpha``, ``isotope`` / ``isotope_type``, ``bilayer``.
 
+``integration`` supports ``t_start_us``, ``t_cum_us``, and step control: either ``n_step_per_us``
+(substeps per µs of wall time, recommended) or legacy ``n_step`` (total substeps for the exposure
+window). Optional ``n_step_pre`` (total substeps for ``[0, t_start]``) overrides the pre-leg count;
+otherwise the pre-leg also uses ``n_step_per_us`` (see :class:`IntegrationParams`).
+
 Paths may be **relative to the JSON file** or to the project root (second try).
 """
 from __future__ import annotations
@@ -78,7 +83,6 @@ class IonImageJsonBundle:
     calc_method: Literal["RK4", "VV"]
     use_zero_force: bool
     apply_sensor_noise: bool
-    n_step_pre: int | None
     show: bool
     show_block: bool
     figure_path: Path | None
@@ -110,7 +114,6 @@ class IonImageJsonBundle:
             use_cuda=self.use_cuda,
             calc_method=self.calc_method,
             use_zero_force=self.use_zero_force,
-            n_step_pre=self.n_step_pre,
             apply_sensor_noise=self.apply_sensor_noise,
             show=self.show,
             show_block=self.show_block,
@@ -229,10 +232,22 @@ def load_ion_image_json(
     )
 
     it = root.get("integration") or {}
+
+    n_step = None if "n_step" not in it or it["n_step"] is None else int(it["n_step"])
+    n_step_per_us: float | None
+    if "n_step_per_us" not in it or it["n_step_per_us"] is None:
+        n_step_per_us = None
+    else:
+        n_step_per_us = _as_float(it["n_step_per_us"], "integration.n_step_per_us")
+
+    n_step_pre = None if "n_step_pre" not in it or it["n_step_pre"] is None else int(it["n_step_pre"])
+
     integ = IntegrationParams(
         t_start_us=_as_float(it["t_start_us"], "integration.t_start_us"),
         t_cum_us=_as_float(it["t_cum_us"], "integration.t_cum_us"),
-        n_step=None if "n_step" not in it or it["n_step"] is None else int(it["n_step"]),
+        n_step=n_step,
+        n_step_per_us=n_step_per_us,
+        n_step_pre=n_step_pre,
     )
 
     im = root.get("imaging") or {}
@@ -268,8 +283,6 @@ def load_ion_image_json(
         raise ValueError('simulation.calc_method must be "RK4" or "VV"')
     use_zero_force = bool(sim.get("use_zero_force", False))
     apply_sensor_noise = bool(sim.get("apply_sensor_noise", True))
-    n_step_pre = sim.get("n_step_pre", None)
-    n_step_pre = None if n_step_pre is None else int(n_step_pre)
 
     disp = root.get("display") or {}
     show = bool(disp.get("show", False))
@@ -300,7 +313,6 @@ def load_ion_image_json(
         calc_method=calc_method,  # type: ignore[arg-type]
         use_zero_force=use_zero_force,
         apply_sensor_noise=apply_sensor_noise,
-        n_step_pre=n_step_pre,
         show=show,
         show_block=show_block,
         figure_path=figure_path,

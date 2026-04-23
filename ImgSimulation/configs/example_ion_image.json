@@ -11,19 +11,19 @@
   },
   "dynamics": {
   "force": "trap",
-  "N": 300,
+  "N": 1000,
   "init_center_um": [0.0, 0.0, 0.0],
   "init_range_um": 10.0
 },
   "camera": {
-    "pixel_um": 0.15,
+    "pixel_um": 0.5,
     "l": 1024,
     "h": 256,
     "x0_um": 0.0,
     "y0_um": 0.0
   },
   "beam": {
-    "w_um": 50.0,
+    "w_um": 100.0,
     "xb_um": 0.0,
     "yb_um": 0.0,
     "I": 10000
@@ -37,9 +37,9 @@
     "seed": 42
   },
   "integration": {
-    "t_start_us": 100.0,
-    "t_cum_us": 200.0,
-    "n_step": 20000
+    "t_start_us": 300.0,
+    "t_cum_us": 100.0,
+    "n_step_per_us": 100
   },
   "imaging": {
     "psf_sigma_px": 2.0,
@@ -51,10 +51,9 @@
   },
   "simulation": {
     "use_cuda": false,
-    "calc_method": "VV",
+    "calc_method": "RK4",
     "use_zero_force": false,
-    "apply_sensor_noise": true,
-    "n_step_pre": 10000
+    "apply_sensor_noise": true
   },
   "display": {
     "show": false,

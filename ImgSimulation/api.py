@@ -106,7 +106,6 @@ def run_ion_image(
     use_cuda: bool = False,
     calc_method: Literal["RK4", "VV"] = "VV",
     use_zero_force: bool = False,
-    n_step_pre: int | None = None,
     apply_sensor_noise: bool = True,
     show: bool = False,
     show_block: bool = True,
@@ -124,30 +123,61 @@ def run_ion_image(
 
     This is a thin wrapper around :func:`render_single_frame` plus
     :func:`show_ion_frame` when ``show`` is True and/or ``figure_path`` is set.
+
+    When ``show`` is True, the figure includes markers at each ion's time-averaged
+    position (ground truth in **fractional pixel** ``[col, row]``, mapped to µm on the
+    axes). Pure ``figure_path`` saves without those markers (same array as returned).
     """
-    img = render_single_frame(
-        config,
-        force,
-        r0,
-        v0,
-        charge,
-        mass,
-        camera,
-        beam,
-        noise,
-        integ,
-        psf_sigma_px=psf_sigma_px,
-        use_cuda=use_cuda,
-        calc_method=calc_method,
-        use_zero_force=use_zero_force,
-        n_step_pre=n_step_pre,
-        apply_sensor_noise=apply_sensor_noise,
-        normalize_mode=normalize_mode,
-        normalize_eps=normalize_eps,
-        normalize_q_low=normalize_q_low,
-        normalize_q_high=normalize_q_high,
-        normalize_q_scale=normalize_q_scale,
-    )
+    mean_plane_px: np.ndarray | None
+    if show:
+        img, mean_plane_px = render_single_frame(
+            config,
+            force,
+            r0,
+            v0,
+            charge,
+            mass,
+            camera,
+            beam,
+            noise,
+            integ,
+            psf_sigma_px=psf_sigma_px,
+            use_cuda=use_cuda,
+            calc_method=calc_method,
+            use_zero_force=use_zero_force,
+            apply_sensor_noise=apply_sensor_noise,
+            normalize_mode=normalize_mode,
+            normalize_eps=normalize_eps,
+            normalize_q_low=normalize_q_low,
+            normalize_q_high=normalize_q_high,
+            normalize_q_scale=normalize_q_scale,
+            return_mean_plane_px=True,
+        )
+    else:
+        img = render_single_frame(
+            config,
+            force,
+            r0,
+            v0,
+            charge,
+            mass,
+            camera,
+            beam,
+            noise,
+            integ,
+            psf_sigma_px=psf_sigma_px,
+            use_cuda=use_cuda,
+            calc_method=calc_method,
+            use_zero_force=use_zero_force,
+            apply_sensor_noise=apply_sensor_noise,
+            normalize_mode=normalize_mode,
+            normalize_eps=normalize_eps,
+            normalize_q_low=normalize_q_low,
+            normalize_q_high=normalize_q_high,
+            normalize_q_scale=normalize_q_scale,
+            return_mean_plane_px=False,
+        )
+        mean_plane_px = None
     if show or figure_path is not None:
         show_ion_frame(
             img,
@@ -155,6 +185,7 @@ def run_ion_image(
             title=show_title,
             save_path=figure_path,
             block=bool(show) and show_block,
+            equilibrium_positions_px=mean_plane_px if show else None,
         )
     return img
 
@@ -168,7 +199,6 @@ def run_ion_image_from_parsed(
     integ: IntegrationParams,
     *,
     psf_sigma_px: float,
-    n_step_pre: int | None = None,
     use_zero_force: bool = False,
     apply_sensor_noise: bool = True,
     show: bool = False,
@@ -186,23 +216,44 @@ def run_ion_image_from_parsed(
     (:class:`~Interface.cli.ParsedRun`) to build the trap force and initial state, same
     as :func:`render_single_frame_from_parsed`.
     """
-    img = render_single_frame_from_parsed(
-        project_root,
-        parsed,
-        camera,
-        beam,
-        noise,
-        integ,
-        psf_sigma_px=psf_sigma_px,
-        n_step_pre=n_step_pre,
-        use_zero_force=use_zero_force,
-        apply_sensor_noise=apply_sensor_noise,
-        normalize_mode=normalize_mode,
-        normalize_eps=normalize_eps,
-        normalize_q_low=normalize_q_low,
-        normalize_q_high=normalize_q_high,
-        normalize_q_scale=normalize_q_scale,
-    )
+    mean_plane_px: np.ndarray | None
+    if show:
+        img, mean_plane_px = render_single_frame_from_parsed(
+            project_root,
+            parsed,
+            camera,
+            beam,
+            noise,
+            integ,
+            psf_sigma_px=psf_sigma_px,
+            use_zero_force=use_zero_force,
+            apply_sensor_noise=apply_sensor_noise,
+            normalize_mode=normalize_mode,
+            normalize_eps=normalize_eps,
+            normalize_q_low=normalize_q_low,
+            normalize_q_high=normalize_q_high,
+            normalize_q_scale=normalize_q_scale,
+            return_mean_plane_px=True,
+        )
+    else:
+        img = render_single_frame_from_parsed(
+            project_root,
+            parsed,
+            camera,
+            beam,
+            noise,
+            integ,
+            psf_sigma_px=psf_sigma_px,
+            use_zero_force=use_zero_force,
+            apply_sensor_noise=apply_sensor_noise,
+            normalize_mode=normalize_mode,
+            normalize_eps=normalize_eps,
+            normalize_q_low=normalize_q_low,
+            normalize_q_high=normalize_q_high,
+            normalize_q_scale=normalize_q_scale,
+            return_mean_plane_px=False,
+        )
+        mean_plane_px = None
     if show or figure_path is not None:
         show_ion_frame(
             img,
@@ -210,6 +261,7 @@ def run_ion_image_from_parsed(
             title=show_title,
             save_path=figure_path,
             block=bool(show) and show_block,
+            equilibrium_positions_px=mean_plane_px if show else None,
         )
     return img
 

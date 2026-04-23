@@ -95,7 +95,7 @@ python main.py --N 50 --time 10 --plot
   - **`force`**：`"zero"` / `"none"` — 不用 Python 阱力。`"trap"` / `"field"` 等 — 由 `paths.field_csv` + `paths.field_config` 与离子 `charge` 构建阱力。
   - **初态**（按优先级取第一个匹配）：**`init_file`** / **`init_npz`**，键 `r`（µm，`(N,3)`）与 `v`（m/s）；或 **`r0_um`** + **`v0_m_s`**；或**无量纲** **`r0`** + **`v0`**（格点单位，兼容旧 JSON）；或 **`init_random`** 且给定 **`N`**，以及 `init_center_um` / `init_range_um` 或 `init_range`，可选 `init_seed`、`bilayer` / `bilayer_y0_um`。
   - **`charge`**、**`mass`**、**`alpha`**、**`isotope`** / **`isotope_type`**：与主程序 `Parameters` 一致（含掺杂展开等）。
-- **`camera`**、**`beam`**、**`noise`**、**`integration`**、**`imaging`**（PSF、归一化模式与分位数）、**`simulation`**（`use_cuda`、`calc_method`、**`use_zero_force`**、`apply_sensor_noise`、`n_step_pre`）、**`display`**。
+- **`camera`**、**`beam`**、**`noise`**、**`integration`**（含 `n_step_per_us` / `n_step`、可选 `n_step_pre`）、**`imaging`**（PSF、归一化模式与分位数）、**`simulation`**（`use_cuda`、`calc_method`、**`use_zero_force`**、`apply_sensor_noise`）、**`display`**。
 
 **`simulation.use_zero_force`：** 该标志传入 **ionsim**。为 `true` 时，积分器**不使用**包装进去的 Python 外阱力（命名与 `main.py` 历史行为一致）。若 JSON 中 **`dynamics.force` 为 `"trap"`** 且希望格点插值阱场驱动离子，请将 **`use_zero_force` 设为 `false`**；纯库仑测试配合 `_zero_force` 时可保持 `true`。
 

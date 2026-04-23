@@ -22,6 +22,7 @@ from ComputeKernel.backend import (
     get_actual_device,
     ionsim_calculate_trajectory,
 )
+from .geometry import world_um_to_fractional_col_row
 from .integrate import integrate_exposure_xy_um
 from .normalize import NormalizeMode, normalize_image
 from .noise_model import add_noise
@@ -95,14 +96,14 @@ def render_single_frame(
     use_cuda: bool = False,
     calc_method: Literal["RK4", "VV"] = "VV",
     use_zero_force: bool = False,
-    n_step_pre: int | None = None,
     apply_sensor_noise: bool = True,
     normalize_mode: NormalizeMode = "none",
     normalize_eps: float = 1e-12,
     normalize_q_low: float = 2.0,
     normalize_q_high: float = 98.0,
     normalize_q_scale: float = 99.0,
-) -> np.ndarray:
+    return_mean_plane_px: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
     Simulate one CCD/CMOS-style image (shape (h, l)).
 
@@ -116,8 +117,6 @@ def render_single_frame(
         Provides ``dt`` (s) and ``dl`` (m) for time/length conversion.
     psf_sigma_px : float
         Gaussian PSF standard deviation in **pixels** (x and y).
-    n_step_pre : int, optional
-        Steps for the [0, t_start] leg when ``t_start_us > 0``. Default heuristic.
     apply_sensor_noise : bool, optional
         If False, return the blurred exposure map (float) without Poisson/readout/background
         (useful for unit tests; physical pipelines keep True).
@@ -131,13 +130,23 @@ def render_single_frame(
         Percentiles (for ``minmax``) used as robust bounds; see :func:`.normalize.normalize_image`.
     normalize_q_scale : float, optional
         Percentile divisor (for ``max`` mode).
+    return_mean_plane_px : bool, optional
+        If True, return ``(image, mean_plane_px)`` where ``mean_plane_px`` is (N, 2) with
+        columns ``[col, row]`` as **fractional pixel indices** (subpixel), consistent
+        with :func:`geometry.world_um_to_fractional_col_row` and image shape ``(h, l)``
+        (column along simulation **z**, row along simulation **x**). The mean is over
+        all trajectory samples in the **exposure** window. Default False returns only
+        ``image``.
     """
     dt_si = config.dt
     t_start_dim = integ.t_start_us * 1e-6 / dt_si
     t_cum_dim = integ.t_cum_us * 1e-6 / dt_si
     t_end_leg2 = t_start_dim + t_cum_dim
-    n_step = integ.n_step if integ.n_step is not None else default_n_step(integ.t_cum_us, dt_si)
-    n_step = max(1, n_step)
+    if integ.n_step_per_us is not None:
+        n_step = max(1, int(round(integ.n_step_per_us * integ.t_cum_us)))
+    else:
+        n_step = integ.n_step if integ.n_step is not None else default_n_step(integ.t_cum_us, dt_si)
+        n_step = max(1, n_step)
 
     if t_start_dim < 0:
         raise ValueError("t_start must be non-negative in simulation time")
@@ -150,11 +159,15 @@ def render_single_frame(
             0.0, t_end_leg2, n_step, force, use_cuda, calc_method, use_zero_force
         )
     else:
-        if n_step_pre is None:
-            n_step_pre = max(32, int(np.ceil(32.0 * max(t_start_dim, 1e-9))))
+        if integ.n_step_pre is not None:
+            n_step_pre_leg = max(1, int(integ.n_step_pre))
+        elif integ.n_step_per_us is not None:
+            n_step_pre_leg = max(32, int(round(integ.n_step_per_us * integ.t_start_us)))
+        else:
+            n_step_pre_leg = max(32, int(np.ceil(32.0 * max(t_start_dim, 1e-9))))
         r_list, v_list = _run_trajectory(
             r0, v0, charge, mass,
-            0.0, t_start_dim, n_step_pre, force, use_cuda, calc_method, use_zero_force
+            0.0, t_start_dim, n_step_pre_leg, force, use_cuda, calc_method, use_zero_force
         )
         r0_b = np.asarray(r_list[-1], dtype=np.float64, order="F")
         v0_b = np.asarray(v_list[-1], dtype=np.float64, order="F")
@@ -168,9 +181,28 @@ def render_single_frame(
     dt_real_s = float(dt_dim * dt_si)
 
     r_plane_list: list[np.ndarray] = []
-    for r in r_list:
-        r = np.asarray(r, dtype=np.float64)
-        r_plane_list.append(_dimless_r_to_ion_image_plane_um(r, config.dl))
+    if return_mean_plane_px:
+        r_stack = np.stack([np.asarray(r, dtype=np.float64) for r in r_list], axis=0)
+        r_mean_dimless = np.mean(r_stack, axis=0)
+        mean_plane_um = _dimless_r_to_ion_image_plane_um(r_mean_dimless, config.dl)
+        col, row = world_um_to_fractional_col_row(
+            mean_plane_um[:, 0],
+            mean_plane_um[:, 1],
+            x0_um=camera.x0_um,
+            y0_um=camera.y0_um,
+            pixel_um=camera.pixel_um,
+            l=camera.l,
+            h=camera.h,
+        )
+        mean_plane_px = np.column_stack((col, row))
+        for ti in range(r_stack.shape[0]):
+            r_plane_list.append(
+                _dimless_r_to_ion_image_plane_um(r_stack[ti], config.dl)
+            )
+    else:
+        for r in r_list:
+            r = np.asarray(r, dtype=np.float64)
+            r_plane_list.append(_dimless_r_to_ion_image_plane_um(r, config.dl))
 
     exposure = integrate_exposure_xy_um(r_plane_list, camera, beam, dt_real_s)
     blurred = apply_gaussian_psf(exposure, psf_sigma_px)
@@ -178,7 +210,7 @@ def render_single_frame(
         out = blurred
     else:
         out = add_noise(blurred, noise)
-    return normalize_image(
+    img = normalize_image(
         out,
         normalize_mode,
         eps=normalize_eps,
@@ -186,6 +218,9 @@ def render_single_frame(
         q_high=normalize_q_high,
         q_scale=normalize_q_scale,
     )
+    if return_mean_plane_px:
+        return img, mean_plane_px
+    return img
 
 
 def _initial_rv_from_parsed(parsed: "ParsedRun", cfg: Config) -> tuple[np.ndarray, np.ndarray]:
@@ -224,7 +259,6 @@ def render_single_frame_from_parsed(
     integ: IntegrationParams,
     *,
     psf_sigma_px: float,
-    n_step_pre: int | None = None,
     use_zero_force: bool = False,
     apply_sensor_noise: bool = True,
     normalize_mode: NormalizeMode = "none",
@@ -232,7 +266,8 @@ def render_single_frame_from_parsed(
     normalize_q_low: float = 2.0,
     normalize_q_high: float = 98.0,
     normalize_q_scale: float = 99.0,
-) -> np.ndarray:
+    return_mean_plane_px: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
     High-level entry: build ``force`` like ``main`` and run a single image.
 
@@ -271,11 +306,11 @@ def render_single_frame_from_parsed(
             Literal["RK4", "VV"], parsed.params.calc_method
         ),
         use_zero_force=use_zero_force,
-        n_step_pre=n_step_pre,
         apply_sensor_noise=apply_sensor_noise,
         normalize_mode=normalize_mode,
         normalize_eps=normalize_eps,
         normalize_q_low=normalize_q_low,
         normalize_q_high=normalize_q_high,
         normalize_q_scale=normalize_q_scale,
+        return_mean_plane_px=return_mean_plane_px,
     )
