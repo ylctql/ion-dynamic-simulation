@@ -5,6 +5,8 @@ Load single-frame simulation parameters from a JSON file (see ``configs/example_
 * ``paths.field_csv`` — electric field grid CSV (same as main ``--csv``). **Required** when
   ``dynamics.force`` is ``"trap"``; optional for ``"zero"`` (Python trap force is then zero, Coulomb only in ``ionsim``).
 * ``trap`` — optional: ``smooth_axes``, ``smooth_sg`` for ``main._build_force`` (same as main simulation).
+* ``simulation.log_interval_sim_us`` — optional: print progress about every that many
+  **simulation** µs while integrating the trajectory (``null`` or omit to turn off).
 
 ``dynamics`` can match :class:`Interface.parameters.Parameters` / ``--init_file``:
 ``N``, ``init_file`` / ``r0_um``+``v0_m_s`` / legacy dimensionless ``r0``+``v0`` / random init; ``charge``, ``mass``, ``alpha``, ``isotope`` / ``isotope_type``, ``bilayer``.
@@ -94,6 +96,7 @@ class IonImageJsonBundle:
     normalize_q_low: float
     normalize_q_high: float
     normalize_q_scale: float
+    log_interval_sim_us: float | None = None
 
     def call_run_ion_image(self) -> np.ndarray:
         from .api import run_ion_image
@@ -124,6 +127,7 @@ class IonImageJsonBundle:
             normalize_q_low=self.normalize_q_low,
             normalize_q_high=self.normalize_q_high,
             normalize_q_scale=self.normalize_q_scale,
+            log_interval_sim_us=self.log_interval_sim_us,
         )
 
 
@@ -283,6 +287,15 @@ def load_ion_image_json(
         raise ValueError('simulation.calc_method must be "RK4" or "VV"')
     use_zero_force = bool(sim.get("use_zero_force", False))
     apply_sensor_noise = bool(sim.get("apply_sensor_noise", True))
+    if "log_interval_sim_us" in sim and sim["log_interval_sim_us"] is not None:
+        log_interval_sim_us: float | None = _as_float(
+            sim["log_interval_sim_us"],
+            "simulation.log_interval_sim_us",
+        )
+        if log_interval_sim_us < 0.0:
+            raise ValueError("simulation.log_interval_sim_us must be non-negative (or null)")
+    else:
+        log_interval_sim_us = None
 
     disp = root.get("display") or {}
     show = bool(disp.get("show", False))
@@ -324,6 +337,7 @@ def load_ion_image_json(
         normalize_q_low=normalize_q_low,
         normalize_q_high=normalize_q_high,
         normalize_q_scale=normalize_q_scale,
+        log_interval_sim_us=log_interval_sim_us,
     )
 
 

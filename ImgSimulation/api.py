@@ -116,6 +116,7 @@ def run_ion_image(
     normalize_q_low: float = 2.0,
     normalize_q_high: float = 98.0,
     normalize_q_scale: float = 99.0,
+    log_interval_sim_us: float | None = None,
 ) -> np.ndarray:
     """
     Run the full single-frame pipeline (dynamics → exposure → PSF → optional noise) and
@@ -152,6 +153,7 @@ def run_ion_image(
             normalize_q_high=normalize_q_high,
             normalize_q_scale=normalize_q_scale,
             return_mean_plane_px=True,
+            log_interval_sim_us=log_interval_sim_us,
         )
     else:
         img = render_single_frame(
@@ -176,6 +178,7 @@ def run_ion_image(
             normalize_q_high=normalize_q_high,
             normalize_q_scale=normalize_q_scale,
             return_mean_plane_px=False,
+            log_interval_sim_us=log_interval_sim_us,
         )
         mean_plane_px = None
     if show or figure_path is not None:
@@ -210,6 +213,7 @@ def run_ion_image_from_parsed(
     normalize_q_low: float = 2.0,
     normalize_q_high: float = 98.0,
     normalize_q_scale: float = 99.0,
+    log_interval_sim_us: float | None = None,
 ) -> np.ndarray:
     """
     Like :func:`run_ion_image` but uses ``Interface.cli.parse_and_build`` output
@@ -234,6 +238,7 @@ def run_ion_image_from_parsed(
             normalize_q_high=normalize_q_high,
             normalize_q_scale=normalize_q_scale,
             return_mean_plane_px=True,
+            log_interval_sim_us=log_interval_sim_us,
         )
     else:
         img = render_single_frame_from_parsed(
@@ -252,6 +257,7 @@ def run_ion_image_from_parsed(
             normalize_q_high=normalize_q_high,
             normalize_q_scale=normalize_q_scale,
             return_mean_plane_px=False,
+            log_interval_sim_us=log_interval_sim_us,
         )
         mean_plane_px = None
     if show or figure_path is not None:

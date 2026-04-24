@@ -4,6 +4,8 @@ End-to-end single frame: dynamics → exposure map → PSF → noise.
 from __future__ import annotations
 
 import importlib.util
+import math
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -59,7 +61,7 @@ def _run_trajectory(
     use_cuda: bool,
     calc_method: Literal["RK4", "VV"],
     use_zero_force: bool,
-):
+) -> tuple[list, list]:
     _root = Path(__file__).resolve().parent.parent
     setup_path.ensure_build_in_path(_root)
 
@@ -77,6 +79,187 @@ def _run_trajectory(
         use_cuda=use_cuda,
         calc_method=calc_method,
         use_zero_force=use_zero_force,
+    )
+
+
+def _distribute_chunk_steps(n_step: int, span_fracs: list[float]) -> list[int]:
+    """
+    Distribute ``n_step`` over chunks: each ``span_fracs`` (sum 1) gets at least 1 when
+    ``n_step`` ≥ number of chunks; extra steps go to the largest target shares.
+    """
+    s = float(sum(span_fracs))
+    if s <= 0.0 or not np.isfinite(s):
+        raise ValueError("invalid span_fracs for step distribution")
+    n_step = max(1, int(n_step))
+    n_chunks = len(span_fracs)
+    if n_chunks == 1:
+        return [n_step]
+    w = [x / s for x in span_fracs]
+    if n_step < n_chunks:
+        raise ValueError("n_step must be >= number of time segments")
+    counts = [1] * n_chunks
+    extra = n_step - n_chunks
+    if extra == 0:
+        return counts
+    targets = [n_step * w[i] for i in range(n_chunks)]
+    # Greedy: give each extra to the index with the largest (targets[j] - counts[j])
+    for _ in range(extra):
+        j = int(
+            np.argmax(
+                [targets[i] - counts[i] for i in range(n_chunks)]
+            )
+        )
+        counts[j] += 1
+    if int(sum(counts)) != n_step:
+        raise RuntimeError("internal: step apportioning mismatch")
+    return counts
+
+
+def _run_trajectory_with_progress(
+    r0: np.ndarray,
+    v0: np.ndarray,
+    charge: np.ndarray,
+    mass: np.ndarray,
+    t_start: float,
+    t_end: float,
+    n_step: int,
+    force: Callable[[np.ndarray, np.ndarray, float], np.ndarray],
+    use_cuda: bool,
+    calc_method: Literal["RK4", "VV"],
+    use_zero_force: bool,
+    *,
+    dt_si: float,
+    log_interval_sim_us: float,
+    leg_label: str,
+) -> tuple[list, list]:
+    """
+    Like :func:`_run_trajectory`, but print progress after each log_interval_sim_us of
+    physical simulation time (or fewer, larger segments if n_step is too small).
+    """
+    total_d = float(t_end) - float(t_start)
+    if total_d <= 0.0:
+        raise ValueError("trajectory: need time_end > time_start")
+    total_us = total_d * float(dt_si) * 1e6
+    log_us = max(float(log_interval_sim_us), 1e-9)
+    n_tick = max(1, int(math.ceil(total_us / log_us)))
+    n_seg = min(n_tick, max(1, n_step))
+    t_wall_leg0 = time.perf_counter()
+    if n_seg == 1 or total_us <= 0.0:
+        r_list, v_list = _run_trajectory(
+            r0,
+            v0,
+            charge,
+            mass,
+            t_start,
+            t_end,
+            n_step,
+            force,
+            use_cuda,
+            calc_method,
+            use_zero_force,
+        )
+        t_phys_us = float(t_end) * float(dt_si) * 1e6
+        wall_s = time.perf_counter() - t_wall_leg0
+        print(
+            f"[ImgSimulation] {leg_label} reached simulation time {t_phys_us:.3f} µs "
+            f"(wall: {wall_s:.3f} s for this leg)",
+            flush=True,
+        )
+        return r_list, v_list
+
+    span_fracs: list[float] = [1.0 / n_seg] * n_seg
+    step_counts = _distribute_chunk_steps(n_step, span_fracs)
+    t_lo = t_start
+    r_list: list = []
+    v_list: list = []
+    for i, n_leg in enumerate(step_counts):
+        t_hi = t_start + total_d * (i + 1) / n_seg
+        is_last = i == n_seg - 1
+        if is_last:
+            t_hi = t_end
+        t_wall_seg0 = time.perf_counter()
+        r_part, v_part = _run_trajectory(
+            r0,
+            v0,
+            charge,
+            mass,
+            t_lo,
+            t_hi,
+            n_leg,
+            force,
+            use_cuda,
+            calc_method,
+            use_zero_force,
+        )
+        wall_segment_s = time.perf_counter() - t_wall_seg0
+        if not r_part or not v_part:
+            raise RuntimeError("ionsim returned empty trajectory segment")
+        if not r_list:
+            r_list.extend(r_part)
+            v_list.extend(v_part)
+        else:
+            r_list.extend(r_part[1:])
+            v_list.extend(v_part[1:])
+        t_phys_us = float(t_hi) * float(dt_si) * 1e6
+        wall_leg_s = time.perf_counter() - t_wall_leg0
+        print(
+            f"[ImgSimulation] {leg_label} reached simulation time {t_phys_us:.3f} µs "
+            f"({i + 1}/{n_seg} segments, {n_leg} steps in this segment); "
+            f"wall: segment {wall_segment_s:.3f} s, leg cumulative {wall_leg_s:.3f} s",
+            flush=True,
+        )
+        r0 = np.asarray(r_part[-1], dtype=np.float64, order="F")
+        v0 = np.asarray(v_part[-1], dtype=np.float64, order="F")
+        t_lo = t_hi
+    return r_list, v_list
+
+
+def _integrate_leg(
+    r0: np.ndarray,
+    v0: np.ndarray,
+    charge: np.ndarray,
+    mass: np.ndarray,
+    t_start: float,
+    t_end: float,
+    n_step: int,
+    force: Callable[[np.ndarray, np.ndarray, float], np.ndarray],
+    use_cuda: bool,
+    calc_method: Literal["RK4", "VV"],
+    use_zero_force: bool,
+    *,
+    dt_si: float,
+    log_interval_sim_us: float | None,
+    leg_label: str,
+) -> tuple[list, list]:
+    if log_interval_sim_us is not None and float(log_interval_sim_us) > 0.0:
+        return _run_trajectory_with_progress(
+            r0,
+            v0,
+            charge,
+            mass,
+            t_start,
+            t_end,
+            n_step,
+            force,
+            use_cuda,
+            calc_method,
+            use_zero_force,
+            dt_si=dt_si,
+            log_interval_sim_us=float(log_interval_sim_us),
+            leg_label=leg_label,
+        )
+    return _run_trajectory(
+        r0,
+        v0,
+        charge,
+        mass,
+        t_start,
+        t_end,
+        n_step,
+        force,
+        use_cuda,
+        calc_method,
+        use_zero_force,
     )
 
 
@@ -103,6 +286,7 @@ def render_single_frame(
     normalize_q_high: float = 98.0,
     normalize_q_scale: float = 99.0,
     return_mean_plane_px: bool = False,
+    log_interval_sim_us: float | None = None,
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
     Simulate one CCD/CMOS-style image (shape (h, l)).
@@ -137,6 +321,12 @@ def render_single_frame(
         (column along simulation **z**, row along simulation **x**). The mean is over
         all trajectory samples in the **exposure** window. Default False returns only
         ``image``.
+    log_interval_sim_us : float, optional
+        If set to a positive value, print progress to the terminal as each time segment
+        completes, at roughly this many **simulation** microseconds of physics time
+        per message (or fewer messages if ``n_step`` is too small to split that fine).
+        Each line also includes **wall-clock** time (per segment and cumulative for the
+        current dynamics leg).
     """
     dt_si = config.dt
     t_start_dim = integ.t_start_us * 1e-6 / dt_si
@@ -154,9 +344,21 @@ def render_single_frame(
         raise ValueError("t_cum must lead to a positive duration in dimless time")
 
     if t_start_dim <= 0.0:
-        r_list, v_list = _run_trajectory(
-            r0, v0, charge, mass,
-            0.0, t_end_leg2, n_step, force, use_cuda, calc_method, use_zero_force
+        r_list, v_list = _integrate_leg(
+            r0,
+            v0,
+            charge,
+            mass,
+            0.0,
+            t_end_leg2,
+            n_step,
+            force,
+            use_cuda,
+            calc_method,
+            use_zero_force,
+            dt_si=float(dt_si),
+            log_interval_sim_us=log_interval_sim_us,
+            leg_label="dynamics (exposure window)",
         )
     else:
         if integ.n_step_pre is not None:
@@ -165,15 +367,39 @@ def render_single_frame(
             n_step_pre_leg = max(32, int(round(integ.n_step_per_us * integ.t_start_us)))
         else:
             n_step_pre_leg = max(32, int(np.ceil(32.0 * max(t_start_dim, 1e-9))))
-        r_list, v_list = _run_trajectory(
-            r0, v0, charge, mass,
-            0.0, t_start_dim, n_step_pre_leg, force, use_cuda, calc_method, use_zero_force
+        r_list, v_list = _integrate_leg(
+            r0,
+            v0,
+            charge,
+            mass,
+            0.0,
+            t_start_dim,
+            n_step_pre_leg,
+            force,
+            use_cuda,
+            calc_method,
+            use_zero_force,
+            dt_si=float(dt_si),
+            log_interval_sim_us=log_interval_sim_us,
+            leg_label="dynamics (pre, 0 → t_start)",
         )
         r0_b = np.asarray(r_list[-1], dtype=np.float64, order="F")
         v0_b = np.asarray(v_list[-1], dtype=np.float64, order="F")
-        r_list, v_list = _run_trajectory(
-            r0_b, v0_b, charge, mass,
-            t_start_dim, t_end_leg2, n_step, force, use_cuda, calc_method, use_zero_force
+        r_list, v_list = _integrate_leg(
+            r0_b,
+            v0_b,
+            charge,
+            mass,
+            t_start_dim,
+            t_end_leg2,
+            n_step,
+            force,
+            use_cuda,
+            calc_method,
+            use_zero_force,
+            dt_si=float(dt_si),
+            log_interval_sim_us=log_interval_sim_us,
+            leg_label="dynamics (exposure, t_start → t_start+t_cum)",
         )
 
     t_total_dim = t_cum_dim
@@ -267,6 +493,7 @@ def render_single_frame_from_parsed(
     normalize_q_high: float = 98.0,
     normalize_q_scale: float = 99.0,
     return_mean_plane_px: bool = False,
+    log_interval_sim_us: float | None = None,
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
     High-level entry: build ``force`` like ``main`` and run a single image.
@@ -313,4 +540,5 @@ def render_single_frame_from_parsed(
         normalize_q_high=normalize_q_high,
         normalize_q_scale=normalize_q_scale,
         return_mean_plane_px=return_mean_plane_px,
+        log_interval_sim_us=log_interval_sim_us,
     )
