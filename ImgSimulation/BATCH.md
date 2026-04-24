@@ -61,6 +61,23 @@ python -m ImgSimulation path/to/dynamics.json path/to/imaging.json --export-plan
 
 相对路径相对于 **`ImgSimulation` 包目录**（与 `api.py` 同级的 `ImgSimulation/` 文件夹），不是相对于各 JSON 所在目录。`--export-plane-npz` 不可与 imaging JSON 中的 `batch` 同时使用。
 
+**`pos_zx/` 平均位置 NPY**（与平面轨迹 NPZ 成对、默认打开）：凡写入平面轨迹 `*.npz`（经 `save_plane_trajectory_npz`），包内会同步写 `ImgSimulation/pos_zx/<与 NPZ 同 stem>.npy`：形状 `(N, 2)` float64，为曝光时间窗内 `xy_stack` 对时间的平均（z、x，µm，与 `xy_stack` 约定一致）。同 stem 的 NPZ 若写在不同目录，会覆盖同一 `pos_zx` 文件。在代码中可传 `write_mean_pos_zx=False` 关闭。
+
+**从 `traj_zx` 批量导出 NPY + meta**（仅需成像 JSON；与 `--export-plane-npz` / `--export-plane-batch` 互斥）：
+
+对每个平面轨迹 `*.npz`（默认扫描 `ImgSimulation/traj_zx/`），按成像 JSON 的 `batch.seeds`（无 `batch` 时仅输出 `_0001`）生成：
+
+- `ImgSimulation/Imgs/<stem>/<stem>_0001.npy` …
+- `ImgSimulation/meta/<stem>/<stem>_0001.json` …（`noise`、生效 `psf_sigma_px`、`imaging_json` / `traj_npz` 等追溯字段）
+
+```bash
+python -m ImgSimulation path/to/imaging.json --export-traj-ion-npy
+```
+
+可选：`--traj-dir`、`--imgs-root`、`--meta-root`（相对路径均相对于 **`ImgSimulation` 包目录**）、`--traj-pattern`（默认 `*.npz`）、`--dry-run`。
+
+Python API：`ImgSimulation.api.export_ion_npy_from_traj_dir`、`default_traj_zx_paths`。
+
 ## 性能观测
 
 - 环境变量 **`IMG_SIM_PROFILE=1`**（或 CLI `--profile`）：在 `render_single_frame` / 批处理快路径上打印各阶段累计墙钟时间（trajectory、exposure、psf、noise 等）。

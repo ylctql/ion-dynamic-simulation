@@ -29,13 +29,15 @@
   },
   "batch": {
     "dynamics_overrides": [
-      { "init_seed": 1 },
-      { "init_seed": 142 },
+      {"t_start_us": 400.0},
+      { "init_seed": 1,"t_start_us": 400.0 },
+      { "init_seed": 142,"t_start_us": 400.0 },
       { "N": 500 },
       { "N": 500, "init_seed": 1 },
       { "N": 500, "init_seed": 142 }
     ],
     "plane_npz_paths": [
+      "../traj_zx/20260424_0001.npz",
       "../traj_zx/20260424_0002.npz",
       "../traj_zx/20260424_0003.npz",
       "../traj_zx/20260424_0004.npz",

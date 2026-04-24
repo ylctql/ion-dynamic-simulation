@@ -20,7 +20,8 @@ Paths may be **relative to the JSON file** or to the project root (second try).
 
 Optional **batch** object: ``seeds`` (non-empty list of integers), optional ``figure_paths`` (same length),
 optional ``noise_overrides`` (same length as ``seeds``: per-frame overrides merged onto the root ``noise`` block),
-optional ``dynamics_overrides`` (same length: shallow-merge each object onto the root ``dynamics`` block, then re-resolve ions),
+optional ``dynamics_overrides`` (same length: shallow-merge each object onto the root ``dynamics`` block, then re-resolve ions;
+    optional keys ``t_start_us``, ``t_cum_us``, ``n_step``, ``n_step_per_us``, ``n_step_pre`` are merged onto root ``integration`` instead),
 optional ``plane_npz_paths`` (same length: per-frame imaging-plane trajectory ``.npz``; relative paths resolve against the dynamics JSON directory),
 optional ``psf_sigma_px`` (same length as ``seeds``: per-frame Gaussian PSF sigma in pixels; omit to use root ``imaging.psf_sigma_px`` for all),
 ``max_workers``, ``share_dynamics``, ``allow_batch_progress_log``, ``profile``. When present,
@@ -31,7 +32,7 @@ or :func:`load_ion_image_merged` / ``python -m ImgSimulation dyn.json img.json``
 
 * **Dynamics JSON** top-level keys only: ``version``, ``description``, ``paths``, ``trap``, ``dynamics``,
   ``integration``, ``simulation`` (``use_cuda``, ``calc_method``, ``use_zero_force``, ``log_interval_sim_us`` only),
-  optional ``batch`` with only ``dynamics_overrides`` (per-frame ``dynamics`` patches; length must match imaging ``batch.seeds`` when merged).
+  optional ``batch`` with only ``dynamics_overrides`` (per-frame ``dynamics`` / ``integration`` patches; length must match imaging ``batch.seeds`` when merged).
 * **Imaging JSON** top-level keys only: ``version``, ``description``, ``camera``, ``beam``, ``noise``,
   ``imaging``, ``display``, optional ``batch``, optional ``simulation`` with only ``apply_sensor_noise``.
   Relative ``display.figure_path`` / batch paths resolve against the **imaging** JSON directory.
@@ -368,7 +369,9 @@ def _ion_bundle_run_batch_dynamics_varying(
 
     packs: list[dict[str, Any]] = []
     for i in range(n):
-        merged = {**base_dyn, **ov[i]}
+        dyn_patch, integ_patch = _split_dynamics_integration_patch(ov[i])
+        merged = {**base_dyn, **dyn_patch}
+        integ_i = _merge_integration_params(bundle.integ, integ_patch)
         r0, v0, ch, m = resolve_dynamics_arrays(
             merged,
             bundle.config,
@@ -394,7 +397,7 @@ def _ion_bundle_run_batch_dynamics_varying(
             "camera": bundle.camera,
             "beam": bundle.beam,
             "noise": noises[i],
-            "integ": bundle.integ,
+            "integ": integ_i,
             "psf_sigma_px": sigmas[i],
             "use_cuda": bundle.use_cuda,
             "calc_method": bundle.calc_method,
@@ -783,11 +786,65 @@ _DYNAMICS_OVERRIDE_KEYS = frozenset(
     }
 )
 
+# Optional per-batch-frame overrides merged onto root ``integration`` (same semantics as top-level ``integration``).
+_INTEGRATION_OVERRIDE_KEYS = frozenset(
+    {
+        "t_start_us",
+        "t_cum_us",
+        "n_step",
+        "n_step_per_us",
+        "n_step_pre",
+    }
+)
+
+_BATCH_DYNAMICS_OR_INTEGRATION_KEYS = _DYNAMICS_OVERRIDE_KEYS | _INTEGRATION_OVERRIDE_KEYS
+
 
 def _assert_dynamics_override_object(obj: dict[str, Any], index_label: str) -> None:
     for key in obj:
-        if key not in _DYNAMICS_OVERRIDE_KEYS:
+        if key not in _BATCH_DYNAMICS_OR_INTEGRATION_KEYS:
             raise ValueError(f"{index_label} unknown key {key!r}")
+
+
+def _split_dynamics_integration_patch(
+    patch: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Split a batch override dict into dynamics vs integration fragments."""
+    dyn: dict[str, Any] = {}
+    it: dict[str, Any] = {}
+    for k, v in patch.items():
+        if k in _DYNAMICS_OVERRIDE_KEYS:
+            dyn[k] = v
+        elif k in _INTEGRATION_OVERRIDE_KEYS:
+            it[k] = v
+    return dyn, it
+
+
+def _merge_integration_params(base: IntegrationParams, patch: dict[str, Any]) -> IntegrationParams:
+    """Apply ``patch`` (subset of ``integration`` JSON keys) onto ``base``."""
+    if not patch:
+        return base
+    d: dict[str, Any] = {
+        "t_start_us": base.t_start_us,
+        "t_cum_us": base.t_cum_us,
+        "n_step": base.n_step,
+        "n_step_per_us": base.n_step_per_us,
+        "n_step_pre": base.n_step_pre,
+    }
+    for k, v in patch.items():
+        if k in ("n_step", "n_step_pre"):
+            d[k] = None if v is None else int(v)
+        elif k == "n_step_per_us":
+            d[k] = None if v is None else _as_float(v, f"batch integration override {k}")
+        elif k in ("t_start_us", "t_cum_us"):
+            d[k] = _as_float(v, f"batch integration override {k}")
+    return IntegrationParams(
+        t_start_us=float(d["t_start_us"]),
+        t_cum_us=float(d["t_cum_us"]),
+        n_step=d["n_step"],
+        n_step_per_us=d["n_step_per_us"],
+        n_step_pre=d["n_step_pre"],
+    )
 
 
 def _noise_list_for_batch(
@@ -817,6 +874,44 @@ def _noise_list_for_batch(
                 kw[key] = float(val)
         out.append(replace(n, **kw))
     return out
+
+
+def noise_params_list_from_imaging_bundle(img: IonImagingJsonBundle) -> list[NoiseParams]:
+    """
+    Build one :class:`NoiseParams` per output frame from an imaging-only JSON bundle.
+
+    If ``batch`` is absent, returns a single-element list using the root ``noise`` block.
+    If ``batch`` is present, uses ``batch.seeds`` and optional ``batch.noise_overrides``
+    (same rules as :func:`load_imaging_json` / :meth:`IonImageJsonBundle.call_run_batch`).
+    """
+    if img.batch is None:
+        return [img.noise]
+    return _noise_list_for_batch(
+        img.noise,
+        img.batch.seeds,
+        img.batch.noise_overrides,
+    )
+
+
+def psf_sigma_px_list_from_imaging_bundle(img: IonImagingJsonBundle) -> list[float]:
+    """
+    Per-frame Gaussian PSF ``sigma`` in pixels; length matches :func:`noise_params_list_from_imaging_bundle`.
+    """
+    noises = noise_params_list_from_imaging_bundle(img)
+    n = len(noises)
+    if img.batch is None or img.batch.psf_sigma_px is None:
+        s = float(img.psf_sigma_px)
+        if s < 0:
+            raise ValueError("imaging.psf_sigma_px must be non-negative")
+        return [s] * n
+    seq = [float(x) for x in img.batch.psf_sigma_px]
+    if len(seq) != n:
+        raise ValueError(
+            f"batch.psf_sigma_px length {len(seq)} must match number of batch frames {n}"
+        )
+    if any(s < 0 for s in seq):
+        raise ValueError("batch.psf_sigma_px values must be non-negative")
+    return seq
 
 
 def _parse_batch(raw: Any, json_dir: Path) -> IonImageBatchConfig | None:
@@ -1093,7 +1188,9 @@ def export_dynamics_batch_plane_npz(dyn: IonDynamicsJsonBundle) -> list:
             f"dynamics batch sample {i + 1}/{n_batch} -> {outp}",
             flush=True,
         )
-        merged = {**base_dyn, **patch}
+        dyn_patch, integ_patch = _split_dynamics_integration_patch(patch)
+        merged = {**base_dyn, **dyn_patch}
+        integ_i = _merge_integration_params(dyn.integ, integ_patch)
         r0, v0, ch, m = resolve_dynamics_arrays(
             merged,
             dyn.config,
@@ -1122,7 +1219,7 @@ def export_dynamics_batch_plane_npz(dyn: IonDynamicsJsonBundle) -> list:
             v0,
             ch,
             m,
-            dyn.integ,
+            integ_i,
             use_cuda=dyn.use_cuda,
             calc_method=dyn.calc_method,
             use_zero_force=dyn.use_zero_force,

@@ -49,8 +49,11 @@ from .json_config import (
     load_imaging_json,
     load_ion_image_json,
     load_ion_image_merged,
+    noise_params_list_from_imaging_bundle,
+    psf_sigma_px_list_from_imaging_bundle,
     run_ion_image_from_json_file,
 )
+from .traj_zx_export import default_traj_zx_paths, export_ion_npy_from_traj_dir
 from .normalize import NormalizeMode, normalize_image
 from .noise_model import add_noise
 from .pipeline import (
@@ -84,6 +87,8 @@ __all__ = [
     "SCHEMA_VERSION",
     "add_noise",
     "export_dynamics_batch_plane_npz",
+    "export_ion_npy_from_traj_dir",
+    "default_traj_zx_paths",
     "apply_gaussian_psf",
     "BeamParams",
     "build_dynamics_provenance_meta",
@@ -100,6 +105,8 @@ __all__ = [
     "load_ion_image_json",
     "load_ion_image_merged",
     "load_plane_trajectory_npz",
+    "noise_params_list_from_imaging_bundle",
+    "psf_sigma_px_list_from_imaging_bundle",
     "NoiseParams",
     "NormalizeMode",
     "PlaneTrajectoryRecord",

@@ -101,6 +101,44 @@ def test_dynamics_overrides_parsed_in_batch():
     assert c.dynamics_overrides[1] == {}
 
 
+def test_dynamics_overrides_may_include_integration_keys():
+    from ImgSimulation.json_config import _parse_batch
+
+    raw = {
+        "seeds": [1],
+        "dynamics_overrides": [{"init_seed": 10, "t_start_us": 400.0, "t_cum_us": 50.0}],
+    }
+    c = _parse_batch(raw, _ROOT)
+    assert c is not None and c.dynamics_overrides is not None
+    assert c.dynamics_overrides[0]["t_start_us"] == 400.0
+    assert c.dynamics_overrides[0]["t_cum_us"] == 50.0
+
+
+def test_merge_integration_params_from_batch_patch():
+    from ImgSimulation.json_config import _merge_integration_params
+    from ImgSimulation.types import IntegrationParams
+
+    base = IntegrationParams(
+        t_start_us=300.0,
+        t_cum_us=100.0,
+        n_step=None,
+        n_step_per_us=100.0,
+        n_step_pre=None,
+    )
+    m = _merge_integration_params(base, {"t_start_us": 400.0})
+    assert m.t_start_us == 400.0
+    assert m.t_cum_us == 100.0
+    assert m.n_step_per_us == 100.0
+
+
+def test_example_dynamics_json_accepts_integration_in_overrides():
+    from ImgSimulation.json_config import load_dynamics_json
+
+    dyn = load_dynamics_json(_DYN, project_root=_ROOT)
+    assert dyn.dynamics_batch_overrides is not None
+    assert "t_start_us" in dyn.dynamics_batch_overrides[0]
+
+
 def test_merged_rejects_dynamics_overrides_in_both_json():
     from ImgSimulation.json_config import _merged_ion_bundle, load_dynamics_json, load_imaging_json
     import copy

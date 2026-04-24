@@ -85,6 +85,48 @@ def main() -> None:
             "不需要成像 JSON。与 --export-plane-npz 互斥。"
         ),
     )
+    exp.add_argument(
+        "--export-traj-ion-npy",
+        action="store_true",
+        help=(
+            "仅成像 JSON：扫描平面轨迹 NPZ（默认 ImgSimulation/traj_zx），"
+            "按 imaging JSON 的 batch（或单帧）生成 Imgs/<stem>/<stem>_0001.npy 与 meta 下对应 JSON。"
+            "与 --export-plane-npz / --export-plane-batch 互斥。"
+        ),
+    )
+    parser.add_argument(
+        "--traj-dir",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="--export-traj-ion-npy：轨迹目录；默认 ImgSimulation/traj_zx；相对路径相对于 ImgSimulation 包目录",
+    )
+    parser.add_argument(
+        "--imgs-root",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="--export-traj-ion-npy：图像输出根目录；默认 ImgSimulation/Imgs；相对路径相对于包目录",
+    )
+    parser.add_argument(
+        "--meta-root",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="--export-traj-ion-npy：meta JSON 根目录；默认 ImgSimulation/meta；相对路径相对于包目录",
+    )
+    parser.add_argument(
+        "--traj-pattern",
+        type=str,
+        default="*.npz",
+        metavar="GLOB",
+        help="--export-traj-ion-npy：在 traj-dir 下的 glob（默认 *.npz）",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="--export-traj-ion-npy：只列出将处理的 NPZ，不写文件",
+    )
     args = parser.parse_args()
 
     from ImgSimulation.json_config import (
@@ -103,6 +145,38 @@ def main() -> None:
         parser.error("至多 2 个 JSON 路径：先动力学，后成像")
 
     project_root = args.project_root
+    img_sim_package_dir = Path(__file__).resolve().parent
+
+    if args.export_traj_ion_npy:
+        if len(cfg_paths) != 1:
+            parser.error("--export-traj-ion-npy 仅接受单个成像 JSON 路径")
+        from ImgSimulation.traj_zx_export import default_traj_zx_paths, export_ion_npy_from_traj_dir
+
+        def _resolve_under_package(p: Path | None, default: Path) -> Path:
+            if p is None:
+                return default.resolve()
+            q = p.expanduser()
+            if q.is_absolute():
+                return q.resolve()
+            return (img_sim_package_dir / q).resolve()
+
+        t0, i0, m0 = default_traj_zx_paths(img_sim_package_dir)
+        traj_dir = _resolve_under_package(args.traj_dir, t0)
+        imgs_root = _resolve_under_package(args.imgs_root, i0)
+        meta_root = _resolve_under_package(args.meta_root, m0)
+        done = export_ion_npy_from_traj_dir(
+            cfg_paths[0],
+            traj_dir=traj_dir,
+            imgs_root=imgs_root,
+            meta_root=meta_root,
+            pattern=args.traj_pattern,
+            project_root=project_root,
+            dry_run=args.dry_run,
+        )
+        for p in done:
+            print(f"traj_zx export: {p}", flush=True)
+        print(f"total {len(done)} trajectory file(s)", flush=True)
+        return
 
     if args.export_plane_batch:
         if len(cfg_paths) != 1:

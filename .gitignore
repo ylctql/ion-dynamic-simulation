@@ -73,3 +73,6 @@ tests/test_results/
 equilibrium/results/
 bilayer/out/
 ImgSimulation/traj_zx/
+ImgSimulation/pos_zx/
+ImgSimulation/Imgs/
+ImgSimulation/meta

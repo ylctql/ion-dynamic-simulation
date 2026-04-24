@@ -3,6 +3,9 @@ Save/load ion trajectories projected onto the imaging plane (µm) for dynamics�
 
 Convention: ``xy_stack[t, i, :]`` is ``(z_um, x_um)`` (column = simulation **z**, row = simulation **x**, zox),
 matching :func:`integrate_exposure_xy_um`.
+
+When saving an NPZ via :func:`save_plane_trajectory_npz`, by default also writes
+``ImgSimulation/pos_zx/<stem>.npy`` with shape ``(N, 2)``: time-averaged plane positions (µm).
 """
 from __future__ import annotations
 
@@ -27,6 +30,11 @@ from .types import BeamParams, CameraParams, IntegrationParams, NoiseParams
 
 SCHEMA_VERSION = 1
 DEFAULT_CONVENTION = "zox_col_z_row_x_um"
+
+
+def _img_sim_package_dir() -> Path:
+    """Directory of the ``ImgSimulation`` package (parent of this module)."""
+    return Path(__file__).resolve().parent
 
 
 def build_dynamics_provenance_meta(
@@ -147,9 +155,16 @@ def save_plane_trajectory_npz(
     dt_real_s: float,
     *,
     meta: dict[str, Any] | None = None,
+    write_mean_pos_zx: bool = True,
 ) -> None:
     """
     Write a compressed NPZ with ``xy_stack``, ``dt_real_s``, schema, convention, and JSON meta.
+
+    When ``write_mean_pos_zx`` is True (default), also writes ``pos_zx/<stem>.npy`` under the
+    ``ImgSimulation`` package directory: same ``stem`` as this NPZ path, one ``(N, 2)`` float64
+    row per ion — time average of ``xy_stack`` over the exposure window (z_um, x_um), matching
+    :data:`DEFAULT_CONVENTION`. Two different NPZ paths with the same ``stem`` will overwrite the
+    same ``pos_zx`` file.
     """
     a = _validate_xy_stack(xy_stack)
     dt = float(dt_real_s)
@@ -169,6 +184,11 @@ def save_plane_trajectory_npz(
         convention=np.bytes_(DEFAULT_CONVENTION.encode("utf-8")),
         meta_json=meta_bytes,
     )
+    if write_mean_pos_zx:
+        pos_dir = _img_sim_package_dir() / "pos_zx"
+        pos_dir.mkdir(parents=True, exist_ok=True)
+        pos_zx = np.mean(a, axis=0, dtype=np.float64)
+        np.save(pos_dir / f"{out.stem}.npy", pos_zx, allow_pickle=False)
 
 
 def load_plane_trajectory_npz(path: str | Path) -> PlaneTrajectoryRecord:
@@ -232,6 +252,7 @@ def export_plane_trajectory_from_simulation(
     meta: dict[str, Any] | None = None,
     dynamics_json_path: str | Path | None = None,
     project_root: str | Path | None = None,
+    write_mean_pos_zx: bool = True,
 ) -> PlaneTrajectoryRecord:
     """
     Run exposure-window dynamics, project to the imaging plane (µm), save NPZ, return record.
@@ -276,7 +297,7 @@ def export_plane_trajectory_from_simulation(
     dt = float(dt_real_s)
     if not np.isfinite(dt) or dt <= 0.0:
         raise ValueError("dt_real_s must be finite and positive")
-    save_plane_trajectory_npz(path, a, dt, meta=extra)
+    save_plane_trajectory_npz(path, a, dt, meta=extra, write_mean_pos_zx=write_mean_pos_zx)
     return PlaneTrajectoryRecord(
         xy_stack=a,
         dt_real_s=dt,

@@ -28,7 +28,7 @@ def test_roundtrip_npz():
 
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "traj.npz"
-        save_plane_trajectory_npz(path, xy_stack, dt, meta=meta)
+        save_plane_trajectory_npz(path, xy_stack, dt, meta=meta, write_mean_pos_zx=False)
         rec = load_plane_trajectory_npz(path)
 
     assert rec.xy_stack.shape == xy_stack.shape
@@ -93,6 +93,7 @@ def test_render_matches_r_plane_lists(use_export: bool):
                 use_cuda=False,
                 use_zero_force=True,
                 meta={"test": "export"},
+                write_mean_pos_zx=False,
             )
         else:
             r_list, _v, dt_real_s = compute_exposure_trajectory(
@@ -112,7 +113,9 @@ def test_render_matches_r_plane_lists(use_export: bool):
                 camera,
                 return_mean_plane_px=False,
             )
-            save_plane_trajectory_npz(path, xy_stack, dt_real_s, meta={"test": "manual"})
+            save_plane_trajectory_npz(
+                path, xy_stack, dt_real_s, meta={"test": "manual"}, write_mean_pos_zx=False
+            )
 
         r_list, _v, dt_real_s = compute_exposure_trajectory(
             cfg,
@@ -179,7 +182,9 @@ def test_npz_roundtrip_preserves_dynamics_provenance():
 
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "t.npz"
-        save_plane_trajectory_npz(path, xy, 1e-8, meta={"dynamics_provenance": prov})
+        save_plane_trajectory_npz(
+            path, xy, 1e-8, meta={"dynamics_provenance": prov}, write_mean_pos_zx=False
+        )
         rec = load_plane_trajectory_npz(path)
 
     assert rec.meta["dynamics_provenance"]["dynamics_json_content"]["version"] == 1
@@ -220,6 +225,7 @@ def test_export_merges_user_dynamics_provenance():
             meta={"dynamics_provenance": {"note": "user"}},
             dynamics_json_path=dyn_json,
             project_root=_ROOT,
+            write_mean_pos_zx=False,
         )
         rec = load_plane_trajectory_npz(out)
 
@@ -227,3 +233,27 @@ def test_export_merges_user_dynamics_provenance():
     assert dp["note"] == "user"
     assert dp["dynamics_json_content"]["dynamics"]["force"] == "trap"
     assert "field_setup" in dp
+
+
+def test_save_mean_pos_zx_npy():
+    """``save_plane_trajectory_npz`` writes ``ImgSimulation/pos_zx/<stem>.npy`` with time-mean (N, 2)."""
+    stem = "ut_pos_zx_mean"
+    pos_path = _ROOT / "ImgSimulation" / "pos_zx" / f"{stem}.npy"
+    rng = np.random.default_rng(42)
+    t, n = 6, 4
+    xy_stack = rng.standard_normal((t, n, 2)).astype(np.float64)
+    dt = 1e-7
+    expected_mean = np.mean(xy_stack, axis=0)
+
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            npz_path = Path(td) / f"{stem}.npz"
+            save_plane_trajectory_npz(npz_path, xy_stack, dt, write_mean_pos_zx=True)
+
+        assert pos_path.is_file()
+        loaded = np.load(pos_path, allow_pickle=False)
+        assert loaded.shape == (n, 2)
+        np.testing.assert_allclose(loaded, expected_mean, rtol=0, atol=1e-15)
+    finally:
+        if pos_path.is_file():
+            pos_path.unlink()
