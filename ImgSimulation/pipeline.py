@@ -6,7 +6,7 @@ from __future__ import annotations
 import importlib.util
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -28,6 +28,7 @@ from .geometry import world_um_to_fractional_col_row
 from .integrate import integrate_exposure_xy_um
 from .normalize import NormalizeMode, normalize_image
 from .noise_model import add_noise
+from .profile_util import print_profile_summary, profile_section, profiling_enabled
 from .psf import apply_gaussian_psf
 from .types import (
     BeamParams,
@@ -47,6 +48,15 @@ def _dimless_r_to_ion_image_plane_um(r: np.ndarray, dl: float) -> np.ndarray:
     """
     s = float(dl) * 1e6
     return np.column_stack((r[:, 2] * s, r[:, 0] * s))
+
+
+def _dimless_stack_to_plane_xy_um(r_stack: np.ndarray, dl: float) -> np.ndarray:
+    """(T, N, 3) dimensionless positions -> (T, N, 2) µm on the ion imaging plane (zox)."""
+    s = float(dl) * 1e6
+    out = np.empty((r_stack.shape[0], r_stack.shape[1], 2), dtype=np.float64)
+    out[..., 0] = r_stack[..., 2] * s
+    out[..., 1] = r_stack[..., 0] * s
+    return out
 
 
 def _run_trajectory(
@@ -263,70 +273,27 @@ def _integrate_leg(
     )
 
 
-def render_single_frame(
+def compute_exposure_trajectory(
     config: Config,
     force: Callable[[np.ndarray, np.ndarray, float], np.ndarray],
     r0: np.ndarray,
     v0: np.ndarray,
     charge: np.ndarray,
     mass: np.ndarray,
-    camera: CameraParams,
-    beam: BeamParams,
-    noise: NoiseParams,
     integ: IntegrationParams,
     *,
-    psf_sigma_px: float,
     use_cuda: bool = False,
     calc_method: Literal["RK4", "VV"] = "VV",
     use_zero_force: bool = False,
-    apply_sensor_noise: bool = True,
-    normalize_mode: NormalizeMode = "none",
-    normalize_eps: float = 1e-12,
-    normalize_q_low: float = 2.0,
-    normalize_q_high: float = 98.0,
-    normalize_q_scale: float = 99.0,
-    return_mean_plane_px: bool = False,
     log_interval_sim_us: float | None = None,
-) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+) -> tuple[list, list, float]:
     """
-    Simulate one CCD/CMOS-style image (shape (h, l)).
+    Run dynamics for the exposure window only and return trajectory samples plus ``dt_real_s``
+    for :func:`integrate_exposure_xy_um`.
 
-    State ``r0, v0`` is at simulation time 0. If ``t_start_us > 0``, a preliminary
-    integration to ``t_start`` is performed (so cost grows with t_start; consider
-    warm-starting from saved state in future work).
-
-    Parameters
-    ----------
-    config : Config
-        Provides ``dt`` (s) and ``dl`` (m) for time/length conversion.
-    psf_sigma_px : float
-        Gaussian PSF standard deviation in **pixels** (x and y).
-    apply_sensor_noise : bool, optional
-        If False, return the blurred exposure map (float) without Poisson/readout/background
-        (useful for unit tests; physical pipelines keep True).
-    normalize_mode : str, optional
-        One of ``"none"``, ``"max"``, ``"minmax"``. Per-frame scaling **after** noise
-        (or after PSF if ``apply_sensor_noise`` is False). Default ``"none"`` keeps
-        physical count scale; use ``"max"`` or ``"minmax"`` for display or ML input ranges.
-    normalize_eps : float, optional
-        Numerical floor for near-flat images.
-    normalize_q_low, normalize_q_high : float, optional
-        Percentiles (for ``minmax``) used as robust bounds; see :func:`.normalize.normalize_image`.
-    normalize_q_scale : float, optional
-        Percentile divisor (for ``max`` mode).
-    return_mean_plane_px : bool, optional
-        If True, return ``(image, mean_plane_px)`` where ``mean_plane_px`` is (N, 2) with
-        columns ``[col, row]`` as **fractional pixel indices** (subpixel), consistent
-        with :func:`geometry.world_um_to_fractional_col_row` and image shape ``(h, l)``
-        (column along simulation **z**, row along simulation **x**). The mean is over
-        all trajectory samples in the **exposure** window. Default False returns only
-        ``image``.
-    log_interval_sim_us : float, optional
-        If set to a positive value, print progress to the terminal as each time segment
-        completes, at roughly this many **simulation** microseconds of physics time
-        per message (or fewer messages if ``n_step`` is too small to split that fine).
-        Each line also includes **wall-clock** time (per segment and cumulative for the
-        current dynamics leg).
+    If ``t_start_us > 0``, integrates ``[0, t_start]`` then ``[t_start, t_start+t_cum]`` and
+    returns the **second** leg's ``r_list`` (exposure window), consistent with
+    :func:`render_single_frame`.
     """
     dt_si = config.dt
     t_start_dim = integ.t_start_us * 1e-6 / dt_si
@@ -367,7 +334,7 @@ def render_single_frame(
             n_step_pre_leg = max(32, int(round(integ.n_step_per_us * integ.t_start_us)))
         else:
             n_step_pre_leg = max(32, int(np.ceil(32.0 * max(t_start_dim, 1e-9))))
-        r_list, v_list = _integrate_leg(
+        r_pre, v_pre = _integrate_leg(
             r0,
             v0,
             charge,
@@ -383,8 +350,8 @@ def render_single_frame(
             log_interval_sim_us=log_interval_sim_us,
             leg_label="dynamics (pre, 0 → t_start)",
         )
-        r0_b = np.asarray(r_list[-1], dtype=np.float64, order="F")
-        v0_b = np.asarray(v_list[-1], dtype=np.float64, order="F")
+        r0_b = np.asarray(r_pre[-1], dtype=np.float64, order="F")
+        v0_b = np.asarray(v_pre[-1], dtype=np.float64, order="F")
         r_list, v_list = _integrate_leg(
             r0_b,
             v0_b,
@@ -405,10 +372,37 @@ def render_single_frame(
     t_total_dim = t_cum_dim
     dt_dim = t_total_dim / n_step
     dt_real_s = float(dt_dim * dt_si)
+    return r_list, v_list, dt_real_s
 
-    r_plane_list: list[np.ndarray] = []
+
+def r_list_to_r_plane_lists(
+    r_list: list,
+    config: Config,
+    camera: CameraParams,
+    *,
+    return_mean_plane_px: bool,
+) -> tuple[list[np.ndarray], np.ndarray | None, np.ndarray]:
+    """
+    Map dimensionless ``r_list`` to ion-plane µm trajectories for splatting.
+
+    If ``return_mean_plane_px``, also return time-averaged fractional pixel positions
+    ``(N, 2)`` as in :func:`render_single_frame`.
+
+    Returns
+    -------
+    r_plane_list
+        Per-time-step ``(N, 2)`` µm positions (views into the contiguous stack).
+    mean_plane_px
+        ``(N, 2)`` fractional pixels if ``return_mean_plane_px``, else ``None``.
+    xy_stack
+        Contiguous ``(T, N, 2)`` float64 array; pass to :func:`integrate_exposure_xy_um`
+        to avoid an extra stack copy.
+    """
+    r_stack = np.stack([np.asarray(r, dtype=np.float64) for r in r_list], axis=0)
+    xy_stack = _dimless_stack_to_plane_xy_um(r_stack, config.dl)
+    t = xy_stack.shape[0]
+    r_plane_list = [xy_stack[ti] for ti in range(t)]
     if return_mean_plane_px:
-        r_stack = np.stack([np.asarray(r, dtype=np.float64) for r in r_list], axis=0)
         r_mean_dimless = np.mean(r_stack, axis=0)
         mean_plane_um = _dimless_r_to_ion_image_plane_um(r_mean_dimless, config.dl)
         col, row = world_um_to_fractional_col_row(
@@ -421,22 +415,105 @@ def render_single_frame(
             h=camera.h,
         )
         mean_plane_px = np.column_stack((col, row))
-        for ti in range(r_stack.shape[0]):
-            r_plane_list.append(
-                _dimless_r_to_ion_image_plane_um(r_stack[ti], config.dl)
-            )
-    else:
-        for r in r_list:
-            r = np.asarray(r, dtype=np.float64)
-            r_plane_list.append(_dimless_r_to_ion_image_plane_um(r, config.dl))
+        return r_plane_list, mean_plane_px, xy_stack
+    return r_plane_list, None, xy_stack
 
+
+def render_from_r_plane_lists(
+    r_plane_list: Sequence[np.ndarray] | np.ndarray,
+    camera: CameraParams,
+    beam: BeamParams,
+    dt_real_s: float,
+    psf_sigma_px: float,
+    noise: NoiseParams,
+    *,
+    apply_sensor_noise: bool = True,
+    normalize_mode: NormalizeMode = "none",
+    normalize_eps: float = 1e-12,
+    normalize_q_low: float = 2.0,
+    normalize_q_high: float = 98.0,
+    normalize_q_scale: float = 99.0,
+) -> np.ndarray:
+    """
+    Exposure integration → PSF → optional sensor noise → normalize (single frame).
+    """
     exposure = integrate_exposure_xy_um(r_plane_list, camera, beam, dt_real_s)
+    return render_from_exposure(
+        exposure,
+        psf_sigma_px,
+        noise,
+        apply_sensor_noise=apply_sensor_noise,
+        normalize_mode=normalize_mode,
+        normalize_eps=normalize_eps,
+        normalize_q_low=normalize_q_low,
+        normalize_q_high=normalize_q_high,
+        normalize_q_scale=normalize_q_scale,
+    )
+
+
+def compute_exposure_map(
+    config: Config,
+    force: Callable[[np.ndarray, np.ndarray, float], np.ndarray],
+    r0: np.ndarray,
+    v0: np.ndarray,
+    charge: np.ndarray,
+    mass: np.ndarray,
+    camera: CameraParams,
+    beam: BeamParams,
+    integ: IntegrationParams,
+    *,
+    use_cuda: bool = False,
+    calc_method: Literal["RK4", "VV"] = "VV",
+    use_zero_force: bool = False,
+    log_interval_sim_us: float | None = None,
+) -> np.ndarray:
+    """
+    Run dynamics for the exposure window and return the **pre-PSF** exposure image
+    (same as :func:`integrate_exposure_xy_um` inside :func:`render_single_frame`).
+
+    Use this to pay for trajectory + splatting **once**, then call :func:`render_from_exposure`
+    many times with different PSF / noise / normalization (same camera, beam, grid shape).
+    """
+    r_list, _v, dt_real_s = compute_exposure_trajectory(
+        config,
+        force,
+        r0,
+        v0,
+        charge,
+        mass,
+        integ,
+        use_cuda=use_cuda,
+        calc_method=calc_method,
+        use_zero_force=use_zero_force,
+        log_interval_sim_us=log_interval_sim_us,
+    )
+    _planes, _, xy_stack = r_list_to_r_plane_lists(
+        r_list, config, camera, return_mean_plane_px=False
+    )
+    return integrate_exposure_xy_um(xy_stack, camera, beam, dt_real_s)
+
+
+def render_from_exposure(
+    exposure: np.ndarray,
+    psf_sigma_px: float,
+    noise: NoiseParams,
+    *,
+    apply_sensor_noise: bool = True,
+    normalize_mode: NormalizeMode = "none",
+    normalize_eps: float = 1e-12,
+    normalize_q_low: float = 2.0,
+    normalize_q_high: float = 98.0,
+    normalize_q_scale: float = 99.0,
+) -> np.ndarray:
+    """
+    PSF → optional sensor noise → normalize, given a precomputed **exposure** map (no dynamics).
+    """
     blurred = apply_gaussian_psf(exposure, psf_sigma_px)
     if not apply_sensor_noise:
         out = blurred
     else:
         out = add_noise(blurred, noise)
-    img = normalize_image(
+    return normalize_image(
         out,
         normalize_mode,
         eps=normalize_eps,
@@ -444,6 +521,140 @@ def render_single_frame(
         q_high=normalize_q_high,
         q_scale=normalize_q_scale,
     )
+
+
+def render_single_frame(
+    config: Config,
+    force: Callable[[np.ndarray, np.ndarray, float], np.ndarray],
+    r0: np.ndarray,
+    v0: np.ndarray,
+    charge: np.ndarray,
+    mass: np.ndarray,
+    camera: CameraParams,
+    beam: BeamParams,
+    noise: NoiseParams,
+    integ: IntegrationParams,
+    *,
+    psf_sigma_px: float,
+    use_cuda: bool = False,
+    calc_method: Literal["RK4", "VV"] = "VV",
+    use_zero_force: bool = False,
+    apply_sensor_noise: bool = True,
+    normalize_mode: NormalizeMode = "none",
+    normalize_eps: float = 1e-12,
+    normalize_q_low: float = 2.0,
+    normalize_q_high: float = 98.0,
+    normalize_q_scale: float = 99.0,
+    return_mean_plane_px: bool = False,
+    log_interval_sim_us: float | None = None,
+    save_plane_npz: str | Path | None = None,
+    plane_npz_dynamics_json_path: str | Path | None = None,
+    plane_npz_project_root: Path | None = None,
+    plane_npz_meta_extra: dict[str, Any] | None = None,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """
+    Simulate one CCD/CMOS-style image (shape (h, l)).
+
+    State ``r0, v0`` is at simulation time 0. If ``t_start_us > 0``, a preliminary
+    integration to ``t_start`` is performed (so cost grows with t_start; consider
+    warm-starting from saved state in future work).
+
+    Parameters
+    ----------
+    config : Config
+        Provides ``dt`` (s) and ``dl`` (m) for time/length conversion.
+    psf_sigma_px : float
+        Gaussian PSF standard deviation in **pixels** (x and y).
+    apply_sensor_noise : bool, optional
+        If False, return the blurred exposure map (float) without Poisson/readout/background
+        (useful for unit tests; physical pipelines keep True).
+    normalize_mode : str, optional
+        One of ``"none"``, ``"max"``, ``"minmax"``. Per-frame scaling **after** noise
+        (or after PSF if ``apply_sensor_noise`` is False). Default ``"none"`` keeps
+        physical count scale; use ``"max"`` or ``"minmax"`` for display or ML input ranges.
+    normalize_eps : float, optional
+        Numerical floor for near-flat images.
+    normalize_q_low, normalize_q_high : float, optional
+        Percentiles (for ``minmax``) used as robust bounds; see :func:`.normalize.normalize_image`.
+    normalize_q_scale : float, optional
+        Percentile divisor (for ``max`` mode).
+    return_mean_plane_px : bool, optional
+        If True, return ``(image, mean_plane_px)`` where ``mean_plane_px`` is (N, 2) with
+        columns ``[col, row]`` as **fractional pixel indices** (subpixel), consistent
+        with :func:`geometry.world_um_to_fractional_col_row` and image shape ``(h, l)``
+        (column along simulation **z**, row along simulation **x**). The mean is over
+        all trajectory samples in the **exposure** window. Default False returns only
+        ``image``.
+    log_interval_sim_us : float, optional
+        If set to a positive value, print progress to the terminal as each time segment
+        completes, at roughly this many **simulation** microseconds of physics time
+        per message (or fewer messages if ``n_step`` is too small to split that fine).
+        Each line also includes **wall-clock** time (per segment and cumulative for the
+        current dynamics leg).
+    save_plane_npz : path-like, optional
+        If set, write the same imaging-plane ``xy_stack`` used for exposure to this NPZ
+        (see :func:`plane_trajectory_io.save_plane_trajectory_npz`).
+    plane_npz_dynamics_json_path, plane_npz_project_root
+        Optional provenance for the NPZ ``meta`` when ``save_plane_npz`` is set.
+    plane_npz_meta_extra : dict, optional
+        Extra keys merged into NPZ meta (e.g. ``batch_index`` from JSON batch runs).
+    """
+    times: dict[str, float] = {} if profiling_enabled() else {}
+    with profile_section("trajectory", times=times):
+        r_list, _v_list, dt_real_s = compute_exposure_trajectory(
+            config,
+            force,
+            r0,
+            v0,
+            charge,
+            mass,
+            integ,
+            use_cuda=use_cuda,
+            calc_method=calc_method,
+            use_zero_force=use_zero_force,
+            log_interval_sim_us=log_interval_sim_us,
+        )
+    with profile_section("r_plane_projection", times=times):
+        _r_plane_list, mean_plane_px, xy_stack = r_list_to_r_plane_lists(
+            r_list,
+            config,
+            camera,
+            return_mean_plane_px=return_mean_plane_px,
+        )
+    if save_plane_npz is not None:
+        from .plane_trajectory_io import build_dynamics_provenance_meta, save_plane_trajectory_npz
+
+        meta_plane: dict[str, Any] = dict(plane_npz_meta_extra) if plane_npz_meta_extra else {}
+        if plane_npz_dynamics_json_path is not None:
+            prov = build_dynamics_provenance_meta(
+                plane_npz_dynamics_json_path,
+                project_root=plane_npz_project_root,
+            )
+            user_prov = meta_plane.get("dynamics_provenance")
+            if isinstance(user_prov, dict):
+                meta_plane["dynamics_provenance"] = {**prov, **user_prov}
+            else:
+                meta_plane["dynamics_provenance"] = prov
+        save_plane_trajectory_npz(save_plane_npz, xy_stack, dt_real_s, meta=meta_plane)
+    with profile_section("exposure", times=times):
+        exposure = integrate_exposure_xy_um(xy_stack, camera, beam, dt_real_s)
+    with profile_section("psf", times=times):
+        blurred = apply_gaussian_psf(exposure, psf_sigma_px)
+    with profile_section("noise", times=times):
+        if not apply_sensor_noise:
+            out = blurred
+        else:
+            out = add_noise(blurred, noise)
+    with profile_section("normalize", times=times):
+        img = normalize_image(
+            out,
+            normalize_mode,
+            eps=normalize_eps,
+            q_low=normalize_q_low,
+            q_high=normalize_q_high,
+            q_scale=normalize_q_scale,
+        )
+    print_profile_summary(times)
     if return_mean_plane_px:
         return img, mean_plane_px
     return img

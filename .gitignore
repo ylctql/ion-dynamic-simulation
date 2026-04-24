@@ -72,3 +72,4 @@ benchmark/benchmark_results/
 tests/test_results/
 equilibrium/results/
 bilayer/out/
+ImgSimulation/traj_zx/

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "description": "dynamics 专用。拆分时 batch 可含 dynamics_overrides 与 plane_npz_paths（等长、相对本 JSON 目录；默认写到包内 ../traj_zx/，见 .gitignore）。与成像 batch.seeds 对齐。多帧 PNG 在成像 JSON 的 batch.figure_paths。单帧仅导出 NPZ 仍用 CLI --export-plane-npz（与 imaging 含 batch 时互斥）。多帧 imaging 用 example_imaging.json。",
+  "paths": {
+    "field_config": "FieldConfiguration/configs/default.json",
+    "field_csv": "data/monolithic20241118.csv"
+  },
+  "trap": {
+    "smooth_axes": "z",
+    "smooth_sg": [11, 3]
+  },
+  "dynamics": {
+    "force": "trap",
+    "N": 1000,
+    "init_seed": 42,
+    "init_center_um": [0.0, 0.0, 0.0],
+    "init_range_um": 100.0
+  },
+  "integration": {
+    "t_start_us": 300.0,
+    "t_cum_us": 100.0,
+    "n_step_per_us": 100
+  },
+  "simulation": {
+    "use_cuda": true,
+    "calc_method": "RK4",
+    "use_zero_force": false,
+    "log_interval_sim_us": null
+  },
+  "batch": {
+    "dynamics_overrides": [
+      { "init_seed": 1 },
+      { "init_seed": 142 },
+      { "N": 500 },
+      { "N": 500, "init_seed": 1 },
+      { "N": 500, "init_seed": 142 }
+    ],
+    "plane_npz_paths": [
+      "../traj_zx/20260424_0002.npz",
+      "../traj_zx/20260424_0003.npz",
+      "../traj_zx/20260424_0004.npz",
+      "../traj_zx/20260424_0005.npz",
+      "../traj_zx/20260424_0006.npz"
+    ]
+  }
+}

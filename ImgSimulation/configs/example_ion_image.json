@@ -10,11 +10,12 @@
     "smooth_sg": [11, 3]
   },
   "dynamics": {
-  "force": "trap",
-  "N": 1000,
-  "init_center_um": [0.0, 0.0, 0.0],
-  "init_range_um": 100.0
-},
+    "force": "trap",
+    "N": 1000,
+    "init_seed": 42,
+    "init_center_um": [0.0, 0.0, 0.0],
+    "init_range_um": 100.0
+  },
   "camera": {
     "pixel_um": 0.25,
     "l": 1024,

@@ -38,9 +38,17 @@ if TYPE_CHECKING:
     from Interface.cli import ParsedRun
 
 # Re-exports: single import surface for users
+from .batch import can_share_dynamics_for_noise_only, render_batch
 from .json_config import (
+    IonDynamicsJsonBundle,
+    IonImageBatchConfig,
     IonImageJsonBundle,
+    IonImagingJsonBundle,
+    export_dynamics_batch_plane_npz,
+    load_dynamics_json,
+    load_imaging_json,
     load_ion_image_json,
+    load_ion_image_merged,
     run_ion_image_from_json_file,
 )
 from .normalize import NormalizeMode, normalize_image
@@ -48,6 +56,18 @@ from .noise_model import add_noise
 from .pipeline import (
     render_single_frame,
     render_single_frame_from_parsed,
+)
+from .plane_trajectory_io import (
+    DEFAULT_CONVENTION,
+    SCHEMA_VERSION,
+    PlaneTrajectoryRecord,
+    build_dynamics_provenance_meta,
+    export_plane_trajectory_from_simulation,
+    load_plane_trajectory_npz,
+    render_from_plane_trajectory_file,
+    r_xy_list_to_stack,
+    save_plane_trajectory_npz,
+    stack_to_r_xy_list,
 )
 from .psf import apply_gaussian_psf
 from .types import (
@@ -60,34 +80,43 @@ from .types import (
 from .visualize import show_ion_frame
 
 __all__ = [
+    "DEFAULT_CONVENTION",
+    "SCHEMA_VERSION",
     "add_noise",
+    "export_dynamics_batch_plane_npz",
     "apply_gaussian_psf",
     "BeamParams",
+    "build_dynamics_provenance_meta",
     "CameraParams",
+    "can_share_dynamics_for_noise_only",
+    "export_plane_trajectory_from_simulation",
     "IntegrationParams",
+    "IonDynamicsJsonBundle",
+    "IonImageBatchConfig",
     "IonImageJsonBundle",
+    "IonImagingJsonBundle",
+    "load_dynamics_json",
+    "load_imaging_json",
+    "load_ion_image_json",
+    "load_ion_image_merged",
+    "load_plane_trajectory_npz",
     "NoiseParams",
     "NormalizeMode",
+    "PlaneTrajectoryRecord",
     "default_n_step",
-    "load_ion_image_json",
     "normalize_image",
     "render_batch",
+    "render_from_plane_trajectory_file",
     "render_single_frame",
     "render_single_frame_from_parsed",
+    "r_xy_list_to_stack",
     "run_ion_image",
     "run_ion_image_from_json_file",
     "run_ion_image_from_parsed",
+    "save_plane_trajectory_npz",
     "show_ion_frame",
+    "stack_to_r_xy_list",
 ]
-
-
-def render_batch(*_args, **_kwargs) -> None:
-    """
-    Placeholder (same as :func:`ImgSimulation.render_batch`).
-
-    Not implemented; reserved for a future release.
-    """
-    raise NotImplementedError("render_batch: reserved for a future release")
 
 
 def run_ion_image(

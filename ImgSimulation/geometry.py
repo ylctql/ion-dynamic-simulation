@@ -63,32 +63,45 @@ def bilinear_splat2d(
     """
     Add *weight* to a 2D float image (h, l) at fractional (col, row) using bilinear weights.
     In-place. Pixels outside the grid receive no partial contribution.
+
+    Vectorized over many points (same semantics as the former per-point loop; accumulation
+    order may differ slightly at the float level when many ions share a pixel).
     """
     h, l = image.shape
     c = np.atleast_1d(np.asarray(col_f, dtype=np.float64).ravel())
     r = np.atleast_1d(np.asarray(row_f, dtype=np.float64).ravel())
     w = np.atleast_1d(np.asarray(weight, dtype=np.float64).ravel())
-    n = c.size
-    if r.size != n or w.size != n:
+    if r.size != c.size or w.size != c.size:
         raise ValueError("col_f, row_f, weight must have the same shape")
-    for idx in range(n):
-        cc, rr, wt = c[idx], r[idx], w[idx]
-        if not (np.isfinite(cc) and np.isfinite(rr) and np.isfinite(wt)) or wt == 0.0:
-            continue
-        i0 = int(np.floor(cc))
-        j0 = int(np.floor(rr))
-        if i0 < -1 or j0 < -1 or i0 > l or j0 > h:
-            continue
-        dc, dr = cc - i0, rr - j0
-        t00 = (1.0 - dc) * (1.0 - dr) * wt
-        t10 = dc * (1.0 - dr) * wt
-        t01 = (1.0 - dc) * dr * wt
-        t11 = dc * dr * wt
-        if 0 <= i0 < l and 0 <= j0 < h:
-            image[j0, i0] += t00
-        if 0 <= i0 + 1 < l and 0 <= j0 < h:
-            image[j0, i0 + 1] += t10
-        if 0 <= i0 < l and 0 <= j0 + 1 < h:
-            image[j0 + 1, i0] += t01
-        if 0 <= i0 + 1 < l and 0 <= j0 + 1 < h:
-            image[j0 + 1, i0 + 1] += t11
+    ok = np.isfinite(c) & np.isfinite(r) & np.isfinite(w) & (w != 0.0)
+    c = c[ok]
+    r = r[ok]
+    w = w[ok]
+    if c.size == 0:
+        return
+    i0 = np.floor(c).astype(np.intp, copy=False)
+    j0 = np.floor(r).astype(np.intp, copy=False)
+    bad = (i0 < -1) | (j0 < -1) | (i0 > l) | (j0 > h)
+    c = c[~bad]
+    r = r[~bad]
+    w = w[~bad]
+    i0 = i0[~bad]
+    j0 = j0[~bad]
+    if i0.size == 0:
+        return
+    dc = c - i0.astype(np.float64, copy=False)
+    dr = r - j0.astype(np.float64, copy=False)
+    t00 = (1.0 - dc) * (1.0 - dr) * w
+    t10 = dc * (1.0 - dr) * w
+    t01 = (1.0 - dc) * dr * w
+    t11 = dc * dr * w
+    i1 = i0 + 1
+    j1 = j0 + 1
+    m00 = (i0 >= 0) & (i0 < l) & (j0 >= 0) & (j0 < h)
+    m10 = (i1 >= 0) & (i1 < l) & (j0 >= 0) & (j0 < h)
+    m01 = (i0 >= 0) & (i0 < l) & (j1 >= 0) & (j1 < h)
+    m11 = (i1 >= 0) & (i1 < l) & (j1 >= 0) & (j1 < h)
+    np.add.at(image, (j0[m00], i0[m00]), t00[m00])
+    np.add.at(image, (j0[m10], i1[m10]), t10[m10])
+    np.add.at(image, (j1[m01], i0[m01]), t01[m01])
+    np.add.at(image, (j1[m11], i1[m11]), t11[m11])

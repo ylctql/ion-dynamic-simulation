@@ -2,15 +2,19 @@
 Simulate single-frame CCD/CMOS-like ion images from trap dynamics.
 
 Use :mod:`ImgSimulation.api` for a **single** user import that bundles types,
-:func:`run_ion_image`, low-level :func:`render_single_frame`, and
-:func:`show_ion_frame`.
+:func:`run_ion_image`, :func:`render_batch`, low-level :func:`render_single_frame`,
+:func:`show_ion_frame`, and plane-trajectory / split-JSON helpers (``load_plane_trajectory_npz``,
+``export_plane_trajectory_from_simulation``, etc.).
 """
 from __future__ import annotations
 
 from . import api
 from .api import (
+    IonImageBatchConfig,
     IonImageJsonBundle,
+    can_share_dynamics_for_noise_only,
     load_ion_image_json,
+    render_batch,
     run_ion_image,
     run_ion_image_from_json_file,
     run_ion_image_from_parsed,
@@ -18,6 +22,8 @@ from .api import (
 from .normalize import NormalizeMode, normalize_image
 from .noise_model import add_noise
 from .pipeline import (
+    compute_exposure_map,
+    render_from_exposure,
     render_single_frame,
     render_single_frame_from_parsed,
 )
@@ -37,14 +43,18 @@ __all__ = [
     "apply_gaussian_psf",
     "BeamParams",
     "CameraParams",
+    "can_share_dynamics_for_noise_only",
+    "compute_exposure_map",
     "IntegrationParams",
+    "IonImageBatchConfig",
     "IonImageJsonBundle",
+    "load_ion_image_json",
     "NoiseParams",
     "NormalizeMode",
     "default_n_step",
     "normalize_image",
-    "load_ion_image_json",
     "render_batch",
+    "render_from_exposure",
     "render_single_frame",
     "render_single_frame_from_parsed",
     "run_ion_image",
@@ -52,13 +62,3 @@ __all__ = [
     "run_ion_image_from_parsed",
     "show_ion_frame",
 ]
-
-
-def render_batch(*_args, **_kwargs) -> None:
-    """
-    Placeholder for future multi-frame or dataset export.
-
-    Not implemented in this version; use :func:`render_single_frame` in a loop
-    for simple batch generation.
-    """
-    raise NotImplementedError("render_batch: reserved for a future release")
