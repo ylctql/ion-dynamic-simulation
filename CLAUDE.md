@@ -139,6 +139,26 @@ pytest                            # 运行测试
 
 运行: `python -m equilibrium.find_equilibrium --N 40`
 
+### `collision_pressure/` — 背景气压估算
+
+模拟中性 H₂ 分子与俘获离子晶格的弹性碰撞，从重构概率反推背景气压。
+
+| 文件 | 关键内容 |
+|------|---------|
+| `__main__.py` | CLI 入口：`python -m collision_pressure simulate` |
+| `species.py` | `Species` 数据类 + 预置物种 (Ba135+, H2 等) |
+| `collision.py` | 碰撞力学：散射角 (椭圆积分)、动量冲量 |
+| `sampling.py` | 蒙特卡洛采样：速度、碰撞参数、方向 |
+| `simulation.py` | `run_single_collision()` + `run_collision_scan()` |
+| `reconfiguration.py` | `ZigzagFlipDetector` (排序+SSD) + `TopologyDetector` (Delaunay) |
+| `topology.py` | Delaunay 三角剖分拓扑表征 |
+| `pressure.py` | `estimate_pressure()` 从 P_flip 估算气压系数 |
+| `config_scan.py` | 构型预扫描 + 平衡求解 |
+
+运行: `python -m collision_pressure simulate --trap-freq 2 3 0.1 --n-ions 10 --workers 4`
+
+**并行**: `--workers N` 使用 `multiprocessing.Pool.imap()` 并行运行碰撞模拟，按序返回结果（log 不乱序）。`--workers 1` 为串行（默认）。
+
 ### `benchmark/` — 性能测试
 
 | 文件 | 关键内容 |

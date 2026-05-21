@@ -65,6 +65,8 @@ def main() -> int:
                        choices=["none", "trajectory", "before-after", "statistics", "all"])
     p_sim.add_argument("--viz-output", type=str, default=None)
     p_sim.add_argument("--viz-n-trajectories", type=int, default=3)
+    p_sim.add_argument("--workers", type=int, default=1,
+                       help="Number of parallel workers (1=sequential)")
 
     # Potential field (mutually exclusive)
     field_group = p_sim.add_mutually_exclusive_group()
@@ -87,6 +89,34 @@ def main() -> int:
 
     parser.print_help()
     return 0
+
+
+# --- Multiprocessing worker globals ---
+_POOL_STATE = {}
+
+
+def _init_pool(r0, fit, ion, mol, T, det, mass_amu, softening_um,
+               t_integrate_us, v_init_um_us, gamma_damping_per_s):
+    global _POOL_STATE
+    _POOL_STATE.update(
+        r0=r0, fit=fit, ion=ion, mol=mol, T=T, det=det,
+        mass_amu=mass_amu, softening_um=softening_um,
+        t_integrate_us=t_integrate_us, v_init_um_us=v_init_um_us,
+        gamma_damping_per_s=gamma_damping_per_s,
+    )
+
+
+def _pool_worker(seed: int):
+    import numpy as np
+    from collision_pressure.simulation import run_single_collision
+    p = _POOL_STATE
+    rng = np.random.default_rng(seed)
+    return run_single_collision(
+        p['r0'], p['fit'], p['ion'], p['mol'], p['T'], rng, p['det'],
+        mass_amu=p['mass_amu'], softening_um=p['softening_um'],
+        t_integrate_us=p['t_integrate_us'], save_trajectory=True,
+        v_init_um_us=p['v_init_um_us'], gamma_damping_per_s=p['gamma_damping_per_s'],
+    )
 
 
 def _run_simulate(args) -> int:
@@ -259,6 +289,7 @@ def _run_simulate(args) -> int:
         "# n_steps: 2000",
         f"# gamma_damping: {args.gamma_damping:.6e} /s",
         "# b_max_factor: 3.0",
+        f"# workers: {args.workers}",
         "#",
         "# === Detector ===",
         f"# type: {det_desc}",
@@ -269,6 +300,8 @@ def _run_simulate(args) -> int:
         f.write("\n".join(header_lines) + "\n")
 
     print(f"\n[4] Running {args.n_simulations} collision simulations...")
+    if args.workers > 1:
+        print(f"  Workers: {args.workers}")
     print(f"  Log: {log_path}")
     t0 = time.time()
 
@@ -281,62 +314,83 @@ def _run_simulate(args) -> int:
         print(f"\r  [{bar}] {done}/{total} ({100*pct:.0f}%) "
               f"elapsed {elapsed:.0f}s ETA {eta:.0f}s", end='', flush=True)
 
-    scan_rng = np.random.default_rng(args.seed + 1)
     results = []
     n_traj = min(args.viz_n_trajectories, args.n_simulations) if viz_traj else 0
     n_reconfig = 0
     from collision_pressure.visualize_collision import plot_trajectory_snapshots
     import matplotlib.pyplot as plt
 
-    with open(log_path, "a", encoding="utf-8") as log_f:
-        for i in range(args.n_simulations):
-            cr = run_single_collision(
-                r0, fit, ion, mol, args.molecule_temp, scan_rng, det,
-                mass_amu=args.mass_amu, t_integrate_us=args.t_integrate_us,
-                softening_um=args.softening_um, save_trajectory=True,
-                v_init_um_us=v_init, gamma_damping_per_s=args.gamma_damping,
-            )
-            results.append(cr)
-            n_reconfig += int(cr.reconfigured)
-
-            traj_file = "-"
-            if cr.reconfigured:
-                traj_dir.mkdir(exist_ok=True)
-                traj_file = f"trajectories/event_{i:04d}.npz"
-                np.savez(
-                    results_dir / traj_file,
-                    trajectory=cr.trajectory,
-                    time_us=cr.time_us,
-                    r0=r0,
-                    r_final=cr.r_final,
-                    hit_ion=cr.hit_ion,
-                    v0=cr.v0, b=cr.b, theta=cr.theta, dv=cr.dv,
+    # Build result iterator: Pool.imap preserves order → log stays sequential
+    pool = None
+    try:
+        if args.workers > 1:
+            from multiprocessing import Pool
+            _init_args = (r0, fit, ion, mol, args.molecule_temp, det,
+                          args.mass_amu, args.softening_um, args.t_integrate_us,
+                          v_init, args.gamma_damping)
+            seeds = [args.seed + 1 + i for i in range(args.n_simulations)]
+            chunksize = max(1, args.n_simulations // (args.workers * 4))
+            pool = Pool(args.workers, initializer=_init_pool, initargs=_init_args)
+            result_iter = pool.imap(_pool_worker, seeds, chunksize=chunksize)
+        else:
+            scan_rng = np.random.default_rng(args.seed + 1)
+            result_iter = (
+                run_single_collision(
+                    r0, fit, ion, mol, args.molecule_temp, scan_rng, det,
+                    mass_amu=args.mass_amu, t_integrate_us=args.t_integrate_us,
+                    softening_um=args.softening_um, save_trajectory=True,
+                    v_init_um_us=v_init, gamma_damping_per_s=args.gamma_damping,
                 )
-                img_path = results_dir / f"trajectories/event_{i:04d}.png"
-                fig = plot_trajectory_snapshots(
-                    cr.trajectory, cr.time_us, r0, cr.hit_ion,
-                    output=img_path,
-                    v0=cr.v0, b=cr.b, theta=cr.theta, dv=cr.dv,
-                    reconfigured=cr.reconfigured,
-                )
-                plt.close(fig)
-
-            dv_mag = float(np.linalg.norm(cr.dv))
-            reconfig_flag = 1 if cr.reconfigured else 0
-            log_f.write(
-                f"{i:>5}  {cr.hit_ion:>7}  {cr.v0:>13.6e}  {cr.b:>13.6e}"
-                f"  {cr.theta:>12.6f}  {dv_mag:>13.6e}"
-                f"  {cr.dv[0]:>13.6e}  {cr.dv[1]:>13.6e}  {cr.dv[2]:>13.6e}"
-                f"  {reconfig_flag:>12}  {traj_file}\n"
+                for _ in range(args.n_simulations)
             )
-            log_f.flush()
 
-            # Free trajectory memory if not needed for viz
-            if not (viz_traj and i < n_traj):
-                cr.trajectory = None
-                cr.time_us = None
+        with open(log_path, "a", encoding="utf-8") as log_f:
+            for i, cr in enumerate(result_iter):
+                results.append(cr)
+                n_reconfig += int(cr.reconfigured)
 
-            _print_progress(i + 1, args.n_simulations, time.time() - t0)
+                traj_file = "-"
+                if cr.reconfigured:
+                    traj_dir.mkdir(exist_ok=True)
+                    traj_file = f"trajectories/event_{i:04d}.npz"
+                    np.savez(
+                        results_dir / traj_file,
+                        trajectory=cr.trajectory,
+                        time_us=cr.time_us,
+                        r0=r0,
+                        r_final=cr.r_final,
+                        hit_ion=cr.hit_ion,
+                        v0=cr.v0, b=cr.b, theta=cr.theta, dv=cr.dv,
+                    )
+                    img_path = results_dir / f"trajectories/event_{i:04d}.png"
+                    fig = plot_trajectory_snapshots(
+                        cr.trajectory, cr.time_us, r0, cr.hit_ion,
+                        output=img_path,
+                        v0=cr.v0, b=cr.b, theta=cr.theta, dv=cr.dv,
+                        reconfigured=cr.reconfigured,
+                    )
+                    plt.close(fig)
+
+                dv_mag = float(np.linalg.norm(cr.dv))
+                reconfig_flag = 1 if cr.reconfigured else 0
+                log_f.write(
+                    f"{i:>5}  {cr.hit_ion:>7}  {cr.v0:>13.6e}  {cr.b:>13.6e}"
+                    f"  {cr.theta:>12.6f}  {dv_mag:>13.6e}"
+                    f"  {cr.dv[0]:>13.6e}  {cr.dv[1]:>13.6e}  {cr.dv[2]:>13.6e}"
+                    f"  {reconfig_flag:>12}  {traj_file}\n"
+                )
+                log_f.flush()
+
+                # Free trajectory memory if not needed for viz
+                if not (viz_traj and i < n_traj):
+                    cr.trajectory = None
+                    cr.time_us = None
+
+                _print_progress(i + 1, args.n_simulations, time.time() - t0)
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
 
     print()
 

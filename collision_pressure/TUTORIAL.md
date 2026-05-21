@@ -301,9 +301,23 @@ $$m\ddot{r}_i = -\nabla_i \left[ V_\text{trap}(\mathbf{r}) + \sum_{j \neq i} \fr
 --detector zigzag
 ```
 
-检测指定轴（默认 x，`--flip-axis 0`）上离子位置的符号翻转。适用于线性阱中的 zigzag 晶格——两个简并态常在 y 方向符号相反，此时使用 `--flip-axis 1`。
+基于 Pagano et al. (2019) Appendix C 的方法。按轴向坐标（默认 z，`--sort-axis 2`）排序初始和最终构型中的离子，计算对应离子之间的平方欧几里得距离之和（SSD）。SSD 超过阈值则判定为 zigzag flip。
 
-**原理**：记录平衡态中每个离子在 flip 轴上的符号，碰撞后检查是否有离子符号反转。
+**原理**：
+- 将初始和最终位置按链方向排序，建立离子对应关系
+- 无 flip：对应离子位置接近 → SSD 小
+- 有 flip（zig → zag）：每个离子横向坐标反号 → SSD 大（≈ 4Σy²）
+
+**阈值**：默认自动计算，取 `2.0 × Σ(flip_axis_i²)`（无 flip ~0 与全 flip ~4Σy² 的中点）。可通过 `--threshold-um2` 手动指定，`--auto-threshold-factor` 调整自动阈值系数。
+
+**参数**：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--flip-axis` | 0 (x) | zigzag 振荡方向（横向） |
+| `--sort-axis` | 2 (z) | 链方向（排序用） |
+| `--threshold-um2` | auto | SSD 阈值 (μm²) |
+| `--auto-threshold-factor` | 2.0 | 自动阈值系数 |
 
 ### 7.2 拓扑检测器
 
@@ -631,13 +645,22 @@ plot_batch_statistics(scan.collisions, N, output="stats.png")
   --n-simulations N        蒙特卡洛采样数 (默认 100)
 
 检测器:
-  --detector TYPE          zigzag / topology (默认 zigzag)
-  --flip-axis AXIS         zigzag 翻转轴 0=x/1=y/2=z (默认 0)
+  --detector TYPE          zigzag / topology (默认 topology)
+  --flip-axis AXIS         zigzag 横向轴 0=x/1=y/2=z (默认 0)
+  --sort-axis AXIS         zigzag 链方向 0=x/1=y/2=z (默认 2)
+  --threshold-um2 VAL      SSD 阈值 μm² (默认 auto)
+  --auto-threshold-factor  自动阈值系数 (默认 2.0)
 
 积分:
   --t-integrate-us T       积分时间 μs (默认 50.0)
   --maxiter N              平衡构型优化最大迭代 (默认 1000)
   --softening-um S         库仑软化长度 μm (默认 0.001)
+  --gamma-damping G        多普勒阻尼率 /s (默认 0=无阻尼)
+  --thermalize-us T        热化时间 μs (默认 20.0)
+  --thermalize-gamma G     热化阻尼率 /s (默认 2e5)
+
+并行:
+  --workers N              并行进程数 (默认 1=串行)
 
 输出:
   --output PATH            保存结果 npz

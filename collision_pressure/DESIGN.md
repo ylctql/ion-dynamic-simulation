@@ -208,61 +208,32 @@ class CrystalTopology:
 - 邻接矩阵精确比较（O(N²)）：仅在指纹相同时执行
 - 对于典型离子数 N=10~100，两者都很快
 
-### 4.5 `reconfiguration.py` — 结构重构检测（分层策略）
+### 4.5 `reconfiguration.py` — 结构重构检测
 
-采用**两层检测**架构：先比较拓扑（离散、标签无关），拓扑不变时再比较几何（连续、标签相关）。
+提供两种检测器，均继承自 `ReconfigDetector` 基类。
 
 ```python
 class ReconfigResult:
     """重构检测结果"""
     reconfigured: bool            # 是否发生重构
     topology_changed: bool        # 拓扑是否改变
-    geometry_changed: bool        # 几何是否改变（仅拓扑不变时有意义）
-    target_config_idx: int | None # 匹配到的目标构型索引（预扫描模式）
+    geometry_changed: bool        # 几何是否改变
+    ssd_um2: float                # SSD 值（zigzag 检测器）
 ```
+
+**`ZigzagFlipDetector`**：基于 Pagano et al. (2019) Appendix C 的方法。按轴向坐标（`sort_axis`）排序初始和最终构型中的离子，计算对应离子之间的平方欧几里得距离之和（SSD）。SSD 超过阈值则判定为 flip。
+
+- 自动阈值：`factor × Σ(flip_axis_i²)`，默认 factor=2.0（无 flip ~0 与全 flip ~4Σy² 的中点）
+- 参数：`flip_axis`（横向）、`sort_axis`（链方向）、`threshold_um2`（手动阈值）
+
+**`TopologyDetector`**：通用检测器，基于 Delaunay 三角剖分比较碰撞前后的邻接关系。
 
 ```python
 class ReconfigDetector(ABC):
-    """结构重构检测器基类"""
     @abstractmethod
     def register_equilibrium(self, r0: np.ndarray) -> None: ...
     @abstractmethod
     def check(self, r_final: np.ndarray) -> ReconfigResult: ...
-
-class TopologyDetector(ReconfigDetector):
-    """第 1 层 + 第 2 层的通用检测器"""
-```
-
-**`TopologyDetector` 检测流程**：
-
-```
-第 1 层: 拓扑比较
-    r_final → build_topology() → t_final
-    与 t_initial 比较:
-        → 拓扑不同 → 一定是重构 (topology_changed=True)
-        → 拓扑相同 → 进入第 2 层
-
-第 2 层: 几何比较（同拓扑框架内）
-    对 zigzag 晶格:
-        → 检查相邻离子 y 坐标的交替顺序是否翻转 (手性变化)
-    对一般 2D/3D 晶格:
-        → 检查有向三角形面积符号变化（镜像/手性变化）
-        → 或: 用 Hungarian matching 找最优标签对应后比较坐标偏差
-```
-
-**第 2 层的必要性**：zigzag flip 不改变拓扑（邻居关系完全相同，只是 y 坐标正负号交换），
-但实验上是可观测的结构变化。其他晶格也可能存在拓扑不变但几何结构改变的情况（如旋转对称构型的手性翻转）。
-
-**与预扫描的结合**（当 `--scan-configurations` 启用时）：
-
-```
-第 1 层: 拓扑比较
-    t_final 与所有预扫描构型的拓扑 {t_k} 比较
-    → 找到匹配的拓扑 t_k*
-    → 若 t_k* 不是初始构型 → 重构，并记录跃迁通道 k*
-
-第 2 层: 几何比较
-    → 在拓扑 k* 内部做几何精确匹配
 ```
 
 ### 4.5.1 `config_scan.py` — 构型预扫描（可选步骤）
@@ -342,18 +313,12 @@ def estimate_pressure(
 ### 4.8 `cli.py` — 命令行入口
 
 ```
-python -m collision_pressure \
-    --field-data data/monolithic20241118.csv \
-    --config FieldConfiguration/configs/collision.json \
+python -m collision_pressure simulate \
+    --trap-freq 2.0 3.0 0.1 \
     --n-ions 10 \
-    --ion-species Ba135+ \
-    --molecule H2 \
-    --molecule-temp 10 \
     --n-simulations 1000 \
-    --detector deviation \
-    --deviation-threshold 0.05 \
-    --integrator RK \
-    --device cuda \
+    --detector zigzag \
+    --workers 4 \
     --seed 42 \
     --output results.npz
 ```
@@ -362,33 +327,25 @@ python -m collision_pressure \
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--field-data` | （必需） | 电场 CSV 文件路径 |
-| `--config` | （必需） | 电压配置 JSON 路径 |
+| `--trap-freq` / `--csv` | （二选一） | 谐振阱频 MHz / 电场 CSV |
 | `--n-ions` | 10 | 离子数量 |
-| `--ion-species` | Ba135+ | 离子物种 |
+| `--ion-species` | Ba135+ | 离子物种：Ba135+ / Ba138+ / Yb171+ |
 | `--molecule` | H2 | 背景气体分子物种 |
 | `--molecule-temp` | 10 | 分子温度 (K) |
-| `--n-simulations` | 1000 | 蒙特卡洛采样次数 |
-| `--detector` | deviation | 重构检测策略：flip / deviation / combined |
-| `--deviation-threshold` | auto | 结构偏差阈值 (μm)，auto 表示由声子零点运动标定 |
-| `--integrator` | RK | 积分器：RK / VV |
-| `--device` | cpu | 计算设备：cpu / cuda |
-| `--equilibrium-file` | None | 预计算的平衡构型 .npz，跳过步骤 1-2 |
-| `--scan-configurations` | 0 | 构型预扫描随机初猜次数，0 = 不扫描 |
-| `--seed` | None | 随机种子 |
+| `--n-simulations` | 100 | 蒙特卡洛采样次数 |
+| `--detector` | topology | 重构检测策略：zigzag / topology |
+| `--flip-axis` | 0 | zigzag 横向轴 (0=x/1=y/2=z) |
+| `--sort-axis` | 2 | zigzag 链方向 (0=x/1=y/2=z) |
+| `--threshold-um2` | auto | SSD 阈值 (μm²)，auto 自动计算 |
+| `--workers` | 1 | 并行进程数（1=串行） |
+| `--init-file` | None | 预加载初态 npz |
+| `--t-integrate-us` | 50.0 | 积分时间 (μs) |
+| `--gamma-damping` | 0 | 多普勒阻尼率 (1/s)，0=无阻尼 |
+| `--thermalize-us` | 20.0 | 热化时间 (μs) |
+| `--seed` | 42 | 随机种子 |
 | `--output` | None | 结果输出路径 |
-| `--save-trajectories` | False | 保存所有碰撞轨迹 |
 
-**工作流**：
-
-1. 加载场数据和配置（复用 `FieldConfiguration` + `FieldParser`）
-2. 求平衡构型（调用 `equilibrium` 模块，或通过 `--equilibrium-file` 加载已有结果）
-3. （可选）构型预扫描：枚举势能面局部极小（`--scan-configurations` 启用）
-4. 计算声子模态
-5. 并行运行 N 次碰撞模拟（`multiprocessing.Pool` 或 `concurrent.futures.ProcessPoolExecutor`）
-6. 统计重构概率（若启用了构型预扫描，可额外输出各跃迁通道的转移概率）
-7. 估算压强
-8. 保存结果和统计信息
+**并行化**：`--workers N` 使用 `multiprocessing.Pool` + `imap()`，按提交顺序返回结果。每个 worker 通过 `initializer` 接收共享状态（fit、detector 等），每次任务仅传递一个 seed 整数。
 
 ---
 
