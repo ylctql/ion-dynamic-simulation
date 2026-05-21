@@ -107,6 +107,8 @@ def run_single_collision(
     save_trajectory: bool = False,
     v_init_um_us: np.ndarray | None = None,
     gamma_damping_per_s: float = 0.0,
+    rtol: float = 1e-8,
+    atol: float = 1e-10,
 ) -> CollisionResult:
     """Run a single collision event + trajectory integration.
 
@@ -167,7 +169,7 @@ def run_single_collision(
     t_span = (0.0, t_integrate_us)
     t_eval = np.linspace(0.0, t_integrate_us, n_steps)
     sol = solve_ivp(rhs, t_span, y0, method="RK45", t_eval=t_eval,
-                    rtol=1e-8, atol=1e-10)
+                    rtol=rtol, atol=atol)
 
     r_final = sol.y[:3*N, -1].reshape(N, 3)
 

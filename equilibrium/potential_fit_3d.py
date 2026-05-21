@@ -179,6 +179,26 @@ class FitResult3D:
     fit_mode: str | None = None  # 本此拟合模式键；None 在结果里表示 none（125 项张量）
     basis_exps: tuple[tuple[int, int, int], ...] = field(default_factory=lambda: TENSOR_MAXDEG4_EXPS)
 
+    def _build_grad_coeffs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Pre-compute derivative coefficient arrays for grad_fit_3d."""
+        c = self.coeffs
+        c_du = np.zeros((4, 5, 5))
+        for i in range(4):
+            c_du[i, :, :] = c[i + 1, :, :] * (i + 1)
+        c_dv = np.zeros((5, 4, 5))
+        for j in range(4):
+            c_dv[:, j, :] = c[:, j + 1, :] * (j + 1)
+        c_dw = np.zeros((5, 5, 4))
+        for k in range(4):
+            c_dw[:, :, k] = c[:, :, k + 1] * (k + 1)
+        return c_du, c_dv, c_dw
+
+    def grad_coeffs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Cached (c_du, c_dv, c_dw) for grad_fit_3d, computed once."""
+        if not hasattr(self, '_grad_coeffs_cache'):
+            self._grad_coeffs_cache = self._build_grad_coeffs()
+        return self._grad_coeffs_cache
+
 
 def fit_potential_3d_quartic(
     compute_V_total: Callable[[np.ndarray], np.ndarray],
@@ -348,25 +368,12 @@ def grad_fit_3d(fit: FitResult3D, r_um: np.ndarray) -> np.ndarray:
     u = (r_um[:, 0] - x0) / L
     v = (r_um[:, 1] - y0) / L
     w = (r_um[:, 2] - z0) / L
-    c = fit.coeffs
 
-    # dV/du, dV/dv, dV/dw（在缩放坐标下）
-    c_du = np.zeros((4, 5, 5))
-    for i in range(4):
-        c_du[i, :, :] = c[i + 1, :, :] * (i + 1)
+    c_du, c_dv, c_dw = fit.grad_coeffs()
     dV_du = P.polyval3d(u, v, w, c_du)
-
-    c_dv = np.zeros((5, 4, 5))
-    for j in range(4):
-        c_dv[:, j, :] = c[:, j + 1, :] * (j + 1)
     dV_dv = P.polyval3d(u, v, w, c_dv)
-
-    c_dw = np.zeros((5, 5, 4))
-    for k in range(4):
-        c_dw[:, :, k] = c[:, :, k + 1] * (k + 1)
     dV_dw = P.polyval3d(u, v, w, c_dw)
 
-    # 链式法则: dV/dx = (dV/du) * (du/dx) = (dV/du) / L
     return np.column_stack([dV_du / L, dV_dv / L, dV_dw / L])
 
 

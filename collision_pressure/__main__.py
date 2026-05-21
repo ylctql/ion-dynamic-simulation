@@ -67,6 +67,10 @@ def main() -> int:
     p_sim.add_argument("--viz-n-trajectories", type=int, default=3)
     p_sim.add_argument("--workers", type=int, default=1,
                        help="Number of parallel workers (1=sequential)")
+    p_sim.add_argument("--rtol", type=float, default=1e-8,
+                       help="ODE relative tolerance (default 1e-8)")
+    p_sim.add_argument("--atol", type=float, default=1e-10,
+                       help="ODE absolute tolerance (default 1e-10)")
 
     # Potential field (mutually exclusive)
     field_group = p_sim.add_mutually_exclusive_group()
@@ -96,13 +100,14 @@ _POOL_STATE = {}
 
 
 def _init_pool(r0, fit, ion, mol, T, det, mass_amu, softening_um,
-               t_integrate_us, v_init_um_us, gamma_damping_per_s):
+               t_integrate_us, v_init_um_us, gamma_damping_per_s, rtol, atol):
     global _POOL_STATE
     _POOL_STATE.update(
         r0=r0, fit=fit, ion=ion, mol=mol, T=T, det=det,
         mass_amu=mass_amu, softening_um=softening_um,
         t_integrate_us=t_integrate_us, v_init_um_us=v_init_um_us,
         gamma_damping_per_s=gamma_damping_per_s,
+        rtol=rtol, atol=atol,
     )
 
 
@@ -116,6 +121,7 @@ def _pool_worker(seed: int):
         mass_amu=p['mass_amu'], softening_um=p['softening_um'],
         t_integrate_us=p['t_integrate_us'], save_trajectory=True,
         v_init_um_us=p['v_init_um_us'], gamma_damping_per_s=p['gamma_damping_per_s'],
+        rtol=p['rtol'], atol=p['atol'],
     )
 
 
@@ -290,6 +296,8 @@ def _run_simulate(args) -> int:
         f"# gamma_damping: {args.gamma_damping:.6e} /s",
         "# b_max_factor: 3.0",
         f"# workers: {args.workers}",
+        f"# rtol: {args.rtol:.1e}",
+        f"# atol: {args.atol:.1e}",
         "#",
         "# === Detector ===",
         f"# type: {det_desc}",
@@ -327,7 +335,7 @@ def _run_simulate(args) -> int:
             from multiprocessing import Pool
             _init_args = (r0, fit, ion, mol, args.molecule_temp, det,
                           args.mass_amu, args.softening_um, args.t_integrate_us,
-                          v_init, args.gamma_damping)
+                          v_init, args.gamma_damping, args.rtol, args.atol)
             seeds = [args.seed + 1 + i for i in range(args.n_simulations)]
             chunksize = max(1, args.n_simulations // (args.workers * 4))
             pool = Pool(args.workers, initializer=_init_pool, initargs=_init_args)
@@ -340,6 +348,7 @@ def _run_simulate(args) -> int:
                     mass_amu=args.mass_amu, t_integrate_us=args.t_integrate_us,
                     softening_um=args.softening_um, save_trajectory=True,
                     v_init_um_us=v_init, gamma_damping_per_s=args.gamma_damping,
+                    rtol=args.rtol, atol=args.atol,
                 )
                 for _ in range(args.n_simulations)
             )
