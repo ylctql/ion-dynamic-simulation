@@ -67,10 +67,10 @@ def main() -> int:
     p_sim.add_argument("--viz-n-trajectories", type=int, default=3)
     p_sim.add_argument("--workers", type=int, default=1,
                        help="Number of parallel workers (1=sequential)")
-    p_sim.add_argument("--rtol", type=float, default=1e-8,
-                       help="ODE relative tolerance (default 1e-8)")
-    p_sim.add_argument("--atol", type=float, default=1e-10,
-                       help="ODE absolute tolerance (default 1e-10)")
+    p_sim.add_argument("--rtol", type=float, default=1e-6,
+                       help="ODE relative tolerance (default 1e-6)")
+    p_sim.add_argument("--atol", type=float, default=1e-8,
+                       help="ODE absolute tolerance (default 1e-8)")
 
     # Potential field (mutually exclusive)
     field_group = p_sim.add_mutually_exclusive_group()

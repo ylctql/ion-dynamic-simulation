@@ -107,8 +107,8 @@ def run_single_collision(
     save_trajectory: bool = False,
     v_init_um_us: np.ndarray | None = None,
     gamma_damping_per_s: float = 0.0,
-    rtol: float = 1e-8,
-    atol: float = 1e-10,
+    rtol: float = 1e-6,
+    atol: float = 1e-8,
 ) -> CollisionResult:
     """Run a single collision event + trajectory integration.
 
