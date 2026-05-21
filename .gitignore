@@ -72,7 +72,6 @@ benchmark/benchmark_results/
 tests/test_results/
 equilibrium/results/
 bilayer/out/
-ImgSimulation/traj_zx/
-ImgSimulation/pos_zx/
-ImgSimulation/Imgs/
-ImgSimulation/meta
+
+# 参考文献
+reference/

@@ -27,6 +27,9 @@ class FieldSettings:
     dissipation_mode: Literal["scalar", "vector"] = "scalar"
     g: float | np.ndarray = 0.1  # 相对耗散强度，scalar 时为 float，vector 时为 (3,) 数组
 
+    # ----- 理想谐振势参数 -----
+    trap_freq_MHz: tuple[float, float, float] | None = None  # (fx, fy, fz) MHz，与 csv_filename 互斥
+
     def __post_init__(self) -> None:
         if self.dissipation_mode == "scalar":
             self.g = float(self.g)

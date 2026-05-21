@@ -56,10 +56,11 @@ def main() -> None:
     parser.add_argument(
         "--fit-mode",
         type=str,
-        default="none",
+        default="quartic",
         choices=["none", "even", "quartic", "quartic_even", "quadratic"],
         help=(
-            "none=125 项张量；even=27 项全偶；quartic=35 项总次数≤4；"
+            "默认 quartic=35 项总次数≤4；"
+            "none=125 项张量；even=27 项全偶；"
             "quartic_even=10 项；quadratic=4 项（均为缩放坐标 u,v,w）"
         ),
     )

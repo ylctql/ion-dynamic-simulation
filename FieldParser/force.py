@@ -145,3 +145,70 @@ def make_force(
     _bound_max = bound_max
 
     return force
+
+
+# ---------------------------------------------------------------------------
+# Harmonic (ideal quadratic) trap force
+# ---------------------------------------------------------------------------
+
+# Module-level state for harmonic force (fork-inherited by child processes)
+_kx: float = 0.0
+_ky: float = 0.0
+_kz: float = 0.0
+_gamma_h: float | np.ndarray = 0.0
+
+
+def harmonic_force(r: np.ndarray, v: np.ndarray, t: float) -> np.ndarray:
+    """Ideal harmonic trap: F_dim = -k * r_dim - gamma * v"""
+    r = np.asarray(r, dtype=float, order="C")
+    v = np.asarray(v, dtype=float, order="C")
+    F = np.empty_like(r)
+    F[:, 0] = -_kx * r[:, 0]
+    F[:, 1] = -_ky * r[:, 1]
+    F[:, 2] = -_kz * r[:, 2]
+    g = np.asarray(_gamma_h, dtype=float)
+    if np.any(g != 0):
+        F -= g * v
+    return F.astype(float, order="C")
+
+
+def make_harmonic_force(
+    kx: float,
+    ky: float,
+    kz: float,
+    gamma: float | np.ndarray,
+) -> Callable[[np.ndarray, np.ndarray, float], np.ndarray]:
+    """Set module-level harmonic force state and return the callable."""
+    global _kx, _ky, _kz, _gamma_h
+    _kx = float(kx)
+    _ky = float(ky)
+    _kz = float(kz)
+    _gamma_h = np.asarray(gamma, dtype=float)
+    if _gamma_h.ndim == 0:
+        _gamma_h = float(_gamma_h)
+    return harmonic_force
+
+
+def build_harmonic_force(
+    freq_MHz: tuple[float, float, float],
+    cfg,
+    gamma: float | np.ndarray = 0.0,
+) -> Callable[[np.ndarray, np.ndarray, float], np.ndarray]:
+    """Build a harmonic trap force callable from secular frequencies.
+
+    Parameters
+    ----------
+    freq_MHz : (fx, fy, fz)
+        Secular frequencies in MHz.
+    cfg : Config
+        Dimensionless system constants (provides Omega, dt).
+    gamma : float | np.ndarray
+        Dissipation coefficient (same convention as CSV force).
+
+    Returns
+    -------
+    force callable compatible with the C++ ionsim kernel.
+    """
+    omega = np.array(freq_MHz) * 2.0 * np.pi * 1e6   # rad/s
+    k = (omega * cfg.dt) ** 2                          # dimensionless spring constants
+    return make_harmonic_force(k[0], k[1], k[2], gamma)

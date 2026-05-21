@@ -132,6 +132,13 @@ def _build_force(
     smooth_sg: tuple[int, int] = (11, 3),
 ) -> Callable:
     """根据 field_settings 构建 force 回调"""
+    if field_settings.trap_freq_MHz is not None:
+        from FieldParser.force import build_harmonic_force
+
+        return build_harmonic_force(
+            field_settings.trap_freq_MHz, cfg,
+            gamma=field_settings.get_gamma(),
+        )
     if not field_settings.csv_filename:
         return _zero_force
     csv_path = Path(field_settings.csv_filename)

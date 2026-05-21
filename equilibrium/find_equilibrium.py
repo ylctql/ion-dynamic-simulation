@@ -618,11 +618,12 @@ def main() -> None:
     parser.add_argument(
         "--fit-mode",
         type=str,
-        default="none",
+        default="quartic",
         choices=["none", "even", "quartic", "quartic_even", "quadratic"],
         help=(
-            "3D 势拟合：none=各变量≤4 张量积 125 项；even=其上删奇次指数 27 项；"
-            "quartic=总次数≤4 共 35 项；quartic_even=quartic 全偶 10 项；quadratic=4 项"
+            "3D 势拟合（默认 quartic）：quartic=总次数≤4 共 35 项；"
+            "none=各变量≤4 张量积 125 项；even=其上删奇次指数 27 项；"
+            "quartic_even=quartic 全偶 10 项；quadratic=4 项"
         ),
     )
     parser.add_argument("--softening-um", type=float, default=0.001, help="库伦软化长度 (μm)，默认 0.001")

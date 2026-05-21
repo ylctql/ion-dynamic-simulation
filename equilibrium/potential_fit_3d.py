@@ -2,9 +2,9 @@
 总势场 3D 多项式拟合（缩放坐标 u,v,w）
 
 fit_potential_3d_quartic: V_shifted = Σ c_{ijk} u^i v^j w^k，由 fit_mode 选基底：
-- none（默认）：0≤i,j,k≤4 张量积，5³=125 项；
+- quartic（默认）：总次数 i+j+k≤4，35 项；
+- none：0≤i,j,k≤4 张量积，5³=125 项；
 - even：在 125 项上删去 i,j,k 任一为奇数的项（仅全偶次），27 项；
-- quartic：总次数 i+j+k≤4，35 项；
 - quartic_even：quartic 上仅保留 i,j,k 全偶，10 项；
 - quadratic：常数 + u²,v²,w²，4 项。
 
@@ -58,9 +58,8 @@ QUADRATIC_FIT_EXPS: tuple[tuple[int, int, int], ...] = (
 
 def normalize_fit_mode(fit_mode: str | None) -> str | None:
     """
-    None / 'none'：张量积 125 项；'even'：125 项中去奇次（27 项）；
-    'quartic'：总次数≤4（35）；'quartic_even'：quartic + 全偶（10）；
-    'quadratic'：常数 + 轴二次（4）。
+    None：张量积 125 项；'none'：同上；'quartic'：总次数≤4（35 项）；'even'：125 项中去奇次（27）；
+    'quartic_even'：quartic + 全偶（10）；'quadratic'：常数 + 轴二次（4）。
     """
     if fit_mode is None:
         return None
@@ -177,7 +176,7 @@ class FitResult3D:
     scale_um: float  # L，坐标缩放半跨度
     potential_offset_V: float  # 参考最小势 V_min_ref（被减去）
     r_squared: float
-    fit_mode: str | None = None  # 本此拟合模式键；None 表示 none（125 项张量）
+    fit_mode: str | None = None  # 本此拟合模式键；None 在结果里表示 none（125 项张量）
     basis_exps: tuple[tuple[int, int, int], ...] = field(default_factory=lambda: TENSOR_MAXDEG4_EXPS)
 
 
@@ -188,7 +187,7 @@ def fit_potential_3d_quartic(
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
     n_pts_per_axis: int | tuple[int, int, int] = 8,
     potential_offset_V: float | None = None,
-    fit_mode: str | None = None,
+    fit_mode: str | None = "quartic",
 ) -> FitResult3D:
     """
     对总势场在缩放坐标下做多项式最小二乘拟合，并将势能零点平移到参考最小势。
@@ -212,9 +211,9 @@ def fit_potential_3d_quartic(
     potential_offset_V : float | None
         势能零点平移参考值 V_min_ref（单位 V）。若为 None，则退化为当前拟合采样点的最小势。
     fit_mode : str | None
-        'none'：0≤i,j,k≤4 张量积（125）。'even'：其上去掉任一指为奇次的项（27）。
-        'quartic'：i+j+k≤4（35）。'quartic_even'：quartic 的全偶子集（10）。
-        'quadratic'：常数 + u²,v²,w²（4）。
+        默认 'quartic'：i+j+k≤4（35）。'none'：0≤i,j,k≤4 张量积（125）。
+        'even'：其上去掉任一指为奇次的项（27）。'quartic_even'：quartic 的全偶子集（10）。
+        'quadratic'：常数 + u²,v²,w²（4）。显式传入 None 等价于 'none'（125 项）。
 
     Returns
     -------

@@ -284,11 +284,19 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="WINDOW,POLY",
         help="Savitzky-Golay 滤波器参数：窗口长度与多项式阶数，逗号分隔，默认 11,3",
     )
-    parser.add_argument(
+    field_group = parser.add_mutually_exclusive_group()
+    field_group.add_argument(
         "--csv",
         type=str,
         default="",
-        help="电场 CSV；可仅传文件名(如 monolithic20241118.csv)则自动在 data/ 下查找；可设 ISM_DEFAULT_CSV 覆盖默认",
+        help="电场 CSV；可仅传文件名(如 monolithic20241118.csv)则自动在 data/ 下查找；与 --trap-freq 互斥",
+    )
+    field_group.add_argument(
+        "--trap-freq",
+        nargs=3,
+        type=float,
+        metavar=("FX", "FY", "FZ"),
+        help="理想谐振势阱频 (MHz)，与 --csv 互斥",
     )
     parser.add_argument(
         "--config",
@@ -473,38 +481,48 @@ def parse_and_build(
         raise ValueError("启用 --bilayer 时离子数 N 必须为偶数")
 
     # 4. 构建 FieldSettings
-    csv_path = _resolve_path(csv_input, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
-    csv_exists = Path(csv_path).exists()
+    trap_freq = getattr(args, "trap_freq", None)
 
-    if csv_exists:
-        import pandas as pd
+    if trap_freq is not None:
+        field_settings = FieldSettings(
+            csv_filename="",
+            voltage_list=[],
+            g=0.1,
+            trap_freq_MHz=(trap_freq[0], trap_freq[1], trap_freq[2]),
+        )
+    else:
+        csv_path = _resolve_path(csv_input, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
+        csv_exists = Path(csv_path).exists()
 
-        dat = pd.read_csv(csv_path, comment="%", header=None)
-        n_voltage = dat.shape[1] - 3
-        if n_voltage > 0:
-            try:
-                field_settings = field_settings_from_config(
-                    csv_path, config_path, n_voltage, cfg
-                )
-            except FileNotFoundError as e:
-                logger.warning("%s，使用零电压默认配置", e)
-                config = {"g": 0.1, "voltage_list": []}
-                voltage_list = build_voltage_list(config, n_voltage, cfg)
+        if csv_exists:
+            import pandas as pd
+
+            dat = pd.read_csv(csv_path, comment="%", header=None)
+            n_voltage = dat.shape[1] - 3
+            if n_voltage > 0:
+                try:
+                    field_settings = field_settings_from_config(
+                        csv_path, config_path, n_voltage, cfg
+                    )
+                except FileNotFoundError as e:
+                    logger.warning("%s，使用零电压默认配置", e)
+                    config = {"g": 0.1, "voltage_list": []}
+                    voltage_list = build_voltage_list(config, n_voltage, cfg)
+                    field_settings = FieldSettings(
+                        csv_filename=csv_path,
+                        voltage_list=voltage_list,
+                        g=0.1,
+                    )
+            else:
                 field_settings = FieldSettings(
                     csv_filename=csv_path,
-                    voltage_list=voltage_list,
+                    voltage_list=[],
                     g=0.1,
                 )
         else:
-            field_settings = FieldSettings(
-                csv_filename=csv_path,
-                voltage_list=[],
-                g=0.1,
-            )
-    else:
-        field_settings = FieldSettings(csv_filename="", voltage_list=[], g=0.1)
-        if args.csv:
-            logger.warning("CSV 文件不存在 %s，使用零外力", csv_path)
+            field_settings = FieldSettings(csv_filename="", voltage_list=[], g=0.1)
+            if args.csv:
+                logger.warning("CSV 文件不存在 %s，使用零外力", csv_path)
 
     # 5. 解析 color_mode（单同位素或混合模式时默认 isotope 着色）
     if args.color_mode is not None:
