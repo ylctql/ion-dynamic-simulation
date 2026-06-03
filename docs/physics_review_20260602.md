@@ -6,7 +6,7 @@
 
 ## 🔴 严重问题
 
-### P0-1. C++ 库仑力缺少无量纲常数因子 4 [已修复]
+### P0-1. C++ 库仑力缺少无量纲常数因子 4 [已修复 2026-06-02]
 
 **文件**: `ComputeKernel/Coulomb.cpp:29-65`, `Coulomb_cuda.cu:56-61`
 
@@ -37,7 +37,7 @@ data_t factor = 4.0 * charge_i * shared_charge[j_in_tile] * inv_dist3;
 
 ---
 
-### P0-2. 碰撞散射角公式中椭圆积分参数错误 [已修复]
+### P0-2. 碰撞散射角公式中椭圆积分参数错误 [已修复 2026-06-02]
 
 **文件**: `collision_pressure/collision.py:46-48`
 
@@ -74,38 +74,32 @@ m_ellip = (1.0 - x) / (1.0 + x)  # 修改此行
 
 ## 🟡 中等问题
 
-### P1-1. 碰撞垂直冲量方向未随机化方位角
+### P1-1. 碰撞垂直冲量方向未随机化方位角 [已修复 2026-06-03]
 
-**文件**: `collision_pressure/collision.py:79-85`
+**文件**: `collision_pressure/collision.py:52-87`
 
 **现状**: 垂直方向始终取 `direction × ẑ`，未对碰撞平面方位角 φ 随机采样。
 
 **物理要求**: 弹性散射的垂直分量应在以入射方向为轴的锥面上各向同性分布。
 
-**建议修复**:
+**修复**: 构建正交基 `(e1, e2)`，随机采样方位角：
 ```python
 def post_collision_kick(ion, mol, v0, theta, direction, *, rng=None):
     ...
-    z = np.array([0.0, 0.0, 1.0])
-    e1 = np.cross(direction, z)
-    norm = np.linalg.norm(e1)
-    if norm < 1e-12:
-        e1 = np.array([1.0, 0.0, 0.0])
-    else:
-        e1 /= norm
+    e1 = np.cross(direction, z);  e1 /= |e1|
     e2 = np.cross(direction, e1)
-    phi = rng.uniform(0.0, 2.0 * np.pi) if rng is not None else 0.0
-    perp = np.cos(phi) * e1 + np.sin(phi) * e2
+    phi = rng.uniform(0, 2*pi) if rng else 0.0
+    perp = cos(phi) * e1 + sin(phi) * e2
     ...
 ```
-
-需同步修改 `post_collision_kick` 签名以接收 `rng` 参数。
+- `simulation.py` 调用处已同步传入 `rng=rng`
+- `rng=None` 时 `phi=0`，保持向后兼容
 
 ---
 
-### P1-2. Velocity Verlet 积分器对速度相关力（耗散项）处理不当
+### P1-2. Velocity Verlet 积分器对速度相关力（耗散项）处理不当 [已修复 2026-06-03]
 
-**文件**: `ComputeKernel/numerical_integration.cpp:122-138`
+**文件**: `ComputeKernel/numerical_integration.cpp:99-151`
 
 **问题 a — 第一步使用 Euler**:
 ```cpp
@@ -125,13 +119,24 @@ v += (a + a_last) * dt/2;
 
 当加速度含耗散项 `-γv` 时，应在更新后的速度处评估加速度，否则耗散精度降为一阶。
 
-**影响**: 小阻尼下影响微弱；大 Doppler 冷却阻尼下能量耗散速率有偏差。
+**修复**: 改为 predictor-corrector Velocity Verlet：
+```cpp
+// 循环前计算初始加速度（消除首步 Euler 问题）
+a_last = acceleration(r, v, charge, mass, time_start, ...);
 
-**建议**: 对含耗散的系统改用 Predictor-Corrector Verlet 或统一使用 RK4（现为默认）。
+for (size_t i = 0; i < step; ++i) {
+    r += v * dt + a_last * dt²/2;         // 位置更新（二阶）
+    v_pred = v + a_last * dt;              // 速度预测
+    a = acceleration(r, v_pred, t+dt, ...); // 用预测速度评估加速度
+    v += (a + a_last) * dt / 2;            // 速度校正（二阶）
+    a_last = a;
+}
+```
+- 保守力下退化为标准 VV，耗散力下保持二阶精度
 
 ---
 
-### P1-3. 碰撞参数采样不按截面积加权
+### P1-3. 碰撞参数采样不按截面积加权 [已修复 2026-06-03]
 
 **文件**: `collision_pressure/sampling.py:21-23`
 
@@ -142,7 +147,23 @@ v += (a + a_last) * dt/2;
 b = b_max * np.sqrt(rng.uniform(0.0, 1.0))  # 正确
 ```
 
-**与 Langevin 速率的一致性问题**: `pressure.py` 的 `k_L` 仅覆盖 b < b_c 的轨道碰撞截面，而模拟采样 b ∈ [0, 3b_c]，二者不匹配。修复采样方式后需同步审查压力估算公式。
+**修复**: `sample_impact_parameter` 改为 `b = b_max * sqrt(U)`，其中 `U ~ Uniform(0,1)`。
+
+---
+
+## 🔧 其他修复
+
+### Ba-135 离子质量统一 [已修复 2026-06-03]
+
+**文件**: `FieldConfiguration/constants.py`, `collision_pressure/species.py`
+
+**现状**: `constants.py` 硬编码 `m = 2.239367e-25` kg (≈134.853 amu)，`species.py` 使用 `135.0` amu，两者不一致（偏差 ~0.1%）且均非精确值。
+
+**修复**:
+- `FieldConfiguration/constants.py` 定义 `BA135_MASS_AMU = 134.905683`（NIST AME2020），`m` 由 `BA135_MASS_AMU * scipy.constants.u` 自动计算
+- `collision_pressure/species.py` 从 `FieldConfiguration.constants` 导入 `BA135_MASS_AMU`，`BA_135` 使用该值
+- 唯一权威来源：`FieldConfiguration.constants.BA135_MASS_AMU`
+- 新旧差异 +0.035%
 
 ---
 

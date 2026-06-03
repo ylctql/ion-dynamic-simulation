@@ -55,6 +55,8 @@ def post_collision_kick(
     v0: float,
     theta: float,
     direction: np.ndarray,
+    *,
+    rng: np.random.Generator | None = None,
 ) -> np.ndarray:
     """Velocity kick on the struck ion (m/s)
 
@@ -63,6 +65,8 @@ def post_collision_kick(
     v0 : float — H2 speed (m/s)
     theta : float — scattering angle (rad)
     direction : (3,) unit vector — incoming molecule direction
+    rng : Generator or None — if provided, azimuthal angle is randomized
+          uniformly in [0, 2π); otherwise φ = 0 (backward compatible).
 
     Returns
     -------
@@ -75,13 +79,18 @@ def post_collision_kick(
     dv_mag_parallel = v0 * (1.0 - np.cos(theta))
     dv_mag_perp = v0 * np.sin(theta)
 
-    # perpendicular direction: cross with z-hat, normalized
+    # Build orthonormal basis (e1, e2) in the plane perpendicular to direction
     z = np.array([0.0, 0.0, 1.0])
-    perp = np.cross(direction, z)
-    norm = np.linalg.norm(perp)
+    e1 = np.cross(direction, z)
+    norm = np.linalg.norm(e1)
     if norm < 1e-12:
-        perp = np.array([1.0, 0.0, 0.0])
+        e1 = np.array([1.0, 0.0, 0.0])
     else:
-        perp /= norm
+        e1 /= norm
+    e2 = np.cross(direction, e1)
+
+    # Randomize azimuthal angle in the scattering plane
+    phi = rng.uniform(0.0, 2.0 * np.pi) if rng is not None else 0.0
+    perp = np.cos(phi) * e1 + np.sin(phi) * e2
 
     return ratio * (dv_mag_parallel * direction + dv_mag_perp * perp)

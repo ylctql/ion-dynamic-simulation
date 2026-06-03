@@ -138,7 +138,7 @@ def run_single_collision(
 
     # 2. Collision mechanics
     theta = scattering_angle(ion, mol, v0, b)
-    dv_m_s = post_collision_kick(ion, mol, v0, theta, direction)
+    dv_m_s = post_collision_kick(ion, mol, v0, theta, direction, rng=rng)
 
     # 3. Initial conditions: r = r0, v = v_init + collision kick on hit ion
     # m/s and um/us are numerically equal (1 m/s = 1 um/us)

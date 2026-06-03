@@ -113,7 +113,11 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajVV(
     TensorType v = init_v;
     TensorType a(N, DIM);
     TensorType a_last(N, DIM);
-    bool a_last_initialized = false;
+    TensorType v_pred(N, DIM);
+
+    // Compute initial acceleration before the loop (fixes first-step Euler issue)
+    a_last = acceleration(r, v, charge, mass, time_start, force, use_cuda,
+                          cuda_ctx);
 
     std::vector<TensorType> r_ret, v_ret;
     r_ret.reserve(step);
@@ -122,20 +126,20 @@ std::pair<std::vector<TensorType>, std::vector<TensorType>> CalcTrajVV(
     for (size_t i = 0; i < step; ++i) {
         const data_t t = time_start + dt * static_cast<data_t>(i);
 
-        if (!a_last_initialized) {
-            a = acceleration(r, v, charge, mass, t, force, use_cuda, cuda_ctx);
-            a_last = a;
-            a_last_initialized = true;
+        // Position update (second-order)
+        r += v * dt + a_last * (dt * dt * 0.5);
 
-            r += v * dt + a * (dt * dt * 0.5);
-            v += a * dt;
-        } else {
-            r += v * dt + a_last * (dt * dt * 0.5);
-            a = acceleration(r, v, charge, mass, t + dt, force, use_cuda,
-                            cuda_ctx);
-            v += (a + a_last) * (dt * 0.5);
-            a_last = a;
-        }
+        // Predictor: estimate v at t+dt for force evaluation
+        // Handles velocity-dependent forces (dissipation) at second order
+        v_pred = v + a_last * dt;
+
+        // Evaluate acceleration at (r_new, v_pred, t+dt)
+        a = acceleration(r, v_pred, charge, mass, t + dt, force, use_cuda,
+                         cuda_ctx);
+
+        // Velocity corrector (second-order)
+        v += (a + a_last) * (dt * 0.5);
+        a_last = a;
 
         r_ret.push_back(r);
         v_ret.push_back(v);

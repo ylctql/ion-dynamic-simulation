@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from FieldConfiguration.constants import BA135_MASS_AMU
 
 AMU = 1.66053906660e-27       # kg
 EPS0 = 8.854187817e-12        # F/m
@@ -31,7 +32,7 @@ class Species:
 H2_MOLECULE = Species("H2", 2.016, polarizability=8.04e-31, charge_ec=0.0)
 HE_MOLECULE = Species("He", 4.003, polarizability=2.07e-31, charge_ec=0.0)
 
-BA_135 = Species("Ba135+", 135.0, polarizability=0.0, charge_ec=1.0)
+BA_135 = Species("Ba135+", BA135_MASS_AMU, polarizability=0.0, charge_ec=1.0)
 BA_138 = Species("Ba138+", 138.0, polarizability=0.0, charge_ec=1.0)
 YB_171 = Species("Yb171+", 171.0, polarizability=0.0, charge_ec=1.0)
 

@@ -19,8 +19,13 @@ def sample_velocity(T: float, mass_amu: float, rng: np.random.Generator) -> floa
 
 
 def sample_impact_parameter(b_max: float, rng: np.random.Generator) -> float:
-    """Uniform sampling in impact parameter b in [0, b_max] (m)"""
-    return float(rng.uniform(0.0, b_max))
+    """Area-weighted sampling of impact parameter b in [0, b_max] (m).
+
+    Differential cross-section dσ/db = 2πb, so the CDF is (b/b_max)².
+    Sampling b = b_max * sqrt(U) with U ~ Uniform(0,1) gives the correct
+    area-weighted distribution.
+    """
+    return float(b_max * np.sqrt(rng.uniform(0.0, 1.0)))
 
 
 def sample_collision_ion(N: int, rng: np.random.Generator) -> int:
