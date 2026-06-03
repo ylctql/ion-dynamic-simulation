@@ -55,7 +55,7 @@ __global__ void computeCoulombInteractionKernel(
 
                 data_t inv_dist = rsqrt(dist2);
                 data_t inv_dist3 = inv_dist * inv_dist * inv_dist;
-                data_t factor = charge_i * shared_charge[j_in_tile] * inv_dist3;
+                data_t factor = 4.0 * charge_i * shared_charge[j_in_tile] * inv_dist3;
 
                 for (int d = 0; d < DIM; ++d) {
                     force[d] += diff[d] * factor;

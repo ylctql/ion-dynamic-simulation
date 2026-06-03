@@ -33,8 +33,8 @@ def circular_orbit_initial_conditions(R: float = 1.0) -> tuple[np.ndarray, np.nd
     """
     两离子（q1=+1, q2=-1，质量均为 1）在库仑吸引力下绕原点圆周运动的初始条件。
 
-    库仑力 F = q1*q2*(r1-r2)/|r1-r2|^3，对粒子 1：|F1| = 1/(4R^2)
-    圆周运动：v^2/R = 1/(4R^2) => v = 1/(2*sqrt(R))
+    库仑力 F = 4*q1*q2*(r1-r2)/|r1-r2|^3，对粒子 1：|F1| = 4/(4R^2) = 1/R^2
+    圆周运动：v^2/R = 1/R^2 => v = 1/sqrt(R)
 
     Parameters
     ----------
@@ -48,7 +48,7 @@ def circular_orbit_initial_conditions(R: float = 1.0) -> tuple[np.ndarray, np.nd
     charge : (2,) 电荷 [+1, -1]
     mass : (2,) 质量 [1, 1]
     """
-    v = 0.5 / np.sqrt(R)  # 理论圆周速度
+    v = 1.0 / np.sqrt(R)  # 理论圆周速度
     r0 = np.array([[R, 0.0, 0.0], [-R, 0.0, 0.0]], dtype=np.float64, order="F")
     v0 = np.array([[0.0, v, 0.0], [0.0, -v, 0.0]], dtype=np.float64, order="F")
     charge = np.array([1.0, -1.0], dtype=np.float64)
@@ -146,7 +146,7 @@ def run_comparison(
     dict with keys: t, dr_cpu, dv_cpu, dr_cuda, dv_cuda, R, v_theory, cuda_available
     """
     r0, v0, charge, mass = circular_orbit_initial_conditions(R)
-    v_theory = 0.5 / np.sqrt(R)
+    v_theory = 1.0 / np.sqrt(R)
 
     time_dt = time / 10.0 * TIME_EQUIVALENT_10US
     result = {"R": R, "v_theory": v_theory, "time": time}
@@ -254,7 +254,7 @@ def plot_comparison(result: dict, out_path: str | None = None) -> None:
 def test_circular_orbit_conservation():
     """pytest：验证圆周运动初始条件在短时内误差较小"""
     r0, v0, charge, mass = circular_orbit_initial_conditions(R=1.0)
-    v_theory = 0.5 / np.sqrt(1.0)
+    v_theory = 1.0 / np.sqrt(1.0)
 
     r_cpu, v_cpu, t = run_trajectory(
         r0, v0, charge, mass,

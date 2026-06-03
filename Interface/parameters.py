@@ -35,7 +35,7 @@ class Parameters:
     device: Literal["cpu", "cuda"] = "cpu"
 
     # ----- 动力学模拟方法 -----
-    calc_method: Literal["RK4", "VV"] = "VV"
+    calc_method: Literal["RK4", "VV"] = "RK4"
 
     # ----- 同位素参杂（可选，用于自动分配质量）-----
     alpha: float = 0.0  # 参杂比例，>0 时按 Ba133/134/135/136/137/138 分配质量
@@ -189,7 +189,7 @@ def from_argparse(args, dt: float, *, n_ions: int | None = None) -> Parameters:
         t0=t0_dt,
         duration=duration_dt,
         device="cuda" if getattr(args, "device", "cpu") == "cuda" else "cpu",
-        calc_method=getattr(args, "calc_method", "VV"),
+        calc_method=getattr(args, "calc_method", "RK4"),
         bilayer=bool(getattr(args, "bilayer", False)),
         bilayer_y0_um=float(getattr(args, "bilayer_y0", 100.0)),
     )

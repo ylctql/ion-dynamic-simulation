@@ -57,7 +57,7 @@ TensorType CoulombInteractionCpu(CRef<TensorType>& r,
             ((r.col(i).matrix() * ones_col -
               ones_row * r.col(i).transpose().matrix())
                  .array() /
-             dist2_cubed * charge_matrix.array())
+             dist2_cubed * charge_matrix.array() * 4.0)
                 .rowwise()
                 .sum();
     }

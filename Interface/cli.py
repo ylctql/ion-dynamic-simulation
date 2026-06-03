@@ -266,7 +266,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--calc_method",
         type=str,
-        default="VV",
+        default="RK4",
         choices=["RK4", "VV"],
         help="积分算法: RK4 或 VV",
     )

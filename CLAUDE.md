@@ -50,7 +50,7 @@ pytest                            # 运行测试
 | 文件 | 关键内容 |
 |------|---------|
 | `cli.py` | `create_parser()`, `parse_and_build()`, `ParsedRun` 数据类 |
-| `parameters.py` | `Parameters` 数据类（N, m, q, r0, v0, device, calc_method...），含同位素掺杂逻辑 |
+| `parameters.py` | `Parameters` 数据类（N, m, q, r0, v0, device, calc_method...），含同位素掺杂逻辑。默认 `calc_method="RK4"` |
 | `bilayer_init.py` | `apply_bilayer_y_split()` — 将离子分为上下两层 |
 
 ### `FieldConfiguration/` — 常数与电压配置
@@ -77,7 +77,7 @@ pytest                            # 运行测试
 | 文件 | 关键内容 |
 |------|---------|
 | `ionsim.cpp` | pybind11 绑定：`calculate_trajectory_impl()`，将 Python force 包装为 C++ 回调 |
-| `numerical_integration.hpp` | `CalcTrajRK` (RK4), `CalcTrajVV` (Velocity Verlet), `CalcTraj` 统一入口 |
+| `numerical_integration.hpp` | `CalcTrajRK` (RK4，默认), `CalcTrajVV` (Velocity Verlet), `CalcTraj` 统一入口 |
 | `types.hpp` | `DIM=3`, `data_t=double`, Eigen 数组类型 |
 | `backend.py` | `CalculationBackend` — Python 侧：管理子进程、队列通信、批量帧输出 |
 | `CMakeLists.txt` | 编译 `ionsim.cpp` + 数值积分 + 库仑力（可选 CUDA） |

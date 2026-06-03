@@ -361,16 +361,7 @@ def _run_simulate(args) -> int:
                 traj_file = "-"
                 if cr.reconfigured:
                     traj_dir.mkdir(exist_ok=True)
-                    traj_file = f"trajectories/event_{i:04d}.npz"
-                    np.savez(
-                        results_dir / traj_file,
-                        trajectory=cr.trajectory,
-                        time_us=cr.time_us,
-                        r0=r0,
-                        r_final=cr.r_final,
-                        hit_ion=cr.hit_ion,
-                        v0=cr.v0, b=cr.b, theta=cr.theta, dv=cr.dv,
-                    )
+                    traj_file = f"trajectories/event_{i:04d}"
                     img_path = results_dir / f"trajectories/event_{i:04d}.png"
                     fig = plot_trajectory_snapshots(
                         cr.trajectory, cr.time_us, r0, cr.hit_ion,

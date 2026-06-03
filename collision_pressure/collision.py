@@ -44,7 +44,7 @@ def scattering_angle(ion: Species, mol: Species, v0: float, b: float) -> float:
     E = 0.5 * mu * v0**2
     L = mu * v0 * b
     x = np.sqrt(max(1.0 - 16.0 * C4 * mu**2 * E / L**4, 0.0))
-    m_ellip = x / (1.0 + x)
+    m_ellip = (1.0 - x) / (1.0 + x)
     theta = float(np.pi - 2.0 * np.sqrt(2.0) / np.sqrt(1.0 + x) * ellipk(m_ellip))
     return abs(theta)
 
