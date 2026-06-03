@@ -177,6 +177,43 @@ def main() -> None:
         metavar="UM",
         help="双层模式：半间距 y0 (μm)，绘制 y=+y0 与 y=-y0 两个截面",
     )
+    # --- 对称性分析参数 ---
+    parser.add_argument(
+        "--symmetry",
+        action="store_true",
+        help="启用势场对称性定量分析（镜面对称、旋转对称、多项式奇偶性、Hessian 非对角项）",
+    )
+    parser.add_argument(
+        "--symmetry-n-mirror",
+        type=int,
+        default=10,
+        metavar="N",
+        help="--symmetry 时镜面对称采样每轴点数（默认 10，总 10³ 点）",
+    )
+    parser.add_argument(
+        "--symmetry-n-rot",
+        type=int,
+        default=50,
+        metavar="N",
+        help="--symmetry 时旋转对称采样每轴点数（默认 50）",
+    )
+    parser.add_argument(
+        "--symmetry-n-fit",
+        type=int,
+        default=8,
+        metavar="N",
+        help="--symmetry 时多项式拟合每轴采样点数（默认 8）",
+    )
+    parser.add_argument(
+        "--symmetry-radar",
+        action="store_true",
+        help="--symmetry 时输出雷达图",
+    )
+    parser.add_argument(
+        "--symmetry-heatmap",
+        action="store_true",
+        help="--symmetry 时输出偏差热力图",
+    )
     args = parser.parse_args()
 
     from Interface.cli import (
@@ -281,6 +318,28 @@ def main() -> None:
                 raise ValueError("2D 时 --n_pts 须为两个整数 (如 100,100)")
             return int(parts[0]), int(parts[1])
         raise ValueError("--vary 须为单坐标或两个坐标")
+
+    if args.symmetry:
+        from .symmetry import compute_symmetry_report
+        from .plots import print_symmetry_report, plot_symmetry_radar, plot_symmetry_deviation_heatmap
+
+        report = compute_symmetry_report(
+            potential_interps,
+            field_interps,
+            voltage_list,
+            cfg,
+            center_um=(xc_um, yc_um, zc_um),
+            range_um=(xr_um, yr_um, zr_um),
+            n_mirror_pts=args.symmetry_n_mirror,
+            n_rot_pts=args.symmetry_n_rot,
+            n_fit_pts=args.symmetry_n_fit,
+        )
+        print_symmetry_report(report)
+        if args.symmetry_radar:
+            plot_symmetry_radar(report, out_path=args.out)
+        if args.symmetry_heatmap:
+            plot_symmetry_deviation_heatmap(report, out_path=args.out)
+        return
 
     if args.freq_scan:
         scan_parts = [p.strip().lower() for p in args.freq_scan.split(",")]

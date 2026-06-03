@@ -1124,3 +1124,195 @@ def plot_2d(
             plt.tight_layout()
             _save_or_show(None, "_rf_amp", fig2, out_path)
             plt.close(fig2)
+
+
+# ---------------------------------------------------------------------------
+# 对称性分析输出
+# ---------------------------------------------------------------------------
+
+def print_symmetry_report(report: "SymmetryReport") -> None:
+    """打印格式化对称性分析表格到 stdout"""
+    from .symmetry import SymmetryReport
+    types = [("dc", "DC", report.dc), ("pseudo", "Pseudo", report.pseudo), ("total", "Total", report.total)]
+    cx, cy, cz = report.center_um
+    (x0, x1), (y0, y1), (z0, z1) = report.range_um
+    print("=" * 78)
+    print("Potential Field Symmetry Report")
+    print(f"Center: ({cx:.1f}, {cy:.1f}, {cz:.1f}) μm  |  "
+          f"Range: x[{x0:.0f},{x1:.0f}] y[{y0:.0f},{y1:.0f}] z[{z0:.0f},{z1:.0f}] μm")
+    print("=" * 78)
+
+    # 1. 镜面对称
+    print("\n--- Mirror Symmetry Coefficients (1.000 = perfect) ---")
+    print(f"{'Plane':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8}")
+    print("-" * 46)
+    for plane in ["yz", "xz", "xy"]:
+        vals = []
+        for _, _, ps in types:
+            m = ps.mirror.get(plane)
+            vals.append(f"{m.coefficient:.4f}" if m else "  N/A ")
+        print(f"{plane + ' (flip)':.<12}| {vals[0]:>8} | {vals[1]:>8} | {vals[2]:>8}")
+
+    # 2. 旋转对称
+    print("\n--- Rotational Symmetry Coefficients (1.000 = perfect) ---")
+    print(f"{'Axis':<6}| {'Planes':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8}")
+    print("-" * 56)
+    for axis in ["x", "y", "z"]:
+        vals = []
+        pp = ""
+        for _, _, ps in types:
+            r = ps.rotational.get(axis)
+            if r:
+                vals.append(f"{r.coefficient:.4f}")
+                pp = f"{r.plane_pair[0]} vs {r.plane_pair[1]}"
+            else:
+                vals.append("  N/A ")
+        print(f"{axis:<6}| {pp:<12}| {vals[0]:>8} | {vals[1]:>8} | {vals[2]:>8}")
+
+    # 3. 多项式系数奇偶性
+    print("\n--- Polynomial Coefficient Parity (scaled, 1.000 = perfect) ---")
+    has_poly = any(ps.polynomial is not None for _, _, ps in types)
+    if has_poly:
+        print(f"{'Plane':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8} | {'R²':>20}")
+        print("-" * 72)
+        for plane, attr in [("yz (S_p)", "s_parity_yz"), ("xz (S_p)", "s_parity_xz"), ("xy (S_p)", "s_parity_xy")]:
+            vals = []
+            r2s = []
+            for _, _, ps in types:
+                p = ps.polynomial
+                if p:
+                    vals.append(f"{getattr(p, attr):.4f}")
+                    r2s.append(f"{p.r_squared:.4f}")
+                else:
+                    vals.append("  N/A ")
+                    r2s.append("  N/A ")
+            print(f"{plane:.<12}| {vals[0]:>8} | {vals[1]:>8} | {vals[2]:>8} | {', '.join(r2s):>20}")
+
+        # 逐项诊断
+        for _, label, ps in types:
+            p = ps.polynomial
+            if p is None:
+                continue
+            for plane, terms in [("yz", p.top_odd_terms_yz), ("xz", p.top_odd_terms_xz), ("xy", p.top_odd_terms_xy)]:
+                if not terms:
+                    continue
+                top = terms[0]
+                print(f"  [{label}] {plane} top breaking term: {top.label} "
+                      f"(i,j,k)={top.exponents} c̃={top.scaled_coeff:.2e}")
+    else:
+        print("  (polynomial fit failed for all potential types)")
+
+    # 4. Hessian 非对角项
+    print("\n--- Hessian Off-Diagonal Analysis at Center ---")
+    has_hess = any(ps.hessian is not None for _, _, ps in types)
+    if has_hess:
+        print(f"{'Metric':<18}| {'DC':>12} | {'Pseudo':>12} | {'Total':>12}")
+        print("-" * 62)
+        for name, attr in [("κ_xx (V/μm²)", "kappa_xx"), ("κ_yy (V/μm²)", "kappa_yy"),
+                           ("κ_zz (V/μm²)", "kappa_zz"), ("κ_xy", "kappa_xy"),
+                           ("κ_xz", "kappa_xz"), ("κ_yz", "kappa_yz"),
+                           ("offdiag ratio", "offdiag_ratio")]:
+            vals = []
+            for _, _, ps in types:
+                h = ps.hessian
+                if h:
+                    v = getattr(h, attr)
+                    vals.append(f"{v:.3e}")
+                else:
+                    vals.append("    N/A    ")
+            print(f"{name:.<18}| {vals[0]:>12} | {vals[1]:>12} | {vals[2]:>12}")
+    else:
+        print("  (Hessian computation failed for all potential types)")
+
+    print("=" * 78)
+
+
+def plot_symmetry_radar(report: "SymmetryReport", out_path: str | None = None) -> None:
+    """雷达图：DC/pseudo/total 三条线，轴为各对称系数"""
+    import matplotlib.pyplot as plt
+
+    labels = ["Mirror yz", "Mirror xz", "Mirror xy",
+              "Rot x", "Rot y", "Rot z"]
+    if report.dc.polynomial is not None:
+        labels += ["Parity yz", "Parity xz", "Parity xy"]
+
+    n_axes = len(labels)
+    angles = np.linspace(0, 2 * np.pi, n_axes, endpoint=False).tolist()
+    angles += angles[:1]  # close polygon
+
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+
+    colors = {"dc": "blue", "pseudo": "green", "total": "red"}
+    for pt_key, label, ps in [("dc", "DC", report.dc), ("pseudo", "Pseudo", report.pseudo), ("total", "Total", report.total)]:
+        values = [
+            ps.mirror["yz"].coefficient, ps.mirror["xz"].coefficient, ps.mirror["xy"].coefficient,
+            ps.rotational["x"].coefficient, ps.rotational["y"].coefficient, ps.rotational["z"].coefficient,
+        ]
+        if ps.polynomial is not None:
+            values += [ps.polynomial.s_parity_yz, ps.polynomial.s_parity_xz, ps.polynomial.s_parity_xy]
+        values += values[:1]
+        ax.plot(angles, values, "o-", color=colors[pt_key], label=label, linewidth=1.5, markersize=4)
+        ax.fill(angles, values, alpha=0.1, color=colors[pt_key])
+
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylim(0, 1)
+    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(["0.2", "0.4", "0.6", "0.8", "1.0"], fontsize=8)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
+    ax.set_title("Potential Field Symmetry Coefficients", y=1.08, fontsize=12)
+    plt.tight_layout()
+    _save_or_show(None, "_symmetry_radar", fig, out_path)
+    plt.close(fig)
+
+
+def plot_symmetry_deviation_heatmap(report: "SymmetryReport", out_path: str | None = None) -> None:
+    """热力图：行=对称指标，列=DC/pseudo/total，颜色=1-S（偏差）"""
+    import matplotlib.pyplot as plt
+
+    row_labels = ["Mirror yz", "Mirror xz", "Mirror xy",
+                  "Rot x", "Rot y", "Rot z"]
+    col_labels = ["DC", "Pseudo", "Total"]
+
+    has_poly = report.dc.polynomial is not None
+    if has_poly:
+        row_labels += ["Parity yz", "Parity xz", "Parity xy"]
+
+    data = np.zeros((len(row_labels), 3))
+    for col, ps in enumerate([report.dc, report.pseudo, report.total]):
+        data[0, col] = 1 - ps.mirror["yz"].coefficient
+        data[1, col] = 1 - ps.mirror["xz"].coefficient
+        data[2, col] = 1 - ps.mirror["xy"].coefficient
+        data[3, col] = 1 - ps.rotational["x"].coefficient
+        data[4, col] = 1 - ps.rotational["y"].coefficient
+        data[5, col] = 1 - ps.rotational["z"].coefficient
+        if has_poly and ps.polynomial is not None:
+            data[6, col] = 1 - ps.polynomial.s_parity_yz
+            data[7, col] = 1 - ps.polynomial.s_parity_xz
+            data[8, col] = 1 - ps.polynomial.s_parity_xy
+        elif has_poly:
+            data[6, col] = np.nan
+            data[7, col] = np.nan
+            data[8, col] = np.nan
+
+    fig, ax = plt.subplots(figsize=(5, max(4, len(row_labels) * 0.5 + 1)))
+    im = ax.imshow(data, cmap="YlOrRd", aspect="auto", vmin=0)
+    ax.set_xticks(range(3))
+    ax.set_xticklabels(col_labels)
+    ax.set_yticks(range(len(row_labels)))
+    ax.set_yticklabels(row_labels)
+
+    # 在格子中标注数值
+    for i in range(len(row_labels)):
+        for j in range(3):
+            v = data[i, j]
+            if np.isfinite(v):
+                text_color = "white" if v > 0.5 else "black"
+                ax.text(j, i, f"{v:.3f}", ha="center", va="center",
+                        color=text_color, fontsize=9)
+
+    plt.colorbar(im, ax=ax, label="1 - S (deviation)")
+    ax.set_title("Symmetry Deviation (0 = perfect symmetry)")
+    plt.tight_layout()
+    _save_or_show(None, "_symmetry_heatmap", fig, out_path)
+    plt.close(fig)
