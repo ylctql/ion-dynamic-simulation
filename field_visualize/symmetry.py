@@ -23,7 +23,12 @@ PotentialType = str  # "dc" | "pseudo" | "total"
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class MirrorSymmetryResult:
-    """镜面对称系数（关于坐标平面通过中心点）"""
+    """镜面对称系数（关于坐标平面通过中心点）
+
+    coefficient S = 1 - RMSE(V, V_mirror) / RMS(V_sym)
+    其中 V_sym = (V + V_mirror) / 2 为对称基线。
+    max/mean_relative_deviation 也是相对于 RMS(V_sym) 的比值。
+    """
     plane: str                    # "yz" | "xz" | "xy"
     potential_type: PotentialType
     coefficient: float            # S ∈ [0, 1], 1 = 完美镜面对称
@@ -34,7 +39,11 @@ class MirrorSymmetryResult:
 
 @dataclass(frozen=True)
 class RotationalSymmetryResult:
-    """旋转对称系数（关于坐标轴通过中心点）"""
+    """旋转对称系数（关于坐标轴通过中心点）
+
+    coefficient S = 1 - RMSE(V1, V2) / RMS(V_sym)
+    其中 V_sym = (V1 + V2) / 2 为对称基线。
+    """
     axis: str                     # "x" | "y" | "z"
     potential_type: PotentialType
     coefficient: float            # S ∈ [0, 1]
@@ -100,9 +109,9 @@ class SymmetryReport:
 # ---------------------------------------------------------------------------
 # 辅助函数
 # ---------------------------------------------------------------------------
-def _safe_coeff(rmse: float, V_range: float, eps: float = 1e-30) -> float:
-    """归一化对称系数 S = 1 - rmse / V_range，clamp 到 [0, 1]"""
-    return max(0.0, min(1.0, 1.0 - rmse / (abs(V_range) + eps)))
+def _safe_coeff(rmse: float, scale: float, eps: float = 1e-30) -> float:
+    """归一化对称系数 S = 1 - rmse / scale，clamp 到 [0, 1]"""
+    return max(0.0, min(1.0, 1.0 - rmse / (abs(scale) + eps)))
 
 
 def _filter_valid(*arrays: np.ndarray) -> tuple[np.ndarray, ...]:
@@ -195,16 +204,17 @@ def compute_mirror_symmetry(
             continue
 
         diff = np.abs(V_f - Vm_f)
-        V_range = np.ptp(V_f)  # max - min
+        V_sym = 0.5 * (V_f + Vm_f)  # 对称基线
+        scale = np.sqrt(np.mean(V_sym ** 2))  # RMS(V_sym)
         rmse = np.sqrt(np.mean((V_f - Vm_f) ** 2))
-        S = _safe_coeff(rmse, V_range)
+        S = _safe_coeff(rmse, scale)
 
         results[plane_name] = MirrorSymmetryResult(
             plane=plane_name,
             potential_type=potential_type,
             coefficient=S,
-            max_relative_deviation=float(np.max(diff) / (abs(V_range) + 1e-30)),
-            mean_relative_deviation=float(np.mean(diff) / (abs(V_range) + 1e-30)),
+            max_relative_deviation=float(np.max(diff) / (abs(scale) + 1e-30)),
+            mean_relative_deviation=float(np.mean(diff) / (abs(scale) + 1e-30)),
             n_sample_points=len(V_f),
         )
 
@@ -320,17 +330,18 @@ def compute_rotational_symmetry(
             continue
 
         diff = np.abs(V1f - V2f)
-        V_range = np.ptp(np.concatenate([V1f, V2f]))
+        V_sym = 0.5 * (V1f + V2f)  # 对称基线
+        scale = np.sqrt(np.mean(V_sym ** 2))  # RMS(V_sym)
         rmse = np.sqrt(np.mean((V1f - V2f) ** 2))
-        S = _safe_coeff(rmse, V_range)
+        S = _safe_coeff(rmse, scale)
 
         results[axis] = RotationalSymmetryResult(
             axis=axis,
             potential_type=potential_type,
             coefficient=S,
             plane_pair=(p1_name, p2_name),
-            max_relative_deviation=float(np.max(diff) / (abs(V_range) + 1e-30)),
-            mean_relative_deviation=float(np.mean(diff) / (abs(V_range) + 1e-30)),
+            max_relative_deviation=float(np.max(diff) / (abs(scale) + 1e-30)),
+            mean_relative_deviation=float(np.mean(diff) / (abs(scale) + 1e-30)),
         )
 
     return results
@@ -391,7 +402,12 @@ def _parity_coefficient(coeffs: np.ndarray, axis: int) -> float:
 def _top_odd_terms(
     coeffs: np.ndarray, axis: int, n_top: int = 5
 ) -> tuple[ParityTermDiag, ...]:
-    """获取指定 axis 方向奇次项中缩放系数最大的 n_top 项（诊断用）"""
+    """获取指定 axis 方向奇次项中缩放系数最大的 n_top 项（诊断用）
+
+    axis=0 → yz 平面（u 即 x 方向的奇次项）
+    axis=1 → xz 平面（v 即 y 方向的奇次项）
+    axis=2 → xy 平面（w 即 z 方向的奇次项）
+    """
     terms: list[tuple[float, tuple[int, int, int]]] = []
     for i in range(coeffs.shape[0]):
         for j in range(coeffs.shape[1]):
@@ -410,8 +426,8 @@ def _top_odd_terms(
 
     terms.sort(key=lambda x: x[0], reverse=True)
 
-    # 构建标签
-    var_names = ["u", "v", "w"]
+    # 构建标签：u→x, v→y, w→z，明确物理方向
+    var_names = ["x", "y", "z"]
     diags = []
     for sc, (i, j, k) in terms[:n_top]:
         parts = []
@@ -546,12 +562,24 @@ def compute_potential_symmetry(
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
     potential_type: PotentialType,
     *,
+    which: frozenset[str] = frozenset("mrph"),
     n_mirror_pts: int = 10,
     n_rot_pts: int = 50,
     n_fit_pts: int = 8,
     fit_mode: str = "quartic",
 ) -> PotentialSymmetry:
-    """单一势场类型的完整对称性分析"""
+    """单一势场类型的完整对称性分析
+
+    Parameters
+    ----------
+    which : frozenset
+        要执行的分析类型集合。有效值:
+        - "m": 镜面对称
+        - "r": 旋转对称
+        - "p": 多项式奇偶性
+        - "h": Hessian 非对角项
+        未包含的类型对应字段为空 dict / None。
+    """
     common = dict(
         potential_interps=potential_interps,
         field_interps=field_interps,
@@ -562,10 +590,19 @@ def compute_potential_symmetry(
         potential_type=potential_type,
     )
 
-    mirror = compute_mirror_symmetry(**common, n_pts_per_axis=n_mirror_pts)
-    rotational = compute_rotational_symmetry(**common, n_pts_per_axis=n_rot_pts)
-    poly = compute_polynomial_symmetry(**common, n_pts_per_axis=n_fit_pts, fit_mode=fit_mode)
-    hess = compute_hessian_symmetry(**common, n_pts_per_axis=n_fit_pts, fit_mode=fit_mode)
+    mirror: dict[str, MirrorSymmetryResult] = {}
+    rotational: dict[str, RotationalSymmetryResult] = {}
+    poly: PolynomialSymmetryResult | None = None
+    hess: HessianSymmetryResult | None = None
+
+    if "m" in which:
+        mirror = compute_mirror_symmetry(**common, n_pts_per_axis=n_mirror_pts)
+    if "r" in which:
+        rotational = compute_rotational_symmetry(**common, n_pts_per_axis=n_rot_pts)
+    if "p" in which:
+        poly = compute_polynomial_symmetry(**common, n_pts_per_axis=n_fit_pts, fit_mode=fit_mode)
+    if "h" in which:
+        hess = compute_hessian_symmetry(**common, n_pts_per_axis=n_fit_pts, fit_mode=fit_mode)
 
     return PotentialSymmetry(
         potential_type=potential_type,
@@ -584,12 +621,20 @@ def compute_symmetry_report(
     center_um: tuple[float, float, float],
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
     *,
+    which: frozenset[str] = frozenset("mrph"),
     n_mirror_pts: int = 10,
     n_rot_pts: int = 50,
     n_fit_pts: int = 8,
     fit_mode: str = "quartic",
 ) -> SymmetryReport:
-    """DC / RF 赝势 / 总势场的完整对称性报告"""
+    """DC / RF 赝势 / 总势场的完整对称性报告
+
+    Parameters
+    ----------
+    which : frozenset
+        要执行的分析类型集合。有效值: "m", "r", "p", "h"。
+        默认 frozenset("mrph") 即全部执行。
+    """
     common = dict(
         potential_interps=potential_interps,
         field_interps=field_interps,
@@ -597,6 +642,7 @@ def compute_symmetry_report(
         cfg=cfg,
         center_um=center_um,
         range_um=range_um,
+        which=which,
         n_mirror_pts=n_mirror_pts,
         n_rot_pts=n_rot_pts,
         n_fit_pts=n_fit_pts,

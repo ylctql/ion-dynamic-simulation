@@ -1143,36 +1143,40 @@ def print_symmetry_report(report: "SymmetryReport") -> None:
     print("=" * 78)
 
     # 1. 镜面对称
-    print("\n--- Mirror Symmetry Coefficients (1.000 = perfect) ---")
-    print(f"{'Plane':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8}")
-    print("-" * 46)
-    for plane in ["yz", "xz", "xy"]:
-        vals = []
-        for _, _, ps in types:
-            m = ps.mirror.get(plane)
-            vals.append(f"{m.coefficient:.4f}" if m else "  N/A ")
-        print(f"{plane + ' (flip)':.<12}| {vals[0]:>8} | {vals[1]:>8} | {vals[2]:>8}")
+    has_mirror = any(ps.mirror for _, _, ps in types)
+    if has_mirror:
+        print("\n--- Mirror Symmetry Coefficients (1.000 = perfect) ---")
+        print(f"{'Plane':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8}")
+        print("-" * 46)
+        for plane in ["yz", "xz", "xy"]:
+            vals = []
+            for _, _, ps in types:
+                m = ps.mirror.get(plane)
+                vals.append(f"{m.coefficient:.4f}" if m else "  N/A ")
+            print(f"{plane + ' (flip)':.<12}| {vals[0]:>8} | {vals[1]:>8} | {vals[2]:>8}")
 
     # 2. 旋转对称
-    print("\n--- Rotational Symmetry Coefficients (1.000 = perfect) ---")
-    print(f"{'Axis':<6}| {'Planes':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8}")
-    print("-" * 56)
-    for axis in ["x", "y", "z"]:
-        vals = []
-        pp = ""
-        for _, _, ps in types:
-            r = ps.rotational.get(axis)
-            if r:
-                vals.append(f"{r.coefficient:.4f}")
-                pp = f"{r.plane_pair[0]} vs {r.plane_pair[1]}"
-            else:
-                vals.append("  N/A ")
-        print(f"{axis:<6}| {pp:<12}| {vals[0]:>8} | {vals[1]:>8} | {vals[2]:>8}")
+    has_rot = any(ps.rotational for _, _, ps in types)
+    if has_rot:
+        print("\n--- Rotational Symmetry Coefficients (1.000 = perfect) ---")
+        print(f"{'Axis':<6}| {'Planes':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8}")
+        print("-" * 56)
+        for axis in ["x", "y", "z"]:
+            vals = []
+            pp = ""
+            for _, _, ps in types:
+                r = ps.rotational.get(axis)
+                if r:
+                    vals.append(f"{r.coefficient:.4f}")
+                    pp = f"{r.plane_pair[0]} vs {r.plane_pair[1]}"
+                else:
+                    vals.append("  N/A ")
+            print(f"{axis:<6}| {pp:<12}| {vals[0]:>8} | {vals[1]:>8} | {vals[2]:>8}")
 
     # 3. 多项式系数奇偶性
-    print("\n--- Polynomial Coefficient Parity (scaled, 1.000 = perfect) ---")
     has_poly = any(ps.polynomial is not None for _, _, ps in types)
     if has_poly:
+        print("\n--- Polynomial Coefficient Parity (scaled, 1.000 = perfect) ---")
         print(f"{'Plane':<12}| {'DC':>8} | {'Pseudo':>8} | {'Total':>8} | {'R²':>20}")
         print("-" * 72)
         for plane, attr in [("yz (S_p)", "s_parity_yz"), ("xz (S_p)", "s_parity_xz"), ("xy (S_p)", "s_parity_xy")]:
@@ -1199,13 +1203,11 @@ def print_symmetry_report(report: "SymmetryReport") -> None:
                 top = terms[0]
                 print(f"  [{label}] {plane} top breaking term: {top.label} "
                       f"(i,j,k)={top.exponents} c̃={top.scaled_coeff:.2e}")
-    else:
-        print("  (polynomial fit failed for all potential types)")
 
     # 4. Hessian 非对角项
-    print("\n--- Hessian Off-Diagonal Analysis at Center ---")
     has_hess = any(ps.hessian is not None for _, _, ps in types)
     if has_hess:
+        print("\n--- Hessian Off-Diagonal Analysis at Center ---")
         print(f"{'Metric':<18}| {'DC':>12} | {'Pseudo':>12} | {'Total':>12}")
         print("-" * 62)
         for name, attr in [("κ_xx (V/μm²)", "kappa_xx"), ("κ_yy (V/μm²)", "kappa_yy"),
@@ -1221,8 +1223,6 @@ def print_symmetry_report(report: "SymmetryReport") -> None:
                 else:
                     vals.append("    N/A    ")
             print(f"{name:.<18}| {vals[0]:>12} | {vals[1]:>12} | {vals[2]:>12}")
-    else:
-        print("  (Hessian computation failed for all potential types)")
 
     print("=" * 78)
 
@@ -1231,10 +1231,16 @@ def plot_symmetry_radar(report: "SymmetryReport", out_path: str | None = None) -
     """雷达图：DC/pseudo/total 三条线，轴为各对称系数"""
     import matplotlib.pyplot as plt
 
-    labels = ["Mirror yz", "Mirror xz", "Mirror xy",
-              "Rot x", "Rot y", "Rot z"]
-    if report.dc.polynomial is not None:
+    labels = []
+    if report.dc.mirror or report.pseudo.mirror or report.total.mirror:
+        labels += ["Mirror yz", "Mirror xz", "Mirror xy"]
+    if report.dc.rotational or report.pseudo.rotational or report.total.rotational:
+        labels += ["Rot x", "Rot y", "Rot z"]
+    if report.dc.polynomial is not None or report.pseudo.polynomial is not None or report.total.polynomial is not None:
         labels += ["Parity yz", "Parity xz", "Parity xy"]
+
+    if not labels:
+        return  # 无数据可绘制
 
     n_axes = len(labels)
     angles = np.linspace(0, 2 * np.pi, n_axes, endpoint=False).tolist()
@@ -1242,14 +1248,24 @@ def plot_symmetry_radar(report: "SymmetryReport", out_path: str | None = None) -
 
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
 
+    def _extract_values(ps):
+        vals = []
+        if report.dc.mirror or report.pseudo.mirror or report.total.mirror:
+            vals += [ps.mirror.get(p, None) for p in ("yz", "xz", "xy")]
+            vals = [v.coefficient if v is not None else np.nan for v in vals]
+        if report.dc.rotational or report.pseudo.rotational or report.total.rotational:
+            rvals = [ps.rotational.get(a, None) for a in ("x", "y", "z")]
+            vals += [v.coefficient if v is not None else np.nan for v in rvals]
+        if report.dc.polynomial is not None or report.pseudo.polynomial is not None or report.total.polynomial is not None:
+            if ps.polynomial is not None:
+                vals += [ps.polynomial.s_parity_yz, ps.polynomial.s_parity_xz, ps.polynomial.s_parity_xy]
+            else:
+                vals += [np.nan, np.nan, np.nan]
+        return vals
+
     colors = {"dc": "blue", "pseudo": "green", "total": "red"}
     for pt_key, label, ps in [("dc", "DC", report.dc), ("pseudo", "Pseudo", report.pseudo), ("total", "Total", report.total)]:
-        values = [
-            ps.mirror["yz"].coefficient, ps.mirror["xz"].coefficient, ps.mirror["xy"].coefficient,
-            ps.rotational["x"].coefficient, ps.rotational["y"].coefficient, ps.rotational["z"].coefficient,
-        ]
-        if ps.polynomial is not None:
-            values += [ps.polynomial.s_parity_yz, ps.polynomial.s_parity_xz, ps.polynomial.s_parity_xy]
+        values = _extract_values(ps)
         values += values[:1]
         ax.plot(angles, values, "o-", color=colors[pt_key], label=label, linewidth=1.5, markersize=4)
         ax.fill(angles, values, alpha=0.1, color=colors[pt_key])
@@ -1270,30 +1286,55 @@ def plot_symmetry_deviation_heatmap(report: "SymmetryReport", out_path: str | No
     """热力图：行=对称指标，列=DC/pseudo/total，颜色=1-S（偏差）"""
     import matplotlib.pyplot as plt
 
-    row_labels = ["Mirror yz", "Mirror xz", "Mirror xy",
-                  "Rot x", "Rot y", "Rot z"]
+    row_labels = []
     col_labels = ["DC", "Pseudo", "Total"]
 
-    has_poly = report.dc.polynomial is not None
+    has_mirror = bool(report.dc.mirror or report.pseudo.mirror or report.total.mirror)
+    has_rot = bool(report.dc.rotational or report.pseudo.rotational or report.total.rotational)
+    has_poly = any(ps.polynomial is not None for ps in (report.dc, report.pseudo, report.total))
+
+    if has_mirror:
+        row_labels += ["Mirror yz", "Mirror xz", "Mirror xy"]
+    if has_rot:
+        row_labels += ["Rot x", "Rot y", "Rot z"]
     if has_poly:
         row_labels += ["Parity yz", "Parity xz", "Parity xy"]
 
-    data = np.zeros((len(row_labels), 3))
-    for col, ps in enumerate([report.dc, report.pseudo, report.total]):
-        data[0, col] = 1 - ps.mirror["yz"].coefficient
-        data[1, col] = 1 - ps.mirror["xz"].coefficient
-        data[2, col] = 1 - ps.mirror["xy"].coefficient
-        data[3, col] = 1 - ps.rotational["x"].coefficient
-        data[4, col] = 1 - ps.rotational["y"].coefficient
-        data[5, col] = 1 - ps.rotational["z"].coefficient
-        if has_poly and ps.polynomial is not None:
-            data[6, col] = 1 - ps.polynomial.s_parity_yz
-            data[7, col] = 1 - ps.polynomial.s_parity_xz
-            data[8, col] = 1 - ps.polynomial.s_parity_xy
-        elif has_poly:
-            data[6, col] = np.nan
-            data[7, col] = np.nan
-            data[8, col] = np.nan
+    if not row_labels:
+        return  # 无数据可绘制
+
+    data = np.full((len(row_labels), 3), np.nan)
+    row = 0
+    all_ps = [report.dc, report.pseudo, report.total]
+    if has_mirror:
+        for col, ps in enumerate(all_ps):
+            for plane in ["yz", "xz", "xy"]:
+                m = ps.mirror.get(plane)
+                if m is not None:
+                    data[row, col] = 1 - m.coefficient
+                row += 1 if plane == "xy" else 0
+            row = row  # already advanced
+        # Reset and redo properly
+        row = 0
+        for plane in ["yz", "xz", "xy"]:
+            for col, ps in enumerate(all_ps):
+                m = ps.mirror.get(plane)
+                if m is not None:
+                    data[row, col] = 1 - m.coefficient
+            row += 1
+    if has_rot:
+        for axis in ["x", "y", "z"]:
+            for col, ps in enumerate(all_ps):
+                r = ps.rotational.get(axis)
+                if r is not None:
+                    data[row, col] = 1 - r.coefficient
+            row += 1
+    if has_poly:
+        for attr in ["s_parity_yz", "s_parity_xz", "s_parity_xy"]:
+            for col, ps in enumerate(all_ps):
+                if ps.polynomial is not None:
+                    data[row, col] = 1 - getattr(ps.polynomial, attr)
+            row += 1
 
     fig, ax = plt.subplots(figsize=(5, max(4, len(row_labels) * 0.5 + 1)))
     im = ax.imshow(data, cmap="YlOrRd", aspect="auto", vmin=0)

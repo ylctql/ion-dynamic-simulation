@@ -123,10 +123,13 @@ pytest                            # 运行测试
 |------|---------|
 | `core.py` | `compute_potentials()` (DC/RF赝势/总势), `apply_savgol_smooth()`, `build_grid_1d/2d()` |
 | `trap_freq.py` | `compute_trap_freqs_at_point()`, `compute_freq_scan_1d/2d()` |
-| `plots.py` | `plot_1d()`, `plot_2d()`, `plot_bilayer()`, `plot_freq_scan_1d/2d()` |
+| `symmetry.py` | `compute_symmetry_report()` — 势场对称性定量分析（镜面/旋转/多项式奇偶性/Hessian），支持 `which` 参数按需选择 |
+| `plots.py` | `plot_1d()`, `plot_2d()`, `plot_bilayer()`, `plot_freq_scan_1d/2d()`, `print_symmetry_report()`, `plot_symmetry_radar()`, `plot_symmetry_deviation_heatmap()` |
 | `cli.py` | CLI 入口，参数解析 |
 
 运行: `python field_visualize.py` 或 `python -m field_visualize`
+
+对称性分析: `python field_visualize.py --csv <csv> --config <json> --symmetry m,r,p,h`（详见 `docs/symmetry_analysis.md`）
 
 ### `equilibrium/` — 平衡构型求解
 

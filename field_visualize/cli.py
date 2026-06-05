@@ -180,8 +180,15 @@ def main() -> None:
     # --- 对称性分析参数 ---
     parser.add_argument(
         "--symmetry",
-        action="store_true",
-        help="启用势场对称性定量分析（镜面对称、旋转对称、多项式奇偶性、Hessian 非对角项）",
+        type=str,
+        default="",
+        metavar="TYPES",
+        help=(
+            "启用势场对称性定量分析，指定分析类型（逗号分隔）："
+            "m=镜面对称, r=旋转对称, p=多项式奇偶性, h=Hessian 非对角项。"
+            "例如 --symmetry m,r 表示仅计算镜面和旋转对称性；"
+            "--symmetry all 或 --symmetry m,r,p,h 计算全部四种"
+        ),
     )
     parser.add_argument(
         "--symmetry-n-mirror",
@@ -319,7 +326,21 @@ def main() -> None:
             return int(parts[0]), int(parts[1])
         raise ValueError("--vary 须为单坐标或两个坐标")
 
-    if args.symmetry:
+    # 解析 --symmetry 参数
+    if args.symmetry.strip():
+        raw_types = [t.strip().lower() for t in args.symmetry.split(",") if t.strip()]
+        # 支持 "all" 关键字
+        if "all" in raw_types:
+            symmetry_which = frozenset("mrph")
+        else:
+            valid = {"m", "r", "p", "h"}
+            symmetry_which = frozenset(t for t in raw_types if t in valid)
+            unknown = set(raw_types) - valid - {"all"}
+            if unknown:
+                parser.error(f"--symmetry 未知类型: {', '.join(sorted(unknown))}。有效值: m, r, p, h, all")
+        if not symmetry_which:
+            parser.error("--symmetry 须指定至少一个分析类型 (m, r, p, h) 或 all")
+
         from .symmetry import compute_symmetry_report
         from .plots import print_symmetry_report, plot_symmetry_radar, plot_symmetry_deviation_heatmap
 
@@ -330,6 +351,7 @@ def main() -> None:
             cfg,
             center_um=(xc_um, yc_um, zc_um),
             range_um=(xr_um, yr_um, zr_um),
+            which=symmetry_which,
             n_mirror_pts=args.symmetry_n_mirror,
             n_rot_pts=args.symmetry_n_rot,
             n_fit_pts=args.symmetry_n_fit,
