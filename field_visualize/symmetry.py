@@ -57,7 +57,17 @@ class ParityTermDiag:
     """单个奇次项的诊断信息"""
     exponents: tuple[int, int, int]  # (i, j, k)
     scaled_coeff: float              # c̃[i,j,k]
-    label: str                       # e.g. "u^1 v^0 w^2"
+    label: str                       # e.g. "x^1 z^2"
+
+
+@dataclass(frozen=True)
+class ScaledCoeffEntry:
+    """多项式拟合的单个缩放系数条目"""
+    exponents: tuple[int, int, int]  # (i, j, k)
+    scaled_coeff: float              # |c| * RMS(monomial)
+    raw_coeff: float                 # c[i,j,k]
+    label: str                       # e.g. "x^2", "x y"
+    is_quadratic: bool               # True for constant + x², y², z²
 
 
 @dataclass(frozen=True)
@@ -71,6 +81,7 @@ class PolynomialSymmetryResult:
     top_odd_terms_yz: tuple[ParityTermDiag, ...]  # yz: i 为奇的最大贡献项
     top_odd_terms_xz: tuple[ParityTermDiag, ...]
     top_odd_terms_xy: tuple[ParityTermDiag, ...]
+    all_scaled_coeffs: tuple[ScaledCoeffEntry, ...] | None = None  # 全部缩放系数
 
 
 @dataclass(frozen=True)
@@ -445,6 +456,42 @@ def _top_odd_terms(
     return tuple(diags)
 
 
+def _build_all_scaled_coeffs(
+    coeffs: np.ndarray,
+    basis_exps: tuple[tuple[int, int, int], ...],
+) -> tuple[ScaledCoeffEntry, ...]:
+    """构建全部拟合项的缩放系数列表，按总次数升序排列。
+
+    二次项 (harmonic): 常数 (0,0,0) 及 x², y², z²。
+    其他均为非谐项 / 交叉耦合项。
+    """
+    # 二次项 (harmonic): 常数 + 纯二次对角项
+    quadratic_set = {(0, 0, 0), (2, 0, 0), (0, 2, 0), (0, 0, 2)}
+
+    var_names = ["x", "y", "z"]
+    entries: list[ScaledCoeffEntry] = []
+    for i, j, k in basis_exps:
+        c = float(coeffs[i, j, k])
+        sc = abs(c) * _monomial_rms_scale(i, j, k)
+        parts = []
+        for var, exp in zip(var_names, [i, j, k]):
+            if exp == 1:
+                parts.append(var)
+            elif exp > 1:
+                parts.append(f"{var}^{exp}")
+        label = " ".join(parts) if parts else "1"
+        entries.append(ScaledCoeffEntry(
+            exponents=(i, j, k),
+            scaled_coeff=float(sc),
+            raw_coeff=c,
+            label=label,
+            is_quadratic=(i, j, k) in quadratic_set,
+        ))
+    # 按总次数升序，同次按 (i,j,k) 字典序
+    entries.sort(key=lambda e: (sum(e.exponents), e.exponents))
+    return tuple(entries)
+
+
 def compute_polynomial_symmetry(
     potential_interps: list,
     field_interps: list,
@@ -480,6 +527,9 @@ def compute_polynomial_symmetry(
 
     coeffs = fit.coeffs  # shape (5, 5, 5)
 
+    # 构建全部缩放系数表
+    all_coeffs = _build_all_scaled_coeffs(coeffs, fit.basis_exps)
+
     return PolynomialSymmetryResult(
         potential_type=potential_type,
         r_squared=fit.r_squared,
@@ -489,6 +539,7 @@ def compute_polynomial_symmetry(
         top_odd_terms_yz=_top_odd_terms(coeffs, 0),
         top_odd_terms_xz=_top_odd_terms(coeffs, 1),
         top_odd_terms_xy=_top_odd_terms(coeffs, 2),
+        all_scaled_coeffs=all_coeffs,
     )
 
 

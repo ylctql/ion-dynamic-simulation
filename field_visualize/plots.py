@@ -1204,6 +1204,40 @@ def print_symmetry_report(report: "SymmetryReport") -> None:
                 print(f"  [{label}] {plane} top breaking term: {top.label} "
                       f"(i,j,k)={top.exponents} c̃={top.scaled_coeff:.2e}")
 
+    # 3.5 多项式拟合系数表（二次项 vs 非谐项）
+    has_coeffs = any(
+        ps.polynomial is not None and ps.polynomial.all_scaled_coeffs is not None
+        for _, _, ps in types
+    )
+    if has_coeffs:
+        # 交叉耦合项: 恰好有两个变量为 1 次且另一个为 0 次
+        cross_coupling = {(1, 1, 0), (1, 0, 1), (0, 1, 1)}
+
+        print("\n--- Polynomial Fit Coefficients (scaled by monomial RMS) ---")
+        for _, label, ps in types:
+            p = ps.polynomial
+            if p is None or p.all_scaled_coeffs is None:
+                continue
+            print(f"\n  [{label}] R² = {p.r_squared:.5f}")
+
+            # 二次项 (harmonic)
+            quad = [e for e in p.all_scaled_coeffs if e.is_quadratic]
+            if quad:
+                print("  Quadratic (harmonic):")
+                for e in quad:
+                    if e.exponents == (0, 0, 0):
+                        continue  # 跳过常数项
+                    print(f"    {e.label:<10s} c̃= {e.scaled_coeff:.3e}   c= {e.raw_coeff:+.3e}")
+
+            # 非谐项：按 |c̃| 降序取 top 5（跳过零系数项）
+            anhar = [e for e in p.all_scaled_coeffs if not e.is_quadratic and e.scaled_coeff > 0]
+            anhar_sorted = sorted(anhar, key=lambda e: e.scaled_coeff, reverse=True)
+            if anhar_sorted:
+                print("  Top anharmonic terms:")
+                for e in anhar_sorted[:5]:
+                    tag = "  (cross)" if e.exponents in cross_coupling else ""
+                    print(f"    {e.label:<10s} c̃= {e.scaled_coeff:.3e}   c= {e.raw_coeff:+.3e}{tag}")
+
     # 4. Hessian 非对角项
     has_hess = any(ps.hessian is not None for _, _, ps in types)
     if has_hess:
