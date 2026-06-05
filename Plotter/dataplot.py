@@ -459,14 +459,22 @@ class DataPlotter:
             self.ax[1].set_title(title1, fontsize=14)
             self._update_oob_labels(r_um)
         else:
+            r_um = f.r * self._dl_um
+            sigma_y = float(np.std(r_um[:, 1]))
             for i, view in enumerate(self.plot_fig):
                 xy = self._get_xy(f.r, view)
                 self.artists[i].set_offsets(xy)
                 self.artists[i].set_facecolor(colors)
-                self.ax[i].set_title(
-                    f"t = {t_us:.3f} μs",
-                    fontsize=14,
-                )
+                if view == "zoy":
+                    self.ax[i].set_title(
+                        f"t = {t_us:.3f} μs  |  σ_y = {sigma_y:.3f} μm",
+                        fontsize=14,
+                    )
+                else:
+                    self.ax[i].set_title(
+                        f"t = {t_us:.3f} μs",
+                        fontsize=14,
+                    )
             self._update_oob_labels(f.r * self._dl_um)
 
         # 输出时间
