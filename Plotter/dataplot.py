@@ -23,11 +23,10 @@ _QUEUE_GET_TIMEOUT = 1.0
 
 from Plotter.blit import BlitManager
 from Plotter.color import (
-    ISOTOPE_COLORS,
-    ISOTOPE_LABELS,
     get_colors,
     get_colors_layerwise_y_pos,
-    get_mass_indices,
+    get_legend_entries,
+    has_mass_variation,
 )
 
 PlotFig = Literal["xoy", "zoy", "zox"]
@@ -67,6 +66,7 @@ class DataPlotter:
         save_final_image: str | None = None,
         target_time_dt: float | None = None,
         show_plot: bool = True,
+        species_label: str | None = None,
         device: str = "cpu",
         backend_interval: float = 1.0,
     ):
@@ -111,6 +111,8 @@ class DataPlotter:
             目标演化时间（dt 单位），达到后发送 STOP
         show_plot : bool
             是否弹出窗口实时显示
+        species_label : str | None
+            CLI --species 离子种类名，用于右上角图例
         backend_interval : float
             与 ComputeKernel 一致：相邻输出帧在无量纲时间上的间隔（--interval，单位 dt）
         """
@@ -147,6 +149,7 @@ class DataPlotter:
         self.save_final_image = save_final_image
         self.target_time_dt = target_time_dt
         self.show_plot = show_plot
+        self.species_label = species_label
         self.final_frame_saved = False
         self.last_output_time_us = -10.0
 
@@ -185,9 +188,6 @@ class DataPlotter:
                 self._min_save_gap_us,
             )
 
-        # 质量 -> 同位素索引（用于图例）
-        self.mass_indices = get_mass_indices(mass) if mass is not None else None
-
         # 创建子图
         n_axes = len(self.plot_fig)
         if n_axes == 1:
@@ -216,8 +216,8 @@ class DataPlotter:
             for ax in (ax0, ax1):
                 self._set_axis_limits(ax, "zox")
                 self._set_axis_labels(ax, "zox")
-            if mass is not None and self.mass_indices is not None:
-                self._add_isotope_legend(ax0)
+            if self._should_show_species_legend():
+                self._add_species_legend(ax0)
             t0_us = frame_init.timestamp * self._dt_us
             n_ions = r_um_init.shape[0]
             title0, title1 = self._bilayer_titles_for_r_um(
@@ -233,8 +233,8 @@ class DataPlotter:
                 self.artists.append(sc)
                 self._set_axis_limits(ax, view)
                 self._set_axis_labels(ax, view)
-                if mass is not None and self.mass_indices is not None:
-                    self._add_isotope_legend(ax)
+                if self._should_show_species_legend():
+                    self._add_species_legend(ax)
 
         # 出界统计标注（参与 blit 以保证实时刷新）
         self._oob_texts: list = []
@@ -340,14 +340,14 @@ class DataPlotter:
         if self.bilayer and self.color_mode == "y_pos":
             assert self._bilayer_split is not None
             return get_colors_layerwise_y_pos(
-                r, self._bilayer_split, cmap_name="RdBu"
+                r, self._bilayer_split, cmap_name="plasma"
             )
         return get_colors(
             r,
             v,
             cast(ColorMode, self.color_mode),
             self.mass,
-            cmap_name="RdBu",
+            cmap_name="plasma",
         )
 
     def _get_xy(self, r: np.ndarray, view: PlotFig) -> np.ndarray:
@@ -397,13 +397,24 @@ class DataPlotter:
         np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
         logger.info("已保存 r/v: %s", path)
 
-    def _add_isotope_legend(self, ax) -> None:
-        """添加同位素图例"""
-        if self.mass_indices is None:
+    def _should_show_species_legend(self) -> bool:
+        if self.mass is None:
+            return False
+        if self.color_mode == "isotope":
+            return True
+        if self.species_label:
+            return True
+        return has_mass_variation(self.mass)
+
+    def _add_species_legend(self, ax) -> None:
+        """添加离子种类 / 同位素图例（右上角）。"""
+        if self.mass is None:
             return
-        unique_indices = np.unique(self.mass_indices)
-        legend_labels = [ISOTOPE_LABELS[i] for i in unique_indices]
-        legend_colors = [ISOTOPE_COLORS[i] for i in unique_indices]
+        legend_labels, legend_colors = get_legend_entries(
+            self.mass,
+            species_label=self.species_label,
+            color_mode=cast(ColorMode, self.color_mode),
+        )
         if legend_labels:
             ax.legend(
                 [

@@ -67,6 +67,10 @@ class Vision:
     bilayer: bool = False
     """True：两子图均为 z-x 投影，分别显示索引两半离子；不绘 zoy"""
 
+    # ----- 离子种类（--species，用于图例标签）-----
+    species_label: str | None = None
+    """CLI --species 指定的离子种类名，如 Yb171+、Ba135+；None 表示默认 Ba 参考质量。"""
+
     # ----- 离子颜色 -----
     color_mode: ColorMode = None
     """
@@ -105,5 +109,6 @@ class Vision:
             "dl": dl,
             "dt": dt,
             "mass": mass,
+            "species_label": self.species_label,
             "show_plot": self.show_plot if self.show_plot is not None else (self.plot_fig is not None),
         }

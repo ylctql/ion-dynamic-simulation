@@ -1,0 +1,64 @@
+{
+  "_comment": "Optimized voltage configuration from field_optimize",
+  "g": 0.1,
+  "voltage_list": [
+    {
+      "type": "rf",
+      "name": "RF",
+      "V0": 275.0,
+      "V_bias": -7.0,
+      "frequency": 35.28
+    },
+    {
+      "type": "dc",
+      "name": "U1",
+      "V_bias": 7.037959
+    },
+    {
+      "type": "dc",
+      "name": "U2",
+      "V_bias": 2.961735
+    },
+    {
+      "type": "dc",
+      "name": "U3",
+      "V_bias": -0.8364
+    },
+    {
+      "type": "dc",
+      "name": "U4",
+      "V_bias": -0.598948
+    },
+    {
+      "type": "dc",
+      "name": "U5",
+      "V_bias": 4.637231
+    },
+    {
+      "type": "dc",
+      "name": "U6",
+      "V_bias": -8.63098
+    },
+    {
+      "type": "dc",
+      "name": "U7",
+      "V_bias": -5.621184
+    }
+  ],
+  "_optimization": {
+    "target_freq_MHz": [
+      0.7,
+      2.1,
+      0.1
+    ],
+    "achieved_freq_MHz": [
+      0.698930854303952,
+      2.073384435470521,
+      0.09999731073128455
+    ],
+    "iterations": 42,
+    "n_evaluations": 384,
+    "success": true,
+    "timestamp": "2026-06-08T10:50:04.657216"
+  }
+}

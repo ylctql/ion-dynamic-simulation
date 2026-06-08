@@ -38,7 +38,7 @@ import numpy as np
 
 from FieldConfiguration.field_settings import FieldSettings
 from FieldParser.csv_reader import read as read_csv
-from FieldParser.force import build_force, _zero_force
+from FieldParser.force import build_force, make_force, _zero_force
 from Plotter.vision import Vision
 from utils import CommandType, Frame, Message
 from ComputeKernel.backend import CalculationBackend, get_actual_device
@@ -130,6 +130,9 @@ def _build_force(
     *,
     smooth_axes: tuple[str, ...] | None = None,
     smooth_sg: tuple[int, int] = (11, 3),
+    poly_fit: bool = False,
+    poly_fit_mode: str = "quartic",
+    poly_fit_npts: int = 8,
 ) -> Callable:
     """根据 field_settings 构建 force 回调"""
     if field_settings.trap_freq_MHz is not None:
@@ -156,6 +159,18 @@ def _build_force(
             smooth_axes,
             window_length=smooth_sg[0],
             polyorder=smooth_sg[1],
+        )
+    if poly_fit:
+        from FieldParser.poly_force import calc_field_from_poly
+
+        logger.info("启用多项式拟合: mode=%s, npts=%d", poly_fit_mode, poly_fit_npts)
+        field_interps = calc_field_from_poly(
+            grid_coord, grid_voltage, cfg.dl, cfg.dV,
+            fit_mode=poly_fit_mode, n_pts_per_axis=poly_fit_npts,
+        )
+        gamma = field_settings.get_gamma()
+        return make_force(
+            field_interps, field_settings.voltage_list, gamma, charge, grid_coord,
         )
     return build_force(field_settings, grid_coord, grid_voltage, charge)
 
@@ -357,6 +372,9 @@ def run(parsed: ParsedRun) -> Frame | None:
         _ROOT,
         smooth_axes=parsed.smooth_axes,
         smooth_sg=parsed.smooth_sg,
+        poly_fit=parsed.poly_fit,
+        poly_fit_mode=parsed.poly_fit_mode,
+        poly_fit_npts=parsed.poly_fit_npts,
     )
     proc, frame_init, queue_control, queue_data = _create_backend_and_start(
         parsed, force

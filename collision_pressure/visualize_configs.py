@@ -5,10 +5,8 @@ from pathlib import Path
 
 import json
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
+
+from collision_pressure._mpl_backend import pyplot
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -35,6 +33,7 @@ def load_config(lib_dir: Path, npz_file):
 
 
 def plot_config(ax, cfg, title):
+    plt = pyplot()
     r = cfg["r"]
     cn = cfg["coord_numbers"]
     adj = cfg["adj_matrix"]
@@ -88,6 +87,9 @@ def plot_config(ax, cfg, title):
 
 
 def main():
+    plt = pyplot()
+    from matplotlib.lines import Line2D
+
     parser = argparse.ArgumentParser(
         description="Plot the 5 lowest- and 5 highest-energy ion crystal configs "
         "from a collision_pressure config library.",

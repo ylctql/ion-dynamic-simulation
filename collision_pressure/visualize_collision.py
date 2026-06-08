@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
+
+from collision_pressure._mpl_backend import pyplot
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 
 def plot_trajectory_snapshots(
@@ -21,7 +24,7 @@ def plot_trajectory_snapshots(
     theta: float | None = None,
     dv: np.ndarray | None = None,
     reconfigured: bool | None = None,
-) -> plt.Figure:
+) -> Figure:
     """Static multi-snapshot figure of a collision trajectory.
 
     Parameters
@@ -38,6 +41,7 @@ def plot_trajectory_snapshots(
     dv : (3,) kick velocity (m/s)
     reconfigured : whether reconfiguration was detected
     """
+    plt = pyplot()
     N = r0_um.shape[0]
     indices = np.linspace(0, trajectory.shape[1] - 1, n_snapshots, dtype=int)
 
@@ -121,12 +125,13 @@ def plot_before_after(
     b: float | None = None,
     theta: float | None = None,
     dv: np.ndarray | None = None,
-) -> plt.Figure:
+) -> Figure:
     """Before/after comparison, stacked vertically.
 
     Top: equilibrium, Bottom: post-collision.
     Color by sign along flip_axis (blue=positive, orange/negative).
     """
+    plt = pyplot()
     N = r0_um.shape[0]
     sign0 = np.sign(r0_um[:, flip_axis])
     sign_f = np.sign(r_final_um[:, flip_axis])
@@ -189,7 +194,7 @@ def plot_batch_statistics(
     collisions: list,
     N_ions: int,
     output: str | Path | None = None,
-) -> plt.Figure:
+) -> Figure:
     """4-panel summary of batch collision statistics.
 
     Top-left: scattering angle histogram (reconfigured vs not)
@@ -197,6 +202,7 @@ def plot_batch_statistics(
     Bottom-left: reconfigured fraction per hit-ion index
     Bottom-right: kick magnitude histogram (reconfigured vs not)
     """
+    plt = pyplot()
     reconfig = np.array([c.reconfigured for c in collisions])
     thetas = np.array([c.theta for c in collisions])
     v0s = np.array([c.v0 for c in collisions])

@@ -162,6 +162,25 @@ pytest                            # 运行测试
 
 **并行**: `--workers N` 使用 `multiprocessing.Pool.imap()` 并行运行碰撞模拟，按序返回结果（log 不乱序）。`--workers 1` 为串行（默认）。
 
+### `field_optimize/` — 阱频反向设计
+
+从目标阱频 (fx, fy, fz) MHz 反推电极电压，以势场对称性为正则化惩罚项。DC 电压对势场为线性叠加，优化 landscape 光滑、变量少（7-15），秒级收敛。详细文档见 `docs/field_optimize.md`。
+
+| 文件 | 关键内容 |
+|------|---------|
+| `types.py` | `OptimizationConfig` (frozen: 目标频率、权重、边界、拟合参数)，`OptimizationResult` (优化前后电压/频率/对称性) |
+| `objective.py` | `FastEvaluator` 预计算（1D 基函数矩阵 + 3D 网格），`compute_objective()` 频率误差 + 奇偶性/Hessian 惩罚 + NaN 保护 |
+| `optimizer.py` | `optimize_voltages()` — scipy L-BFGS-B/Nelder-Mead 包装，含前后频率/对称性对比报告 |
+| `cli.py` | CLI 入口；`python -m field_optimize --csv --config --target-freq fx fy fz` |
+
+**数据流**: CSV+JSON → 插值器(一次) → `FastEvaluator` 预计算基函数矩阵 → 优化循环(仅矩阵-向量乘法) → 输出 JSON
+
+**快速路径**: DC-only 模式下 RF 赝势恒定，每次 eval ~0.5ms；含对称性惩罚时增加 3D quartic 拟合。
+
+运行: `python -m field_optimize --csv <csv> --config <json> --target-freq 2.0 3.0 0.1 [--optimize-rf-v0] [--out result.json]`
+
+输出 JSON 与现有 config 格式兼容（含 `_optimization` 元数据），可直接用于其他模块。
+
 ### `benchmark/` — 性能测试
 
 | 文件 | 关键内容 |
@@ -204,6 +223,7 @@ pytest                # 所有测试
 | `tests/test_cli.py` | CLI 参数解析、save_times_us 语法 |
 | `tests/test_force.py` | force 构建、_zero_force |
 | `tests/test_parameters.py` | Parameters 构建、同位素掺杂、初态 |
+| `tests/test_field_optimize.py` | FastEvaluator 预计算、目标函数、NaN 保护、优化收敛、CLI 解析、JSON 输出 |
 | `tests/test_cpu_cuda_error_accumulation.py` | 圆轨道 CPU/CUDA 误差对比 |
 
 ## 开发注意事项

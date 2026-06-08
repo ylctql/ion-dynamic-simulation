@@ -601,6 +601,10 @@ def main() -> None:
     )
     parser.add_argument("--csv", type=str, default="", help="电场 CSV 路径")
     parser.add_argument("--config", type=str, default="", help="电压配置 JSON 路径")
+    parser.add_argument(
+        "--trap-freq", nargs=3, type=float, metavar=("FX", "FY", "FZ"),
+        help="理想二次势阱频 (MHz)；与 --csv 互斥",
+    )
     parser.add_argument("--N", type=int, default=20, help="离子数，默认 20")
     parser.add_argument("--charge", type=float, default=1.0, help="每个离子的电荷（单位 e），默认 +1")
     parser.add_argument(
@@ -736,6 +740,8 @@ def main() -> None:
     parser.add_argument("--smooth-axes", type=str, default="z", help="势场平滑方向，默认 z；none 关闭")
     parser.add_argument("--smooth-sg", type=str, default="11,3", help="Savitzky-Golay 参数 window,poly，默认 11,3")
     args = parser.parse_args()
+    if args.trap_freq and args.csv:
+        parser.error("--trap-freq 与 --csv 互斥")
     if args.plot_point_size is not None and args.plot_point_size <= 0.0:
         parser.error("--plot-point-size 必须为正数")
 
@@ -769,60 +775,82 @@ def main() -> None:
     config_path = _resolve_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
     csv_path = _resolve_path(args.csv, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
 
-    cfg, config = init_from_config(config_path)
-    grid_coord, grid_voltage = read_csv(csv_path, None, normalize=True, dl=cfg.dl, dV=cfg.dV)
-    n_voltage = grid_voltage.shape[1]
-    if config:
-        field_settings = field_settings_from_config(csv_path, config_path, n_voltage, cfg)
-    else:
-        from FieldConfiguration.field_settings import FieldSettings
-
-        field_settings = FieldSettings(csv_filename=csv_path, voltage_list=[])
-        field_settings.voltage_list = build_voltage_list({"voltage_list": []}, n_voltage, cfg)
-
-    if args.smooth_axes.strip().lower() != "none":
-        axes = tuple(a.strip().lower() for a in args.smooth_axes.split(",") if a.strip() in "xyz")
-        if axes:
-            parts = [p.strip() for p in args.smooth_sg.split(",")]
-            wl = int(parts[0]) if parts else 11
-            poly = int(parts[1]) if len(parts) >= 2 else 3
-            grid_voltage = apply_savgol_smooth(grid_coord, grid_voltage, axes, window_length=wl, polyorder=poly)
-
-    potential_interps = calc_potential(grid_coord, grid_voltage)
-    field_interps = calc_field(grid_coord, grid_voltage)
-    voltage_list = field_settings.voltage_list
-
-    def compute_V_total(r_norm: np.ndarray) -> np.ndarray:
-        _, _, _, v_total = compute_potentials(potential_interps, field_interps, voltage_list, cfg, r_norm)
-        return v_total
-
-    v_grid_all = np.asarray(compute_V_total(grid_coord), dtype=float).ravel()
-    v_grid_valid = v_grid_all[np.isfinite(v_grid_all)]
-    if v_grid_valid.size == 0:
-        parser.error("格点总势场全为非有限值，无法确定统一势能零点")
-    v_min_grid = float(np.min(v_grid_valid))
-
     center_um = _parse_center(args.center, parser)
     x_range = _parse_range_2(args.x_range, "x_range", parser)
     y_range = _parse_range_2(args.y_range, "y_range", parser)
     z_range = _parse_range_2(args.z_range, "z_range", parser)
     range_um = (x_range, y_range, z_range)
 
-    fit = fit_potential_3d_quartic(
-        compute_V_total=compute_V_total,
-        um_to_norm=lambda v: um_to_norm(v, cfg.dl),
-        center_um=center_um,
-        range_um=range_um,
-        n_pts_per_axis=(args.fit_n_pts_x, args.fit_n_pts_y, args.fit_n_pts_z),
-        potential_offset_V=v_min_grid,
-        fit_mode=args.fit_mode,
-    )
-    write_potential_fit_coeff_json(
-        fit,
-        _ROOT / "equilibrium" / "results" / "potential_fit_coeff.json",
-        csv=csv_path,
-        config=config_path,
-    )
+    if args.trap_freq:
+        # 理想二次势路径：无需 CSV
+        from equilibrium.potential_fit_3d import make_ideal_trap_fit
+
+        L = max(
+            abs(x_range[1] - center_um[0]),
+            abs(x_range[0] - center_um[0]),
+            abs(y_range[1] - center_um[1]),
+            abs(y_range[0] - center_um[1]),
+            abs(z_range[1] - center_um[2]),
+            abs(z_range[0] - center_um[2]),
+            1e-6,
+        )
+        fit = make_ideal_trap_fit(
+            freq_MHz=tuple(args.trap_freq),
+            mass_amu=float(args.mass_amu),
+            charge_ec=float(args.charge),
+            center_um=center_um,
+            scale_um=L,
+        )
+    else:
+        # CSV 格点数据路径
+        cfg, config = init_from_config(config_path)
+        grid_coord, grid_voltage = read_csv(csv_path, None, normalize=True, dl=cfg.dl, dV=cfg.dV)
+        n_voltage = grid_voltage.shape[1]
+        if config:
+            field_settings = field_settings_from_config(csv_path, config_path, n_voltage, cfg)
+        else:
+            from FieldConfiguration.field_settings import FieldSettings
+
+            field_settings = FieldSettings(csv_filename=csv_path, voltage_list=[])
+            field_settings.voltage_list = build_voltage_list({"voltage_list": []}, n_voltage, cfg)
+
+        if args.smooth_axes.strip().lower() != "none":
+            axes = tuple(a.strip().lower() for a in args.smooth_axes.split(",") if a.strip() in "xyz")
+            if axes:
+                parts = [p.strip() for p in args.smooth_sg.split(",")]
+                wl = int(parts[0]) if parts else 11
+                poly = int(parts[1]) if len(parts) >= 2 else 3
+                grid_voltage = apply_savgol_smooth(grid_coord, grid_voltage, axes, window_length=wl, polyorder=poly)
+
+        potential_interps = calc_potential(grid_coord, grid_voltage)
+        field_interps = calc_field(grid_coord, grid_voltage)
+        voltage_list = field_settings.voltage_list
+
+        def compute_V_total(r_norm: np.ndarray) -> np.ndarray:
+            _, _, _, v_total = compute_potentials(potential_interps, field_interps, voltage_list, cfg, r_norm)
+            return v_total
+
+        v_grid_all = np.asarray(compute_V_total(grid_coord), dtype=float).ravel()
+        v_grid_valid = v_grid_all[np.isfinite(v_grid_all)]
+        if v_grid_valid.size == 0:
+            parser.error("格点总势场全为非有限值，无法确定统一势能零点")
+        v_min_grid = float(np.min(v_grid_valid))
+
+        fit = fit_potential_3d_quartic(
+            compute_V_total=compute_V_total,
+            um_to_norm=lambda v: um_to_norm(v, cfg.dl),
+            center_um=center_um,
+            range_um=range_um,
+            n_pts_per_axis=(args.fit_n_pts_x, args.fit_n_pts_y, args.fit_n_pts_z),
+            potential_offset_V=v_min_grid,
+            fit_mode=args.fit_mode,
+        )
+        write_potential_fit_coeff_json(
+            fit,
+            _ROOT / "equilibrium" / "results" / "potential_fit_coeff.json",
+            csv=csv_path,
+            config=config_path,
+        )
 
     n_ions = int(args.N)
     if n_ions <= 0:
@@ -877,12 +905,16 @@ def main() -> None:
     print("离子晶格平衡构型求解")
     print("=" * 68)
     print(f"N = {n_ions}, q = {args.charge:+.3f} e")
-    fit_mode_disp = fit.fit_mode if fit.fit_mode else "none"
-    print(
-        f"拟合 R² = {fit.r_squared:.6f}, scale L = {fit.scale_um:.1f} μm, "
-        f"fit_mode={fit_mode_disp}（{len(fit.basis_exps)} 项）"
-    )
-    print(f"势能零点平移: V_shifted = V_true - V_min_grid = V_true - ({fit.potential_offset_V:.6e} V)")
+    if args.trap_freq:
+        print(f"理想二次势: fx={args.trap_freq[0]} fy={args.trap_freq[1]} fz={args.trap_freq[2]} MHz")
+        print(f"  mass = {float(args.mass_amu):.3f} amu")
+    else:
+        fit_mode_disp = fit.fit_mode if fit.fit_mode else "none"
+        print(
+            f"拟合 R² = {fit.r_squared:.6f}, scale L = {fit.scale_um:.1f} μm, "
+            f"fit_mode={fit_mode_disp}（{len(fit.basis_exps)} 项）"
+        )
+        print(f"势能零点平移: V_shifted = V_true - V_min_grid = V_true - ({fit.potential_offset_V:.6e} V)")
     print(f"初始总能量: {e0:.6e} eV")
 
     res = minimize(

@@ -451,3 +451,73 @@ def hessian_fit_3d(fit: FitResult3D, r_um: np.ndarray) -> np.ndarray:
     return hess
 
 
+# ---------------------------------------------------------------------------
+# 理想二次势（由阱频构造 FitResult3D）
+# ---------------------------------------------------------------------------
+
+# "quadratic" 基底：常数 + u²,v²,w²
+_QUADRATIC_BASIS_EXPS: tuple[tuple[int, int, int], ...] = (
+    (0, 0, 0), (2, 0, 0), (0, 2, 0), (0, 0, 2),
+)
+
+
+def make_ideal_trap_fit(
+    freq_MHz: tuple[float, float, float],
+    mass_amu: float,
+    charge_ec: float = 1.0,
+    center_um: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    scale_um: float = 100.0,
+) -> FitResult3D:
+    """
+    从阱频构造理想二次势 FitResult3D，无需 CSV 数据。
+
+    势场模型：V = ax*x² + ay*y² + az*z²  (V, µm)
+    其中 ax = m*ωx²/(2*q) * 1e-12  (V/µm²)
+
+    Parameters
+    ----------
+    freq_MHz : (fx, fy, fz)
+        三轴阱频 (MHz)
+    mass_amu : float
+        离子质量 (amu)
+    charge_ec : float
+        离子电荷 (单位 e)，默认 1.0
+    center_um : tuple
+        势场中心 (µm)
+    scale_um : float
+        缩放半跨度 L (µm)，用于 FitResult3D 坐标变换
+
+    Returns
+    -------
+    FitResult3D
+        代表理想二次势的拟合结果，可直接用于 energy/phonon 模块
+    """
+    from scipy.constants import e as ECHARGE, physical_constants
+
+    amu_kg, _, _ = physical_constants["atomic mass constant"]
+
+    m_kg = mass_amu * amu_kg
+    q_C = charge_ec * ECHARGE
+
+    coeffs = np.zeros((5, 5, 5), dtype=float)
+    for axis, freq in enumerate(freq_MHz):
+        omega = 2.0 * np.pi * freq * 1e6  # rad/s
+        # a = m*ω² / (2*q)  (V/m²) → ×1e-12 → V/µm²
+        a_um = m_kg * omega ** 2 / (2.0 * q_C) * 1e-12
+        # 缩放坐标系数: c = a * L²
+        c = a_um * scale_um ** 2
+        exp = [0, 0, 0]
+        exp[axis] = 2
+        coeffs[exp[0], exp[1], exp[2]] = c
+
+    return FitResult3D(
+        coeffs=coeffs,
+        center_um=center_um,
+        scale_um=scale_um,
+        potential_offset_V=0.0,
+        r_squared=1.0,
+        fit_mode="quadratic",
+        basis_exps=_QUADRATIC_BASIS_EXPS,
+    )
+
+

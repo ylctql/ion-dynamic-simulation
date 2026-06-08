@@ -20,7 +20,7 @@ def get_colors(
     v: np.ndarray,
     color_mode: ColorMode = None,
     mass: np.ndarray | None = None,
-    cmap_name: str = "RdBu",
+    cmap_name: str = "plasma",
 ) -> np.ndarray:
     """
     根据 color_mode 计算离子颜色
@@ -33,7 +33,7 @@ def get_colors(
         速度
     color_mode : None | "y_pos" | "v2" | "isotope"
         None: 全部红色
-        "y_pos": 按 y 坐标大小上色（RdBu：小蓝大红）
+        "y_pos": 按 y 坐标大小上色（plasma：深紫→亮黄）
         "v2": 按速度模平方上色
         "isotope": 按同位素种类上色（需提供 mass）
     mass : np.ndarray, shape (N,), optional
@@ -91,7 +91,7 @@ def get_colors(
 def get_colors_layerwise_y_pos(
     r: np.ndarray,
     split: int,
-    cmap_name: str = "RdBu",
+    cmap_name: str = "plasma",
 ) -> np.ndarray:
     """
     双层绘图：各层独立按 y 做 Min-Max 归一化后着色（与 bilayer_prompt 一致）。
@@ -115,6 +115,41 @@ def get_colors_layerwise_y_pos(
         norm = Normalize(vmin=lo, vmax=hi)
         colors[sl] = cmap(norm(y))
     return colors
+
+
+def has_mass_variation(mass: np.ndarray, rtol: float = 1e-9) -> bool:
+    """质量数组是否存在可区分的同位素参杂（相对质量不全相同）。"""
+    mass = np.asarray(mass, dtype=float).ravel()
+    if mass.size == 0:
+        return False
+    return float(np.ptp(mass)) > rtol
+
+
+def get_legend_entries(
+    mass: np.ndarray,
+    *,
+    species_label: str | None = None,
+    color_mode: ColorMode = None,
+) -> tuple[list[str], list[str]]:
+    """
+    根据质量分布与 --species 返回图例 (labels, marker_colors)。
+
+    - 存在质量差异（Ba 同位素参杂）：按 Ba133–Ba138 图例
+    - 指定 species 且质量均匀：显示该离子种类（如 Yb171+）
+    - isotope 着色且无参杂：默认 Ba135
+    """
+    mass = np.asarray(mass, dtype=float).ravel()
+    if has_mass_variation(mass):
+        indices = np.unique(get_mass_indices(mass))
+        return (
+            [ISOTOPE_LABELS[int(i)] for i in indices],
+            [ISOTOPE_COLORS[int(i)] for i in indices],
+        )
+    if species_label:
+        return [species_label], ["red"]
+    if color_mode == "isotope":
+        return ["Ba135"], ["red"]
+    return [], []
 
 
 def get_mass_indices(mass: np.ndarray) -> np.ndarray:

@@ -186,6 +186,9 @@ class ParsedRun:
     smooth_sg: tuple[int, int] = (11, 3)
     continuous_sampling: bool = False
     continuous_sampling_frames: int = 1
+    poly_fit: bool = False
+    poly_fit_mode: str = "quartic"
+    poly_fit_npts: int = 8
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -248,6 +251,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="单同位素模式：指定同位素种类，alpha 为该同位素丰度，其余为 Ba135；不指定则使用混合模式",
     )
     parser.add_argument(
+        "--species",
+        type=str,
+        default=None,
+        help="离子种类，决定无量纲化常数 dl/dt/dV；支持 Ba135+(默认), Ba138+, Yb171+, Ca40+, Sr88+, Mg24+, Be9+ 等",
+    )
+    parser.add_argument(
         "--init_file",
         type=str,
         default="",
@@ -283,6 +292,24 @@ def create_parser() -> argparse.ArgumentParser:
         default="11,3",
         metavar="WINDOW,POLY",
         help="Savitzky-Golay 滤波器参数：窗口长度与多项式阶数，逗号分隔，默认 11,3",
+    )
+    parser.add_argument(
+        "--poly-fit",
+        action="store_true",
+        default=False,
+        help="对格点势场进行 3D 多项式拟合，用解析梯度替代格点插值",
+    )
+    parser.add_argument(
+        "--poly-fit-mode",
+        type=str,
+        default="quartic",
+        help="多项式拟合模式: quartic(35项,默认), quartic_even(10), quadratic(4)",
+    )
+    parser.add_argument(
+        "--poly-fit-npts",
+        type=int,
+        default=8,
+        help="拟合采样每轴点数 (默认 8)",
     )
     field_group = parser.add_mutually_exclusive_group()
     field_group.add_argument(
@@ -399,7 +426,21 @@ def parse_and_build(
             logger.info("bilayer：未指定 --csv，使用默认 %s", DEFAULT_BILAYER_CSV)
 
     config_path = _resolve_path(config_input, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
-    cfg, _ = init_from_config(config_path)
+
+    # 解析 --species → 质量
+    species_name = getattr(args, "species", None)
+    mass_amu_override: float | None = None
+    if species_name:
+        from FieldConfiguration.ion_species import ION_SPECIES
+        sp = ION_SPECIES.get(species_name)
+        if sp is None:
+            raise ValueError(
+                f"未知离子种类 '{species_name}'，支持: {sorted(ION_SPECIES.keys())}"
+            )
+        mass_amu_override = sp.mass_amu
+        logger.info("离子种类: %s (%.3f amu)", sp.name, sp.mass_amu)
+
+    cfg, _ = init_from_config(config_path, mass_amu=mass_amu_override)
 
     n_values = getattr(args, "N", None)
     if isinstance(n_values, list) and len(n_values) > 1 and getattr(args, "init_file", ""):
@@ -594,6 +635,10 @@ def parse_and_build(
     continuous_sampling_frames = int(getattr(args, "continuous_sampling_frames", 1))
     if continuous_sampling and continuous_sampling_frames < 1:
         raise ValueError("--continuous-sampling-frames 须为 >= 1 的整数")
+
+    poly_fit = bool(getattr(args, "poly_fit", False))
+    poly_fit_mode = getattr(args, "poly_fit_mode", "quartic") or "quartic"
+    poly_fit_npts = int(getattr(args, "poly_fit_npts", 8))
     if continuous_sampling:
         if args.plot:
             logger.warning("连续采样模式下忽略 --plot")
@@ -606,6 +651,7 @@ def parse_and_build(
     vision = Vision(
         plot_fig=plot_fig,
         show_plot=show_plot if plot_fig is not None else None,
+        species_label=species_name,
         color_mode=color_mode,
         ion_size=args.ion_size,
         xm_plot=args.x_range,
@@ -631,4 +677,7 @@ def parse_and_build(
         smooth_sg=smooth_sg,
         continuous_sampling=continuous_sampling,
         continuous_sampling_frames=continuous_sampling_frames,
+        poly_fit=poly_fit,
+        poly_fit_mode=poly_fit_mode,
+        poly_fit_npts=poly_fit_npts,
     )
