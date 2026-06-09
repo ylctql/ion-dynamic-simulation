@@ -66,7 +66,7 @@ def _build_main_args(
         arg_list += ["--alpha", str(alpha)]
     if isotope is not None:
         arg_list += ["--isotope", isotope]
-    arg_list += ["--calc_method", calc_method]
+    arg_list += ["--calc-method", calc_method]
     return cli.create_parser().parse_args(arg_list)
 
 
@@ -98,7 +98,7 @@ def main() -> None:
         default="",
         help="电压配置 JSON（如 circle.json），不传则用默认",
     )
-    parser.add_argument("--n_steps", type=int, default=None, help="积分步数，默认自动")
+    parser.add_argument("--n-steps", type=int, default=None, help="积分步数，默认自动")
     parser.add_argument("--alpha", type=float, default=0.0, help="同位素参杂比例")
     parser.add_argument(
         "--isotope",
@@ -108,7 +108,7 @@ def main() -> None:
         help="单同位素模式：指定同位素种类",
     )
     parser.add_argument(
-        "--calc_method",
+        "--calc-method",
         type=str,
         default="VV",
         choices=["RK4", "VV", "both"],
@@ -121,7 +121,7 @@ def main() -> None:
         help="输出目录（默认保存 png 图片，可选附加保存数据文件）",
     )
     parser.add_argument(
-        "--save_data",
+        "--save-data",
         action="store_true",
         help="额外保存每组参数的 npz/json，并生成 summary.csv",
     )

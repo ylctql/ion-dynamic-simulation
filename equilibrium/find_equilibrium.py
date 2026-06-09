@@ -613,9 +613,9 @@ def main() -> None:
         default="0,0,0",
         help="参考中心 x,y,z (μm)",
     )
-    parser.add_argument("--x_range", type=str, default="-50,50", help="x 轴拟合/优化范围 (μm)")
-    parser.add_argument("--y_range", type=str, default="-20,20", help="y 轴拟合/优化范围 (μm)")
-    parser.add_argument("--z_range", type=str, default="-150,150", help="z 轴拟合/优化范围 (μm)")
+    parser.add_argument("--x-range", type=str, default="-50,50", help="x 轴拟合/优化范围 (μm)")
+    parser.add_argument("--y-range", type=str, default="-20,20", help="y 轴拟合/优化范围 (μm)")
+    parser.add_argument("--z-range", type=str, default="-150,150", help="z 轴拟合/优化范围 (μm)")
     parser.add_argument("--fit-n-pts-x", type=int, default=100, help="3D 拟合 x 轴采样点数，默认 100")
     parser.add_argument("--fit-n-pts-y", type=int, default=40, help="3D 拟合 y 轴采样点数，默认 40")
     parser.add_argument("--fit-n-pts-z", type=int, default=300, help="3D 拟合 z 轴采样点数，默认 300")
@@ -721,10 +721,10 @@ def main() -> None:
     parser.add_argument("--maxiter", type=int, default=500, help="优化最大迭代步数，默认 500")
     parser.add_argument("--tol", type=float, default=1e-10, help="优化收敛阈值，默认 1e-10")
     parser.add_argument("--seed", type=int, default=42, help="随机种子，默认 42")
-    parser.add_argument("--init_file", type=str, default="", help="初值 npz 路径（含 r，shape=(N,3)，单位 μm）")
+    parser.add_argument("--init-file", type=str, default="", help="初值 npz 路径（含 r，shape=(N,3)，单位 μm）")
     parser.add_argument("--plot", action="store_true", help="绘制平衡位置空间分布（上 zoy，下 zox）")
     parser.add_argument(
-        "--color_mode",
+        "--color-mode",
         type=str,
         default="none",
         choices=["none", "y_pos", "v2", "isotope"],
@@ -871,7 +871,7 @@ def main() -> None:
             init_path = _ROOT / init_path
         arr = np.load(str(init_path))
         if "r" not in arr:
-            parser.error("--init_file 文件需包含键 'r'，shape=(N,3)，单位 μm")
+            parser.error("--init-file 文件需包含键 'r'，shape=(N,3)，单位 μm")
         r0 = np.asarray(arr["r"], dtype=float)
         if r0.shape != (n_ions, 3):
             parser.error(f"init r 形状应为 ({n_ions},3)，当前 {r0.shape}")

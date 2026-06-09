@@ -140,7 +140,7 @@ def _parse_save_times_segment(seg: str) -> list[float]:
 
 def parse_save_times_us(raw: str) -> list[float]:
     """
-    解析 --save_times_us：逗号分隔的微秒时刻；或 range(start,stop,step)（须加引号以免 bash 解析括号）；
+    解析 --save-times-us：逗号分隔的微秒时刻；或 range(start,stop,step)（须加引号以免 bash 解析括号）；
     或 start:stop:step（与 Python range 相同，stop 不含，无需引号）。
 
     示例：10,20,30 或 'range(100,1100,100)' 或 100:1100:100 或 50,200:500:100,600
@@ -257,7 +257,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="离子种类，决定无量纲化常数 dl/dt/dV；支持 Ba135+(默认), Ba138+, Yb171+, Ca40+, Sr88+, Mg24+, Be9+ 等",
     )
     parser.add_argument(
-        "--init_file",
+        "--init-file",
         type=str,
         default="",
         help=(
@@ -273,7 +273,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="计算设备: cpu 或 cuda",
     )
     parser.add_argument(
-        "--calc_method",
+        "--calc-method",
         type=str,
         default="RK4",
         choices=["RK4", "VV"],
@@ -331,9 +331,9 @@ def create_parser() -> argparse.ArgumentParser:
         default="",
         help="电极电压 JSON；可仅传文件名(如 default.json)则自动在 FieldConfiguration/configs/ 下查找；可设 ISM_DEFAULT_CONFIG 覆盖默认",
     )
-    parser.add_argument("--save_final_image", type=str, default=None, help="最后一帧保存路径")
+    parser.add_argument("--save-final-image", type=str, default=None, help="最后一帧保存路径")
     parser.add_argument(
-        "--save_times_us",
+        "--save-times-us",
         type=str,
         default=None,
         help=(
@@ -343,7 +343,7 @@ def create_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--save_fig_dir",
+        "--save-fig-dir",
         type=str,
         nargs="?",
         default=None,
@@ -352,16 +352,16 @@ def create_parser() -> argparse.ArgumentParser:
         help="轨迹帧保存根目录，结构为 {dir}/{离子数}/t{时间}us.png；指定但未传参时默认 saves/images/traj；可设 ISM_DEFAULT_SAVE_FIG_DIR 覆盖默认",
     )
     parser.add_argument(
-        "--save_rv_traj_dir",
+        "--save-rv-traj-dir",
         type=str,
         nargs="?",
         default=None,
         const="saves/rv/traj",
         metavar="DIR",
-        help="指定时刻 r/v 保存根目录；指定但未传参时默认 saves/rv/traj；需 --save_times_us；不指定则不保存",
+        help="指定时刻 r/v 保存根目录；指定但未传参时默认 saves/rv/traj；需 --save-times-us；不指定则不保存",
     )
     parser.add_argument(
-        "--save_rv_status_dir",
+        "--save-rv-status-dir",
         type=str,
         nargs="?",
         default=None,
@@ -369,24 +369,32 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="最后一帧 r/v 保存根目录；指定但未传参时默认 saves/rv/status；不指定则不保存",
     )
+    parser.add_argument(
+        "--save-rv-path",
+        type=str,
+        default=None,
+        metavar="PATH",
+        dest="save_rv_path",
+        help="最终帧 r/v 保存的完整文件路径（含文件名，如 outputs/result.npz）；优先于 --save-rv-status-dir",
+    )
     # 绘图选项
     parser.add_argument(
-        "--color_mode",
+        "--color-mode",
         type=str,
         default=None,
         choices=["y_pos", "v2", "isotope", "none"],
-        help="离子着色模式: y_pos/v2/isotope/none，默认 alpha>0 时 isotope 否则 none",
+        help="离子着色模式: y_pos(默认)/v2/isotope/none",
     )
     parser.add_argument(
-        "--plot_fig",
+        "--plot-fig",
         type=str,
         default=None,
         help="子图视角，逗号分隔如 zoy,zox；默认 --plot 时为 zoy,zox",
     )
-    parser.add_argument("--ion_size", type=float, default=5.0, help="散点大小")
-    parser.add_argument("--x_range", type=float, default=100.0, help="x 方向显示半宽 (μm)")
-    parser.add_argument("--y_range", type=float, default=20.0, help="y 方向显示半宽 (μm)")
-    parser.add_argument("--z_range", type=float, default=200.0, help="z 方向显示半宽 (μm)")
+    parser.add_argument("--ion-size", type=float, default=5.0, help="散点大小")
+    parser.add_argument("--x-range", type=float, default=100.0, help="x 方向显示半宽 (μm)")
+    parser.add_argument("--y-range", type=float, default=20.0, help="y 方向显示半宽 (μm)")
+    parser.add_argument("--z-range", type=float, default=200.0, help="z 方向显示半宽 (μm)")
     return parser
 
 
@@ -444,7 +452,7 @@ def parse_and_build(
 
     n_values = getattr(args, "N", None)
     if isinstance(n_values, list) and len(n_values) > 1 and getattr(args, "init_file", ""):
-        raise ValueError("指定 --init_file 时不支持多个 --N（初始态离子数固定）")
+        raise ValueError("指定 --init-file 时不支持多个 --N（初始态离子数固定）")
 
     # 2. 构建 Parameters
     from Interface.parameters import from_argparse
@@ -452,7 +460,7 @@ def parse_and_build(
 
     params = from_argparse(args, cfg.dt, n_ions=n_override)
 
-    # 3. 若指定 --init_file，从文件加载 r0、v0（单位 μm、m/s，转为无量纲）
+    # 3. 若指定 --init-file，从文件加载 r0、v0（单位 μm、m/s，转为无量纲）
     if getattr(args, "init_file", ""):
         init_path = args.init_file
         if not Path(init_path).is_absolute():
@@ -463,7 +471,7 @@ def parse_and_build(
         data = dict(np.load(init_path, allow_pickle=True))
         if "r" not in data or "v" not in data:
             raise ValueError(
-                f"--init_file 须为含 'r' 和 'v' 键的 .npz 文件，当前键: {list(data.keys())}"
+                f"--init-file 须为含 'r' 和 'v' 键的 .npz 文件，当前键: {list(data.keys())}"
             )
         r_um = np.asarray(data["r"], dtype=float)
         v_si = np.asarray(data["v"], dtype=float)
@@ -476,7 +484,7 @@ def parse_and_build(
         n_file = int(r_um.shape[0])
         if n_file != params.N:
             logger.info(
-                "--init_file 中含 N=%d 个离子，以文件为准并忽略命令行 --N（原 N=%d）",
+                "--init-file 中含 N=%d 个离子，以文件为准并忽略命令行 --N（原 N=%d）",
                 n_file,
                 params.N,
             )
@@ -565,18 +573,17 @@ def parse_and_build(
             if args.csv:
                 logger.warning("CSV 文件不存在 %s，使用零外力", csv_path)
 
-    # 5. 解析 color_mode（单同位素或混合模式时默认 isotope 着色）
+    # 5. 解析 color_mode（默认 y_pos，none 时统一红色）
     if args.color_mode is not None:
         color_mode = None if args.color_mode == "none" else args.color_mode
     else:
-        use_isotope = params.alpha > 0 or getattr(args, "isotope", None) is not None
-        color_mode = "isotope" if use_isotope else None
+        color_mode = "y_pos"
 
     # 6. 解析 plot_fig（有效值: xoy, zoy, zox）；bilayer 时由 DataPlotter 固定为双 z-x 面
     valid_views: set[str] = {"xoy", "zoy", "zox"}
     if getattr(args, "bilayer", False) and args.plot_fig is not None:
         logger.warning(
-            "已启用 --bilayer，忽略 --plot_fig（将使用两片 z-x 投影，不绘制 zoy）"
+            "已启用 --bilayer，忽略 --plot-fig（将使用两片 z-x 投影，不绘制 zoy）"
         )
     if args.plot_fig is not None and not getattr(args, "bilayer", False):
         raw = [s.strip().lower() for s in args.plot_fig.split(",") if s.strip()]
@@ -598,7 +605,7 @@ def parse_and_build(
             save_times_us = parse_save_times_us(args.save_times_us)
         except ValueError as e:
             raise ValueError(
-                f"--save_times_us 解析失败 ({args.save_times_us!r}): {e}"
+                f"--save-times-us 解析失败 ({args.save_times_us!r}): {e}"
             ) from e
 
     # 8. 解析 save_fig_dir（未指定时用环境变量或默认）
@@ -643,7 +650,7 @@ def parse_and_build(
         if args.plot:
             logger.warning("连续采样模式下忽略 --plot")
         if args.save_times_us:
-            logger.warning("连续采样模式下忽略 --save_times_us")
+            logger.warning("连续采样模式下忽略 --save-times-us")
         plot_fig = None
         save_times_us = None
 
@@ -662,6 +669,7 @@ def parse_and_build(
         save_fig_dir=save_fig_dir,
         save_rv_traj_dir=save_rv_traj_dir,
         save_rv_status_dir=save_rv_status_dir,
+        save_rv_path=getattr(args, "save_rv_path", None),
         bilayer=bool(getattr(args, "bilayer", False)),
     )
 

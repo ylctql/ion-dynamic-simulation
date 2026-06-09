@@ -32,8 +32,8 @@ def get_colors(
     v : np.ndarray, shape (N, 3)
         速度
     color_mode : None | "y_pos" | "v2" | "isotope"
-        None: 全部红色
-        "y_pos": 按 y 坐标大小上色（plasma：深紫→亮黄）
+        None (--color_mode none): 全部红色
+        "y_pos": 按 y 坐标大小上色（plasma：深紫→亮黄），默认
         "v2": 按速度模平方上色
         "isotope": 按同位素种类上色（需提供 mass）
     mass : np.ndarray, shape (N,), optional

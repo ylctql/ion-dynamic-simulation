@@ -282,7 +282,7 @@ def main():
         help="演化时长 (μs)，与 main.py 一致，默认 10",
     )
     parser.add_argument("--R", type=float, default=1.0, help="轨道半径")
-    parser.add_argument("--n_sample", type=int, default=100, help="采样点数")
+    parser.add_argument("--n-sample", type=int, default=100, help="采样点数")
     parser.add_argument("--plot", action="store_true", help="显示可视化")
     parser.add_argument(
         "--out",

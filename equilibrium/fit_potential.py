@@ -30,19 +30,19 @@ def main() -> None:
         help="参考中心 x,y,z (μm)，逗号分隔",
     )
     parser.add_argument(
-        "--x_range",
+        "--x-range",
         type=str,
         default="-50,50",
         help="x 轴拟合范围 x_min,x_max (μm)，默认 -50,50",
     )
     parser.add_argument(
-        "--y_range",
+        "--y-range",
         type=str,
         default="-20,20",
         help="y 轴拟合范围 y_min,y_max (μm)，默认 -20,20",
     )
     parser.add_argument(
-        "--z_range",
+        "--z-range",
         type=str,
         default="-100,100",
         help="z 轴拟合范围 z_min,z_max (μm)，默认 -100,100",

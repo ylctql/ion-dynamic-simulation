@@ -295,23 +295,23 @@ def main() -> None:
         "--vary",
         type=str,
         default="x",
-        help="1D: x/y/z; 2D: comma-separated pair (e.g. x,y). Second axis range uses --y_range.",
+        help="1D: x/y/z; 2D: comma-separated pair (e.g. x,y). Second axis range uses --y-range.",
     )
     parser.add_argument(
-        "--x_range",
+        "--x-range",
         type=str,
         default="-100,100",
         help="First varying axis range (μm), comma-separated",
     )
     parser.add_argument(
-        "--y_range",
+        "--y-range",
         type=str,
         default="-100,100",
         help="2D: second varying axis range (μm), comma-separated",
     )
     parser.add_argument("--const", type=str, default="0,0,0", help="Fixed x,y,z (μm)")
     parser.add_argument(
-        "--n_pts",
+        "--n-pts",
         type=str,
         default="",
         help="1D: single int; 2D: nx,ny (default 500 or 100,100)",

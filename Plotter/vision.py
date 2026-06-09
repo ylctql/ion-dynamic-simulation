@@ -41,6 +41,12 @@ class Vision:
     不要求保存最后一帧图片
     """
 
+    save_rv_path: str | None = None
+    """
+    最终帧 r/v 保存的完整文件路径（含文件名），如 outputs/result.npz；
+    优先于 save_rv_status_dir；指定后直接保存到该路径，不追加 device/N 子目录
+    """
+
     # ----- 绘图开关与视角 -----
     plot_fig: list[PlotFig] | None = field(default_factory=lambda: ["zoy", "zox"])
     """
@@ -72,10 +78,10 @@ class Vision:
     """CLI --species 指定的离子种类名，如 Yb171+、Ba135+；None 表示默认 Ba 参考质量。"""
 
     # ----- 离子颜色 -----
-    color_mode: ColorMode = None
+    color_mode: ColorMode = "y_pos"
     """
-    None: 全部红色
-    "y_pos": 按 y 坐标上色
+    None (--color_mode none): 全部红色
+    "y_pos": 按 y 坐标上色（默认）
     "v2": 按速度模平方上色
     "isotope": 按同位素种类上色
     """
@@ -104,6 +110,7 @@ class Vision:
             "save_fig_dir": self.save_fig_dir,
             "save_rv_traj_dir": self.save_rv_traj_dir,
             "save_rv_status_dir": self.save_rv_status_dir,
+            "save_rv_path": self.save_rv_path,
             "save_final_image": self.save_final_image,
             "interval": self.plot_interval,
             "dl": dl,

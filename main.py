@@ -40,7 +40,7 @@ from FieldConfiguration.field_settings import FieldSettings
 from FieldParser.csv_reader import read as read_csv
 from FieldParser.force import build_force, make_force, _zero_force
 from Plotter.vision import Vision
-from utils import CommandType, Frame, Message
+from utils import CommandType, Frame, Message, save_frame_rv_npz
 from ComputeKernel.backend import CalculationBackend, get_actual_device
 from Plotter.dataplot import DataPlotter
 
@@ -234,12 +234,8 @@ def _continuous_sampling_dir(root: Path, t0_us: float, interval: float, step: in
 
 
 def _save_continuous_frame_npz(f: Frame, path: Path, cfg) -> None:
-    """与 _save_rv_only 相同物理量：r (μm)、v (m/s)、t_us"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    r_um = np.asarray(f.r, dtype=np.float64) * cfg.dl * 1e6
-    v_m_s = np.asarray(f.v, dtype=np.float64) * cfg.dl / cfg.dt
-    time_us = f.timestamp * cfg.dt * 1e6
-    np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
+    """连续采样帧保存：委托 save_frame_rv_npz"""
+    save_frame_rv_npz(f, path, cfg.dl, cfg.dt)
 
 
 def _consume_continuous_sampling(
@@ -292,18 +288,21 @@ def _consume_continuous_sampling(
     return f_last
 
 
-def _save_rv_only(vision: Vision, f_last: Frame, cfg, device: str) -> None:
-    """仅保存 r/v 数据（无绘图），用于无 plotter 时最后一帧，以时间命名"""
-    if not vision.save_rv_status_dir:
-        return
-    r_um = np.asarray(f_last.r, dtype=np.float64) * cfg.dl * 1e6
-    v_m_s = np.asarray(f_last.v, dtype=np.float64) * cfg.dl / cfg.dt
-    time_us = f_last.timestamp * cfg.dt * 1e6
-    dir_path = os.path.join(vision.save_rv_status_dir, device, str(len(f_last.r)))
-    os.makedirs(dir_path, exist_ok=True)
-    path = os.path.join(dir_path, f"t{time_us:.2f}us.npz")
-    np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
-    logger.info("已保存 r/v: %s", path)
+def _save_rv_final(vision: Vision, f_last: Frame, cfg, device: str) -> None:
+    """无 plotter 时保存最终帧 r/v：save_rv_path 优先，否则用 save_rv_status_dir"""
+    if vision.save_rv_path:
+        save_frame_rv_npz(f_last, vision.save_rv_path, cfg.dl, cfg.dt)
+    elif vision.save_rv_status_dir:
+        time_us = f_last.timestamp * cfg.dt * 1e6
+        dir_path = os.path.join(
+            vision.save_rv_status_dir, device, str(len(f_last.r))
+        )
+        save_frame_rv_npz(
+            f_last,
+            os.path.join(dir_path, f"t{time_us:.2f}us.npz"),
+            cfg.dl,
+            cfg.dt,
+        )
 
 
 def _save_final_image(
@@ -335,10 +334,15 @@ def _save_final_image(
         bbox_inches="tight",
     )
     logger.info("已保存最后一帧: %s", save_path)
-    if vision.save_rv_status_dir:
+    # 最终帧 r/v 保存：save_rv_path 优先，否则用 save_rv_status_dir
+    if vision.save_rv_path:
+        save_frame_rv_npz(f_last, vision.save_rv_path, cfg.dl, cfg.dt)
+    elif vision.save_rv_status_dir:
         time_us = f_last.timestamp * cfg.dt * 1e6
-        rv_dir = os.path.join(vision.save_rv_status_dir, device)
-        plotter._save_rv(f_last, len(f_last.r), rv_dir, f"t{time_us:.2f}us")
+        rv_dir = os.path.join(vision.save_rv_status_dir, device, str(len(f_last.r)))
+        save_frame_rv_npz(
+            f_last, os.path.join(rv_dir, f"t{time_us:.2f}us.npz"), cfg.dl, cfg.dt
+        )
 
 
 def run(parsed: ParsedRun) -> Frame | None:
@@ -440,8 +444,8 @@ def run(parsed: ParsedRun) -> Frame | None:
                 parsed.vision, f_last, queue_data, queue_control, cfg, mass,
                 device=actual_device,
             )
-        elif parsed.vision.save_rv_status_dir and f_last is not None:
-            _save_rv_only(parsed.vision, f_last, cfg, actual_device)
+        elif f_last is not None:
+            _save_rv_final(parsed.vision, f_last, cfg, actual_device)
 
         _drain_queue_after_stop(queue_data, queue_control, proc)
         proc.join()

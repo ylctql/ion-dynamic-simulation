@@ -14,7 +14,7 @@ from typing import Literal, cast
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils import CommandType, Frame, Message
+from utils import CommandType, Frame, Message, save_frame_rv_npz
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ class DataPlotter:
         save_fig_dir: str = "saves/images/traj",
         save_rv_traj_dir: str | None = None,
         save_rv_status_dir: str | None = None,
+        save_rv_path: str | None = None,
         save_final_image: str | None = None,
         target_time_dt: float | None = None,
         show_plot: bool = True,
@@ -105,6 +106,8 @@ class DataPlotter:
             指定时刻 r/v 保存根目录
         save_rv_status_dir : str | None
             最后一帧 r/v 保存根目录
+        save_rv_path : str | None
+            最终帧 r/v 保存完整路径（含文件名），优先于 save_rv_status_dir
         save_final_image : str | None
             最后一帧保存路径
         target_time_dt : float | None
@@ -145,6 +148,7 @@ class DataPlotter:
         self.save_fig_dir = save_fig_dir
         self.save_rv_traj_dir = save_rv_traj_dir
         self.save_rv_status_dir = save_rv_status_dir
+        self.save_rv_path = save_rv_path
         self.device = device
         self.save_final_image = save_final_image
         self.target_time_dt = target_time_dt
@@ -388,14 +392,18 @@ class DataPlotter:
 
     def _save_rv(self, f: Frame, n_ions: int, out_dir: str, basename: str) -> None:
         """保存 r(μm)、v(m/s)、t_us(μs) 到 npz 文件，t_us 供续跑时正确设置 RF 相位"""
-        r_um = np.asarray(f.r, dtype=np.float64) * self._dl_um
-        v_m_s = np.asarray(f.v, dtype=np.float64) * self.dl / self.dt
-        time_us = f.timestamp * self._dt_us
         dir_path = os.path.join(out_dir, str(n_ions))
-        os.makedirs(dir_path, exist_ok=True)
         path = os.path.join(dir_path, f"{basename}.npz")
-        np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
-        logger.info("已保存 r/v: %s", path)
+        save_frame_rv_npz(f, path, self.dl, self.dt)
+
+    def _save_final_rv(self, f: Frame) -> None:
+        """保存最终帧 r/v：save_rv_path 优先，否则用 save_rv_status_dir"""
+        if self.save_rv_path:
+            save_frame_rv_npz(f, self.save_rv_path, self.dl, self.dt)
+        elif self.save_rv_status_dir:
+            time_us = f.timestamp * self._dt_us
+            rv_dir = os.path.join(self.save_rv_status_dir, self.device)
+            self._save_rv(f, len(f.r), rv_dir, f"t{time_us:.2f}us")
 
     def _should_show_species_legend(self) -> bool:
         if self.mass is None:
@@ -606,8 +614,6 @@ class DataPlotter:
             )
             self.fig.savefig(save_path, dpi=150, bbox_inches="tight")
             logger.info("Saved final frame to %s", save_path)
-        if self.save_rv_status_dir and f is not None:
-            time_us = f.timestamp * self._dt_us
-            rv_dir = os.path.join(self.save_rv_status_dir, self.device)
-            self._save_rv(f, len(f.r), rv_dir, f"t{time_us:.2f}us")
+        if f is not None:
+            self._save_final_rv(f)
         return f

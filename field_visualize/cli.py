@@ -56,13 +56,13 @@ def main() -> None:
         help="变化坐标：单坐标 (x/y/z) 为 1D；逗号分隔 (如 x,y) 为 2D",
     )
     parser.add_argument(
-        "--x_range",
+        "--x-range",
         type=str,
         default="-100,100",
         help="主变化方向范围 (μm)，逗号分隔，须在网格范围内",
     )
     parser.add_argument(
-        "--y_range",
+        "--y-range",
         type=str,
         default="-100,100",
         help="2D 时第二坐标范围 (μm)",
@@ -81,7 +81,7 @@ def main() -> None:
         help="2D 绘图模式：heatmap 或 3d",
     )
     parser.add_argument(
-        "--n_pts",
+        "--n-pts",
         type=str,
         default="",
         help="采样点数：1D 时为单个整数 (如 500)；2D 时为逗号分隔 (如 100,100)。与 --vary 维数须一致",
@@ -119,7 +119,7 @@ def main() -> None:
         help="计算并输出阱频分布 f_x, f_y, f_z (MHz)，在 --const 指定点沿各轴拟合总势",
     )
     parser.add_argument(
-        "--z_range",
+        "--z-range",
         type=str,
         default="-100,100",
         help="--freq 时 z 轴拟合范围 (μm)，逗号分隔",

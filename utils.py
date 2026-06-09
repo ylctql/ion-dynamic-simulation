@@ -3,9 +3,15 @@
 参考 outline.md 与 ism-hybrid/utils.py
 无量纲化常数由 Config 对象提供，在需要处显式传入。
 """
+import logging
+import os
+from pathlib import Path
+
 import numpy as np
 from enum import Enum
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 # ============== 通信类型 (参照 ism-hybrid) ==============
 class CommandType(Enum):
@@ -45,6 +51,36 @@ class Message:
         self.charge = charge
         self.mass = mass
         self.force = force
+
+
+# ============== 帧数据保存 ==============
+def save_frame_rv_npz(
+    f: Frame, path: str | Path, dl: float, dt: float
+) -> None:
+    """
+    保存 Frame 的 r(μm)、v(m/s)、t_us(μs) 到 NPZ 文件。
+
+    统一替代 main.py / dataplot.py 中分散的 r/v 保存逻辑，
+    避免单位转换代码重复。
+
+    Parameters
+    ----------
+    f : Frame
+        单帧数据（无量纲坐标）
+    path : str | Path
+        输出 NPZ 文件完整路径（含文件名），自动创建父目录
+    dl : float
+        无量纲长度单位 (SI, m)
+    dt : float
+        无量纲时间单位 (SI, s)
+    """
+    r_um = np.asarray(f.r, dtype=np.float64) * dl * 1e6
+    v_m_s = np.asarray(f.v, dtype=np.float64) * dl / dt
+    time_us = f.timestamp * dt * 1e6
+    path = str(path)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    np.savez(path, r=r_um, v=v_m_s, t_us=time_us)
+    logger.info("已保存 r/v: %s", path)
 
 
 # ============== 电势类 Voltage ==============

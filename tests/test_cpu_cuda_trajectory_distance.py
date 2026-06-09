@@ -430,7 +430,7 @@ def main():
         default=DEFAULT_TIME_US,
         help="模拟终止时刻 (μs)，与 main.py 一致，默认 10",
     )
-    parser.add_argument("--n_steps", type=int, default=None, help="积分步数，默认自动")
+    parser.add_argument("--n-steps", type=int, default=None, help="积分步数，默认自动")
     parser.add_argument("--alpha", type=float, default=0.0, help="同位素参杂比例；单同位素模式下为该同位素丰度")
     parser.add_argument(
         "--isotope",
@@ -440,7 +440,7 @@ def main():
         help="单同位素模式：指定同位素种类，alpha 为该同位素丰度，其余为 Ba135；不指定则使用混合模式",
     )
     parser.add_argument(
-        "--calc_method",
+        "--calc-method",
         type=str,
         default="VV",
         choices=["RK4", "VV"],
@@ -448,7 +448,7 @@ def main():
     )
     parser.add_argument("--plot", action="store_true", help="显示图形")
     parser.add_argument(
-        "--self_compare",
+        "--self-compare",
         action="store_true",
         help="开启同设备自比较（CPU-CPU 与 CUDA-CUDA）；默认关闭，仅比较 CPU-CUDA",
     )
@@ -475,7 +475,7 @@ def main():
         main_arg_list += ["--alpha", str(args.alpha)]
     if args.isotope is not None:
         main_arg_list += ["--isotope", args.isotope]
-    main_arg_list += ["--calc_method", args.calc_method]
+    main_arg_list += ["--calc-method", args.calc_method]
     main_args = cli.create_parser().parse_args(main_arg_list)
 
     try:

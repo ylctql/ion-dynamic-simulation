@@ -169,7 +169,7 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="保存图片路径；不指定则尝试 plt.show()",
     )
-    p.add_argument("--ion_size", type=float, default=5.0, help="散点大小")
+    p.add_argument("--ion-size", type=float, default=5.0, help="散点大小")
     return p.parse_args()
 
 

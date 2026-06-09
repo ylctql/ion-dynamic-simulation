@@ -202,7 +202,7 @@ pytest                            # 运行测试
 - `setup_path.ensure_build_in_path()` — 将项目根和 build/（含 ionsim*.so）加入 `sys.path`
 - `--csv` 支持仅传文件名，自动在 `data/` 下查找
 - `--config` 支持仅传文件名，自动在 `FieldConfiguration/configs/` 下查找
-- `--init_file` 的 `.npz` 需含 `r`（µm, shape (N,3)）和 `v`（m/s），可选 `t_us`
+- `--init-file` 的 `.npz` 需含 `r`（µm, shape (N,3)）和 `v`（m/s），可选 `t_us`
 - `ImgSimulation` JSON 路径解析：先相对 JSON 文件目录，再相对仓库根
 
 ## 环境变量
