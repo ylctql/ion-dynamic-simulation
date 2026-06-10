@@ -326,6 +326,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="理想谐振势阱频 (MHz)，与 --csv 互斥",
     )
     parser.add_argument(
+        "--g",
+        type=float,
+        default=None,
+        help="相对耗散强度（默认 0.1）；覆盖 JSON 配置中的 g 值",
+    )
+    parser.add_argument(
         "--config",
         type=str,
         default="",
@@ -531,12 +537,13 @@ def parse_and_build(
 
     # 4. 构建 FieldSettings
     trap_freq = getattr(args, "trap_freq", None)
+    g_cli = getattr(args, "g", None)  # CLI --g 优先级最高，覆盖 JSON 中的值
 
     if trap_freq is not None:
         field_settings = FieldSettings(
             csv_filename="",
             voltage_list=[],
-            g=0.1,
+            g=g_cli if g_cli is not None else 0.1,
             trap_freq_MHz=(trap_freq[0], trap_freq[1], trap_freq[2]),
         )
     else:
@@ -553,23 +560,29 @@ def parse_and_build(
                     field_settings = field_settings_from_config(
                         csv_path, config_path, n_voltage, cfg
                     )
+                    if g_cli is not None:
+                        field_settings.g = g_cli
                 except FileNotFoundError as e:
                     logger.warning("%s，使用零电压默认配置", e)
-                    config = {"g": 0.1, "voltage_list": []}
+                    config = {"g": g_cli if g_cli is not None else 0.1, "voltage_list": []}
                     voltage_list = build_voltage_list(config, n_voltage, cfg)
                     field_settings = FieldSettings(
                         csv_filename=csv_path,
                         voltage_list=voltage_list,
-                        g=0.1,
+                        g=g_cli if g_cli is not None else 0.1,
                     )
             else:
                 field_settings = FieldSettings(
                     csv_filename=csv_path,
                     voltage_list=[],
-                    g=0.1,
+                    g=g_cli if g_cli is not None else 0.1,
                 )
         else:
-            field_settings = FieldSettings(csv_filename="", voltage_list=[], g=0.1)
+            field_settings = FieldSettings(
+                csv_filename="",
+                voltage_list=[],
+                g=g_cli if g_cli is not None else 0.1,
+            )
             if args.csv:
                 logger.warning("CSV 文件不存在 %s，使用零外力", csv_path)
 
