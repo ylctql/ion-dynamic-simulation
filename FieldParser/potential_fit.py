@@ -12,19 +12,26 @@ from scipy.constants import e as ELEMENTARY_CHARGE
 def _extrema_from_poly(coefs: np.ndarray, x_range: tuple[float, float]) -> float:
     """
     从多项式系数求极值点（dV/dx=0 在 x_range 内的实根）
-    coefs = [a, b, c] 或 [a, b, c, d, e]，对应 V = a + bx + cx² + ...
-    导数系数：dV/dx = b + 2cx + 3dx² + 4ex³
+    coefs = [a, b, c, ...]，对应 V = a + bx + cx² + ...
+    支持任意阶数（degree 2/4/6/...）
     """
-    if len(coefs) == 3:
+    n = len(coefs)
+    if n == 3:
         a, b, c = coefs
         if abs(c) < 1e-30:
             return float(np.mean(x_range))
         return float(-b / (2 * c))
 
-    # degree 4: 导数 b + 2cx + 3dx² + 4ex³，系数 [4e, 3d, 2c, b]
-    a, b, c, d, e = coefs
-    deriv_coefs = np.array([4 * e, 3 * d, 2 * c, b])
-    roots = np.roots(deriv_coefs)
+    # 一般情况：导数系数 [n*a_n, (n-1)*a_{n-1}, ..., 2*a_2, a_1]
+    # coefs = [a0, a1, a2, ..., a_n]，导数 = [a1, 2*a2, ..., n*a_n]
+    deriv_coefs = np.array([(k + 1) * coefs[k + 1] for k in range(n - 1)])
+    # np.roots 需要从高次到低次
+    deriv_coefs_roots = deriv_coefs[::-1]
+
+    if len(deriv_coefs_roots) == 0 or np.all(np.abs(deriv_coefs_roots) < 1e-30):
+        return float(np.median(x_range))
+
+    roots = np.roots(deriv_coefs_roots)
     real_roots = roots[np.isreal(roots)].real
     x_min, x_max = min(x_range), max(x_range)
     in_range = real_roots[(real_roots >= x_min - 1e-6) & (real_roots <= x_max + 1e-6)]
@@ -37,12 +44,19 @@ def _extrema_from_poly(coefs: np.ndarray, x_range: tuple[float, float]) -> float
 
 def _k2_at_center(coefs: np.ndarray, center: float) -> float:
     """极值点处的曲率 k2 = V''(center)/2"""
-    if len(coefs) == 3:
+    n = len(coefs)
+    if n == 3:
         a, b, c = coefs
         return float(c)
-    a, b, c, d, e = coefs
-    # V'' = 2c + 6dx + 12ex²
-    return float(c + 3 * d * center + 6 * e * center**2)
+    if n == 5:
+        a, b, c, d, e = coefs
+        # V'' = 2c + 6dx + 12ex²
+        return float(c + 3 * d * center + 6 * e * center**2)
+    # 一般情况：V''(center) = sum_{k>=2} k*(k-1)*a_k * center^{k-2}
+    result = 0.0
+    for k in range(2, n):
+        result += k * (k - 1) * coefs[k] * center ** (k - 2)
+    return float(result / 2)
 
 
 def fit_potential_1d(

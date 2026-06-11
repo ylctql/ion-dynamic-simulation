@@ -191,29 +191,20 @@ pytest                            # 运行测试
 
 ### `trap_stability/` — Mathieu 稳定性参数计算
 
-从实际场几何或理想四极阱参数计算 Mathieu a/q 稳定性参数、secular 频率、稳定性判断。
+从实际场几何计算 Mathieu a/q 稳定性参数、secular 频率、无量纲非谐常数（4/6 阶）、稳定性判断。
 
 | 文件 | 关键内容 |
 |------|---------|
-| `stability.py` | `StabilityResult` frozen dataclass；`compute_stability_direct()` 教科书公式；`compute_stability_from_field()` 从场数据计算；`find_trap_center()` 自动检测陷阱中心；`check_stability_region()` 第一稳定区判断 |
+| `stability.py` | `StabilityResult` frozen dataclass；`compute_stability_from_field()` 核心计算（6 阶多项式拟合 → a/q + 非谐常数）；`find_trap_center()` 自动检测陷阱中心；`check_stability_region()` 第一稳定区判断 |
 | `cli.py` | CLI 入口 |
 
-**两种互斥模式**:
-- **CSV + JSON**（实际场几何）: 分别拟合 DC 势和 RF 幅值势曲率 → a/q 参数
-- **Direct**（教科书公式）: `a=4eU/(mr₀²Ω²)`, `q=2eV/(mr₀²Ω²)`
+**数据流**: CSV+JSON → 插值器 → `compute_potentials()` 分离 DC/RF → 各轴 6 阶多项式拟合 → a/q + secular 频率 + 无量纲非谐常数 (anh4, anh6)
 
-**数据流**: CSV+JSON → 插值器 → `compute_potentials()` 分离 DC/RF → 1D 多项式拟合各轴曲率 → a/q + secular 频率
+**非谐常数**: Taylor 系数 $c_{2k} = \Phi^{(2k)}/(2k)!$，通过 $dV$ 和 $dl$ 无量纲化: $\tilde{c}_{2k} = c_{2k}\cdot dl^{2k}/dV$。详细文档见 `docs/trap_stability.md`。
 
 运行:
 ```bash
-# 从场数据计算
-python -m trap_stability --csv <csv> --config <json> [--center 0,0,0] [--species Ca40+]
-
-# 教科书公式
-python -m trap_stability --direct --rf-freq 35.28 --r0 700 --V0 275 [--U 1]
-
-# 输出 JSON
-python -m trap_stability --direct --rf-freq 35.28 --r0 700 --V0 275 --out result.json
+python -m trap_stability --csv <csv> --config <json> [--center 0,0,0] [--species Ca40+] [--out result.json]
 ```
 
 ## 核心类型 (`utils.py`)
@@ -251,7 +242,7 @@ pytest                # 所有测试
 | `tests/test_force.py` | force 构建、_zero_force |
 | `tests/test_parameters.py` | Parameters 构建、同位素掺杂、初态 |
 | `tests/test_field_optimize.py` | FastEvaluator 预计算、目标函数、NaN 保护、优化收敛、CLI 解析、JSON 输出 |
-| `tests/test_trap_stability.py` | Direct 模式公式验证、物种质量标度、稳定性判断、secular 频率一致性、CLI 解析 |
+| `tests/test_trap_stability.py` | a/q 教科书公式验证、物种质量标度、稳定性判断、secular 频率一致性、非谐常数（合成+场积分）、fit_degree=2/4/6、CLI 解析 |
 | `tests/test_cpu_cuda_error_accumulation.py` | 圆轨道 CPU/CUDA 误差对比 |
 
 ## 开发注意事项

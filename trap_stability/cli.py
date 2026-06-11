@@ -1,9 +1,8 @@
 """
-trap_stability CLI：计算 Mathieu 稳定性参数 (a, q)
+trap_stability CLI：计算 Mathieu 稳定性参数 (a, q) 及非谐常数
 
 用法:
     python -m trap_stability --csv <csv> --config <json> [options]
-    python -m trap_stability --direct --rf-freq <MHz> --r0 <um> --V0 <V> [options]
 """
 from __future__ import annotations
 
@@ -50,135 +49,79 @@ def _parse_3floats(s: str) -> tuple[float, float, float]:
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="计算离子阱 Mathieu 稳定性参数 (a, q) 和 secular 频率",
+        description="计算离子阱 Mathieu 稳定性参数 (a, q)、secular 频率及非谐常数",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例:
-  # CSV + JSON 模式（从实际场几何计算）
-  python -m trap_stability --csv data/monolithic20241118.csv --config default.json
-
-  # 仅传文件名时自动在默认目录查找
-  python -m trap_stability --csv default.csv --config default.json
-
-  # 指定陷阱中心和离子种类
+  python -m trap_stability --csv monolithic20241118.csv --config default.json
   python -m trap_stability --csv default.csv --config default.json --center 0,0,0 --species Ca40+
-
-  # Direct 模式（理想四极阱教科书公式）
-  python -m trap_stability --direct --rf-freq 35.28 --r0 700 --V0 275 --U 1
-
-  # 输出 JSON
-  python -m trap_stability --direct --rf-freq 35.28 --r0 700 --V0 275 --out result.json
+  python -m trap_stability --csv default.csv --config default.json --out result.json
 """,
     )
 
-    # ---- 互斥输入模式 ----
-    mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument(
+    # ---- 输入文件 ----
+    parser.add_argument(
         "--csv",
         type=str,
-        default=None,
-        help="电场 CSV 文件路径；可仅传文件名(如 monolithic20241118.csv)则自动在 data/ 下查找",
+        required=True,
+        help="电场 CSV 文件路径；可仅传文件名则自动在 data/ 下查找",
     )
-    mode_group.add_argument(
-        "--direct",
-        action="store_true",
-        default=False,
-        help="使用理想四极阱教科书公式（需配合 --rf-freq, --r0, --V0）",
-    )
-
-    # ---- Direct 模式参数 ----
-    direct_group = parser.add_argument_group("Direct 模式参数")
-    direct_group.add_argument(
-        "--rf-freq",
-        type=float,
-        default=None,
-        metavar="MHz",
-        help="RF 驱动频率 (MHz)，direct 模式必填",
-    )
-    direct_group.add_argument(
-        "--r0",
-        type=float,
-        default=None,
-        metavar="UM",
-        help="特征尺寸 r₀ (μm)，direct 模式必填",
-    )
-    direct_group.add_argument(
-        "--V0",
-        type=float,
-        default=None,
-        metavar="V",
-        help="RF 零-峰值电压幅度 (V)，direct 模式必填",
-    )
-    direct_group.add_argument(
-        "--U",
-        type=float,
-        default=0.0,
-        metavar="V",
-        help="DC 端帽电压 (V)，默认 0",
-    )
-    direct_group.add_argument(
-        "--geometry",
-        type=str,
-        default="linear",
-        choices=["linear", "3d"],
-        help="阱几何类型: linear(默认) 或 3d",
-    )
-
-    # ---- CSV 模式参数 ----
-    csv_group = parser.add_argument_group("CSV+JSON 模式参数")
-    csv_group.add_argument(
+    parser.add_argument(
         "--config",
         type=str,
         default="",
-        help="电极电压 JSON 路径；可仅传文件名(如 default.json)则自动在 configs/ 下查找",
+        help="电极电压 JSON 路径；可仅传文件名则自动在 configs/ 下查找",
     )
-    csv_group.add_argument(
+
+    # ---- 拟合参数 ----
+    parser.add_argument(
         "--center",
         type=str,
         default=None,
         metavar="X,Y,Z",
         help="陷阱中心坐标 (μm)，如 '0,0,0'；不指定时自动检测",
     )
-    csv_group.add_argument(
+    parser.add_argument(
         "--x-range",
         type=str,
         default="-50,50",
         metavar="LO,HI",
         help="x 轴拟合范围 (μm)，默认 -50,50",
     )
-    csv_group.add_argument(
+    parser.add_argument(
         "--y-range",
         type=str,
         default="-20,20",
         metavar="LO,HI",
         help="y 轴拟合范围 (μm)，默认 -20,20",
     )
-    csv_group.add_argument(
+    parser.add_argument(
         "--z-range",
         type=str,
         default="-150,150",
         metavar="LO,HI",
         help="z 轴拟合范围 (μm)，默认 -150,150",
     )
-    csv_group.add_argument(
-        "--fit-degree",
-        type=int,
-        default=2,
-        help="多项式拟合阶数 (2 或 4)，默认 2",
-    )
-    csv_group.add_argument(
+    parser.add_argument(
         "--n-fit-pts",
         type=int,
         default=200,
         help="每轴采样点数，默认 200",
     )
-    csv_group.add_argument(
+    parser.add_argument(
+        "--fit-degree",
+        type=int,
+        default=6,
+        choices=[2, 4, 6],
+        help="多项式拟合最高阶数: 2(仅 a/q), 4(+anh4), 6(+anh4/anh6)，默认 6",
+    )
+    parser.add_argument(
         "--smooth-axes",
         type=str,
         default="z",
         metavar="AXES",
         help="势场平滑方向: z(默认); none 关闭",
     )
-    csv_group.add_argument(
+    parser.add_argument(
         "--smooth-sg",
         type=str,
         default="11,3",
@@ -186,7 +129,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Savitzky-Golay 滤波参数: 窗口,阶数，默认 11,3",
     )
 
-    # ---- 共享参数 ----
+    # ---- 输出 ----
     parser.add_argument(
         "--species",
         type=str,
@@ -230,12 +173,21 @@ def _print_report(result: "StabilityResult") -> None:
               f"f_y = {result.f_trap_y:8.4f} MHz    "
               f"f_z = {result.f_trap_z:8.4f} MHz")
         print()
+    if result.anh4_dc is not None:
+        print("  Anharmonic Constants (dimensionless, Taylor c_{2k}·dl^{2k}/dV):")
+        print(f"       axis       anh4_dc         anh4_rf         anh6_dc         anh6_rf")
+        for axis in ("x", "y", "z"):
+            print(f"       {axis}   {result.anh4_dc[axis]:14.6e}  "
+                  f"{result.anh4_rf[axis]:14.6e}  "
+                  f"{result.anh6_dc[axis]:14.6e}  "
+                  f"{result.anh6_rf[axis]:14.6e}")
+        print()
     status = "[STABLE]" if result.is_stable else "[UNSTABLE]"
     print(f"  Stability: {status} ({result.stability_note})")
     print("=" * 60)
 
 
-def _result_to_dict(result: "StabilityResult", mode: str, **extra: object) -> dict:
+def _result_to_dict(result: "StabilityResult", **extra: object) -> dict:
     """将 StabilityResult 转为可序列化字典"""
     return {
         "species": result.species_name,
@@ -252,9 +204,12 @@ def _result_to_dict(result: "StabilityResult", mode: str, **extra: object) -> di
         },
         "k2_dc_V_per_um2": result.k2_dc,
         "k2_rf_amp_V_per_um2": result.k2_rf_amp,
+        "anh4_dc": result.anh4_dc,
+        "anh4_rf": result.anh4_rf,
+        "anh6_dc": result.anh6_dc,
+        "anh6_rf": result.anh6_rf,
         "is_stable": result.is_stable,
         "stability_note": result.stability_note,
-        "mode": mode,
         **extra,
     }
 
@@ -283,38 +238,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     species = ION_SPECIES[args.species]
 
-    # ---- Direct 模式 ----
-    if args.direct:
-        if args.rf_freq is None or args.r0 is None or args.V0 is None:
-            parser.error("--direct 模式需要 --rf-freq, --r0, --V0")
-        from .stability import compute_stability_direct
-
-        result = compute_stability_direct(
-            rf_freq_MHz=args.rf_freq,
-            r0_um=args.r0,
-            V0=args.V0,
-            U=args.U,
-            species=species,
-            geometry=args.geometry,
-        )
-        _print_report(result)
-
-        if args.out:
-            d = _result_to_dict(
-                result,
-                mode="direct",
-                rf_freq_MHz=args.rf_freq,
-                r0_um=args.r0,
-                V0=args.V0,
-                U=args.U,
-                geometry=args.geometry,
-            )
-            with open(args.out, "w", encoding="utf-8") as f:
-                json.dump(d, f, indent=2, ensure_ascii=False)
-            print(f"\nResults saved to {args.out}")
-        return
-
-    # ---- CSV + JSON 模式 ----
+    # ---- 路径解析 ----
     csv_path = _resolve_path(args.csv, DEFAULT_CSV_DIR, root)
     config_path = _resolve_path(args.config, DEFAULT_CONFIG_DIR, root) if args.config else ""
 
@@ -394,7 +318,6 @@ def main(argv: list[str] | None = None) -> None:
     if args.out:
         d = _result_to_dict(
             result,
-            mode="csv_json",
             csv=str(csv_path),
             config=str(config_path),
             center_um=[xc, yc, zc],

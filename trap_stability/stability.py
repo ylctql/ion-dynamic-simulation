@@ -1,7 +1,7 @@
 """
 Mathieu 稳定性参数 (a, q) 核心计算
 
-从实际场几何或理想四极阱参数计算 Mathieu a/q 参数、secural 频率、稳定性判断。
+从实际场几何计算 Mathieu a/q 参数、secular 频率、非谐常数、稳定性判断。
 """
 from __future__ import annotations
 
@@ -34,6 +34,12 @@ class StabilityResult:
     # 曲率诊断（V/μm²）
     k2_dc: dict[str, float]
     k2_rf_amp: dict[str, float]
+    # 非谐常数（无量纲，Taylor 系数 c_{2k}·dl^{2k}/dV）
+    # c_{2k} = Phi^{(2k)}(center) / (2k)!，含 1/(2k)! 因子
+    anh4_dc: dict[str, float] | None = None
+    anh4_rf: dict[str, float] | None = None
+    anh6_dc: dict[str, float] | None = None
+    anh6_rf: dict[str, float] | None = None
 
 
 def check_stability_region(
@@ -85,90 +91,6 @@ def _secular_freq_mhz(a: float, q: float, Omega: float) -> float:
         return float("nan")
     omega_sec = (Omega / 2) * np.sqrt(arg)
     return omega_sec / (2 * pi * 1e6)
-
-
-def compute_stability_direct(
-    rf_freq_MHz: float,
-    r0_um: float,
-    V0: float,
-    U: float = 0.0,
-    species: Species | None = None,
-    geometry: str = "linear",
-) -> StabilityResult:
-    """
-    教科书公式计算 Mathieu a/q 参数（理想四极阱）。
-
-    Parameters
-    ----------
-    rf_freq_MHz : float
-        RF 驱动频率 (MHz)
-    r0_um : float
-        特征尺寸 r₀ (μm)
-    V0 : float
-        RF 零-峰值电压幅度 (V)
-    U : float
-        DC 电压 (V)，默认 0
-    species : Species or None
-        离子种类，None 时默认 Ba135+
-    geometry : str
-        "linear"（线性 Paul 阱）或 "3d"（三维 Paul 阱）
-    """
-    from FieldConfiguration.ion_species import BA_135
-
-    if species is None:
-        species = BA_135
-
-    Omega = 2 * pi * rf_freq_MHz * 1e6  # rad/s
-    r0 = r0_um * 1e-6  # m
-    m = species.mass_kg
-
-    coeff_a = 4 * EC / (m * r0**2 * Omega**2)
-    coeff_q = 2 * EC / (m * r0**2 * Omega**2)
-
-    if geometry == "linear":
-        # 线性 Paul 阱：径向有 RF 提供赝势约束，轴向由 DC 端帽电压约束
-        # q: RF 四极场（径向）, 符号取决于电场方向
-        q_x = coeff_q * V0
-        q_y = -q_x
-        q_z = 0.0
-        # a: DC 端帽电压 U > 0 → 轴向约束 (a_z > 0)，径向反约束
-        a_z = coeff_a * U
-        a_x = -a_z / 2
-        a_y = a_x
-    elif geometry == "3d":
-        # 三维 Paul 阱 (Endcap)
-        q_r = coeff_q * V0 / 2
-        a_r = -coeff_a * U
-        q_x = q_r
-        q_y = q_r
-        q_z = 0.0
-        a_x = a_r
-        a_y = a_r
-        a_z = -2 * a_r
-    else:
-        raise ValueError(f"未知几何类型: {geometry}，支持 linear / 3d")
-
-    # Secular 频率（绝热近似）
-    f_sec_x = _secular_freq_mhz(a_x, q_x, Omega)
-    f_sec_y = _secular_freq_mhz(a_y, q_y, Omega)
-    f_sec_z = _secular_freq_mhz(a_z, q_z, Omega)
-
-    is_stable, stability_note = check_stability_region(a_x, a_y, a_z, q_x, q_y, q_z)
-
-    return StabilityResult(
-        a_x=a_x, a_y=a_y, a_z=a_z,
-        q_x=q_x, q_y=q_y, q_z=q_z,
-        f_sec_x=f_sec_x, f_sec_y=f_sec_y, f_sec_z=f_sec_z,
-        f_trap_x=f_sec_x, f_trap_y=f_sec_y, f_trap_z=f_sec_z,
-        is_stable=is_stable,
-        stability_note=stability_note,
-        species_name=species.name,
-        mass_amu=species.mass_amu,
-        omega_rf=Omega,
-        freq_rf_MHz=rf_freq_MHz,
-        k2_dc={"x": 0.0, "y": 0.0, "z": 0.0},
-        k2_rf_amp={"x": 0.0, "y": 0.0, "z": 0.0},
-    )
 
 
 def find_trap_center(
@@ -249,12 +171,13 @@ def compute_stability_from_field(
     center_um: tuple[float, float, float],
     fit_range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
     n_pts: int = 200,
-    fit_degree: int = 2,
+    fit_degree: int = 6,
 ) -> StabilityResult:
     """
-    从实际场几何计算 Mathieu a/q 参数。
+    从实际场几何计算 Mathieu a/q 参数及非谐常数。
 
     分别拟合 DC 势和 RF 幅值势沿各轴的曲率，转换为 a 和 q 参数。
+    同时进行多项式拟合（阶数由 fit_degree 控制），提取无量纲非谐常数。
 
     Parameters
     ----------
@@ -275,7 +198,10 @@ def compute_stability_from_field(
     n_pts : int
         每轴采样点数
     fit_degree : int
-        多项式拟合阶数 (2 或 4)
+        多项式拟合最高阶数 (2, 4 或 6)。
+        - 2: 仅计算 a, q
+        - 4: 额外输出 4 阶非谐常数
+        - 6: 额外输出 4 阶和 6 阶非谐常数
     """
     from field_visualize.core import (
         compute_potentials,
@@ -289,13 +215,20 @@ def compute_stability_from_field(
     )
     from FieldConfiguration.constants import m as DEFAULT_ION_MASS
 
+    if fit_degree not in (2, 4, 6):
+        raise ValueError(f"fit_degree 须为 2, 4 或 6，收到 {fit_degree}")
+
     dl = cfg.dl
+    dV = cfg.dV
     Omega = cfg.Omega
     xc, yc, zc = center_um
     mass_kg = species.mass_kg
 
     # 质量修正因子：compute_potentials 内部用 Ba135 质量计算赝势
     mass_correction = DEFAULT_ION_MASS / mass_kg
+
+    # dl 单位为 m，转换为 μm 用于与 V/μm^k 系数相乘
+    dl_um = dl * 1e6
 
     axes_cfg = [
         ("x", fit_range_um[0]),
@@ -305,64 +238,113 @@ def compute_stability_from_field(
 
     k2_dc: dict[str, float] = {}
     k2_rf_amp: dict[str, float] = {}
-    k2_total: dict[str, float] = {}
     a_dict: dict[str, float] = {}
     q_dict: dict[str, float] = {}
     f_trap: dict[str, float] = {}
+    # 仅在对应阶数可用时初始化为 dict，否则保持 None
+    anh4_dc: dict[str, float] | None = {} if fit_degree >= 4 else None
+    anh4_rf: dict[str, float] | None = {} if fit_degree >= 4 else None
+    anh6_dc: dict[str, float] | None = {} if fit_degree >= 6 else None
+    anh6_rf: dict[str, float] | None = {} if fit_degree >= 6 else None
+
+    # 中心坐标归一化（循环外计算一次）
+    xc_n = um_to_norm(xc, dl)
+    yc_n = um_to_norm(yc, dl)
+    zc_n = um_to_norm(zc, dl)
+
+    def _fit_and_extract(
+        potential: np.ndarray,
+    ) -> tuple[float, float, float]:
+        """
+        多项式拟合，提取 k2 及无量纲非谐常数。
+
+        Returns
+        -------
+        (k2, anh4, anh6)
+            k2 : 二次曲率系数 (V/μm²)，始终返回
+            anh4 : 无量纲 4 阶非谐常数（fit_degree >= 4 时有效，否则 0.0）
+            anh6 : 无量纲 6 阶非谐常数（fit_degree >= 6 时有效，否则 0.0）
+
+        Notes
+        -----
+        Taylor 展开 V(x) = c₂x² + c₄x⁴ + c₆x⁶ + ...
+        其中 c_{2k} = Φ^{(2k)}(center)/(2k)!，已含 1/(2k)! 因子。
+        无量纲化：c_{2k} → c_{2k}·dl^{2k}/dV。
+        """
+        try:
+            fit, _ = fit_potential_1d(coord_um, potential, degree=fit_degree)
+        except (ValueError, np.linalg.LinAlgError):
+            # 拟合失败，退回 2 阶
+            try:
+                fit2, _ = fit_potential_1d(coord_um, potential, degree=2)
+                _, k2 = get_center_and_k2(fit2, 2)
+                return k2, 0.0, 0.0
+            except (ValueError, np.linalg.LinAlgError):
+                return 0.0, 0.0, 0.0
+
+        center = float(fit[0])
+        coefs = fit[1:]  # [a0, a1, ..., a_d]
+        d = len(coefs) - 1  # 实际拟合阶数
+        c = center
+
+        # k2 = V''(c)/2! = Σ_{k≥2} k(k-1)/2 · a_k · c^{k-2}
+        k2 = sum(k * (k - 1) * coefs[k] * c ** (k - 2)
+                 for k in range(2, d + 1)) / 2
+
+        # 4 阶非谐常数
+        anh4_val = 0.0
+        if fit_degree >= 4 and d >= 4:
+            # c4 = V^{(4)}(c)/4! = Σ_{k≥4} k!/(k-4)!/24 · a_k · c^{k-4}
+            c4 = sum(
+                k * (k - 1) * (k - 2) * (k - 3) * coefs[k] * c ** (k - 4)
+                for k in range(4, d + 1)
+            ) / 24
+            anh4_val = c4 * dl_um ** 4 / dV
+
+        # 6 阶非谐常数
+        anh6_val = 0.0
+        if fit_degree >= 6 and d >= 6:
+            c6 = coefs[6]  # V^{(6)}/6! = a6
+            anh6_val = c6 * dl_um ** 6 / dV
+
+        return k2, anh4_val, anh6_val
+
+    # 公共分母
+    denom = mass_kg * Omega**2
 
     for axis, (lo, hi) in axes_cfg:
         coord_um = np.linspace(lo, hi, n_pts)
         vary_range = (um_to_norm(lo, dl), um_to_norm(hi, dl))
-        xc_n = um_to_norm(xc, dl)
-        yc_n = um_to_norm(yc, dl)
-        zc_n = um_to_norm(zc, dl)
 
         r = build_grid_1d(axis, vary_range, xc_n, yc_n, zc_n, n_pts)
-        V_dc, V_rf_amp, V_pseudo, V_total = compute_potentials(
+        V_dc, V_rf_amp, V_pseudo, _ = compute_potentials(
             potential_interps, field_interps, voltage_list, cfg, r
         )
 
         # 修正赝势中的质量
-        V_pseudo_corr = V_pseudo * mass_correction
-        V_total_corr = V_dc + V_pseudo_corr
+        V_total_corr = V_dc + V_pseudo * mass_correction
 
-        # 拟合 DC 势
-        try:
-            fit_dc, _ = fit_potential_1d(coord_um, V_dc, degree=fit_degree)
-            _, k2 = get_center_and_k2(fit_dc, fit_degree)
-            k2_dc[axis] = k2
-        except (ValueError, np.linalg.LinAlgError):
-            k2_dc[axis] = 0.0
+        # 拟合曲率 + 非谐常数
+        k2_dc_val, a4, a6 = _fit_and_extract(V_dc)
+        k2_rf_val, q4, q6 = _fit_and_extract(V_rf_amp)
+        k2_total, _, _ = _fit_and_extract(V_total_corr)
 
-        # 拟合 RF 幅值势
-        try:
-            fit_rf, _ = fit_potential_1d(coord_um, V_rf_amp, degree=fit_degree)
-            _, k2 = get_center_and_k2(fit_rf, fit_degree)
-            k2_rf_amp[axis] = k2
-        except (ValueError, np.linalg.LinAlgError):
-            k2_rf_amp[axis] = 0.0
+        k2_dc[axis] = k2_dc_val
+        k2_rf_amp[axis] = k2_rf_val
+        if anh4_dc is not None:
+            anh4_dc[axis] = a4
+            anh4_rf[axis] = q4
+        if anh6_dc is not None:
+            anh6_dc[axis] = a6
+            anh6_rf[axis] = q6
 
-        # 拟合总势（修正后）
-        try:
-            fit_total, _ = fit_potential_1d(coord_um, V_total_corr, degree=fit_degree)
-            _, k2 = get_center_and_k2(fit_total, fit_degree)
-            k2_total[axis] = k2
-            f_trap[axis] = k2_to_trap_freq_MHz(k2, mass_kg)
-        except (ValueError, np.linalg.LinAlgError):
-            k2_total[axis] = 0.0
-            f_trap[axis] = float("nan")
+        f_trap[axis] = k2_to_trap_freq_MHz(k2_total, mass_kg) if k2_total != 0.0 else float("nan")
 
-        # 从 DC 曲率计算 a
-        # k2 是 V''(center)/2 的系数，单位 V/μm²
-        # V'' = 2*k2，转为 SI: V''_SI = 2*k2*1e12 (V/m²)
-        k2_dc_si = k2_dc[axis] * 1e12 * 2  # V/m²
-        a_dict[axis] = EC * k2_dc_si / (mass_kg * Omega**2 / 4)
-        # 简化: a = 4*e*V''_SI/(m*Omega²) = 4*e*(2*k2*1e12)/(m*Omega²)
+        # a = 4eV''/(mOmega^2)，其中 V'' = 2k2（k2 为 x^2 系数）
+        a_dict[axis] = 8 * EC * k2_dc[axis] * 1e12 / denom
 
-        # 从 RF 幅值曲率计算 q
-        k2_rf_si = k2_rf_amp[axis] * 1e12 * 2  # V/m²
-        # q = (2e/mOmega²) * V''_RF = 4e*k2_rf_si / (m*Omega²)
-        q_dict[axis] = 4 * EC * k2_rf_si / (mass_kg * Omega**2)
+        # q = 4ek2/(mOmega^2)，其中 k2 为 RF 幅值势的 x^2 系数
+        q_dict[axis] = 4 * EC * k2_rf_amp[axis] * 1e12 / denom
 
     # Secular 频率（绝热近似）
     f_sec = {axis: _secular_freq_mhz(a_dict[axis], q_dict[axis], Omega)
@@ -386,4 +368,8 @@ def compute_stability_from_field(
         freq_rf_MHz=cfg.freq_RF,
         k2_dc=k2_dc,
         k2_rf_amp=k2_rf_amp,
+        anh4_dc=anh4_dc,
+        anh4_rf=anh4_rf,
+        anh6_dc=anh6_dc,
+        anh6_rf=anh6_rf,
     )
