@@ -1,6 +1,6 @@
 """
 电场可视化：静电势、RF 赝势、总电势的空间分布
-支持 1D（单坐标）与 2D（热力图/三维）绘图，阱频计算与扫描，势场对称性分析
+支持 1D（单坐标）与 2D（热力图/三维）绘图，阱频计算与扫描，势场对称性分析，拉普拉斯调和分解
 """
 from __future__ import annotations
 
@@ -32,6 +32,17 @@ from .symmetry import (
     HessianSymmetryResult,
     compute_symmetry_report,
     compute_potential_symmetry,
+)
+from .laplace_decompose import (
+    LaplaceTerm,
+    LaplaceDecompositionResult,
+    LaplaceConvergenceResult,
+    harmonic_poly_2d,
+    fit_laplace_2d,
+    eval_laplace_fit,
+    laplace_convergence,
+    print_laplace_report,
+    print_laplace_convergence,
 )
 from .cli import main
 
@@ -65,4 +76,14 @@ __all__ = [
     "HessianSymmetryResult",
     "compute_symmetry_report",
     "compute_potential_symmetry",
+    # laplace decomposition
+    "LaplaceTerm",
+    "LaplaceDecompositionResult",
+    "LaplaceConvergenceResult",
+    "harmonic_poly_2d",
+    "fit_laplace_2d",
+    "eval_laplace_fit",
+    "laplace_convergence",
+    "print_laplace_report",
+    "print_laplace_convergence",
 ]

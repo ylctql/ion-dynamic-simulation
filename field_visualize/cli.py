@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .core import apply_savgol_smooth, um_to_norm
+from .core import apply_savgol_smooth, build_grid_2d, um_to_norm, norm_to_um, compute_potentials
 from .plots import (
     plot_1d,
     plot_2d,
@@ -221,6 +221,46 @@ def main() -> None:
         action="store_true",
         help="--symmetry 时输出偏差热力图",
     )
+    # --- 拉普拉斯分解参数 ---
+    parser.add_argument(
+        "--laplace",
+        action="store_true",
+        help=(
+            "启用拉普拉斯调和多项式基分解：在 xoy 平面拟合势场，"
+            "输出四极 (x²-y²)、十六极 (x⁴-6x²y²+y⁴) 等项系数与 R²。"
+            "使用 --const 指定 z 值（默认 0），--x-range / --y-range 指定拟合范围"
+        ),
+    )
+    parser.add_argument(
+        "--laplace-max-degree",
+        type=int,
+        default=4,
+        metavar="DEGREE",
+        help=(
+            "拉普拉斯分解最高阶数（偶数，默认 4）。"
+            "2 = 仅四极；4 = 四极+十六极；6 = 含六十四极；8 = 含更高阶"
+        ),
+    )
+    parser.add_argument(
+        "--laplace-component",
+        type=str,
+        default="dc",
+        choices=["dc", "rf", "pseudo", "total"],
+        metavar="COMP",
+        help="拉普拉斯分解的目标势场分量：dc / rf / pseudo / total（默认 dc）",
+    )
+    parser.add_argument(
+        "--laplace-n-pts",
+        type=int,
+        default=80,
+        metavar="N",
+        help="拉普拉斯分解每轴采样点数（默认 80，总 N² 点）",
+    )
+    parser.add_argument(
+        "--laplace-convergence",
+        action="store_true",
+        help="--laplace 时额外输出各阶收敛性分析",
+    )
     args = parser.parse_args()
 
     from Interface.cli import (
@@ -361,6 +401,62 @@ def main() -> None:
             plot_symmetry_radar(report, out_path=args.out)
         if args.symmetry_heatmap:
             plot_symmetry_deviation_heatmap(report, out_path=args.out)
+        return
+
+    # --- 拉普拉斯调和多项式分解 ---
+    if args.laplace:
+        max_deg = args.laplace_max_degree
+        if max_deg < 2 or max_deg % 2 != 0:
+            parser.error("--laplace-max-degree 须为 ≥ 2 的偶数")
+
+        from .laplace_decompose import (
+            fit_laplace_2d,
+            laplace_convergence,
+            print_laplace_report,
+            print_laplace_convergence,
+        )
+        from .plots import plot_laplace_decomposition
+
+        # 构建 xoy 平面 2D 网格（z 固定）
+        xr_n = (um_to_norm(xr_um[0], dl), um_to_norm(xr_um[1], dl))
+        yr_n = (um_to_norm(yr_um[0], dl), um_to_norm(yr_um[1], dl))
+        n_lp = args.laplace_n_pts
+        r_grid, (cx_grid, cy_grid) = build_grid_2d(
+            vary_axes=("x", "y"),
+            x_range=xr_n,
+            y_range=yr_n,
+            const_val=um_to_norm(zc_um, dl),
+            n_pts=(n_lp, n_lp),
+        )
+        V_dc, V_rf_amp, V_pseudo, V_total = compute_potentials(
+            potential_interps, field_interps, voltage_list, cfg, r_grid,
+        )
+
+        comp_map = {"dc": V_dc, "rf": V_rf_amp, "pseudo": V_pseudo, "total": V_total}
+        V_target = comp_map[args.laplace_component].reshape(n_lp, n_lp)
+
+        x_um_arr = norm_to_um(cx_grid[:, 0], dl)
+        y_um_arr = norm_to_um(cy_grid[0, :], dl)
+
+        result = fit_laplace_2d(
+            x_um_arr, y_um_arr, V_target,
+            max_degree=max_deg,
+            dl_um=cfg.dl * 1e6,
+            dV=cfg.dV,
+        )
+        comp_label = {"dc": "DC potential", "rf": "RF potential",
+                      "pseudo": "Pseudopotential", "total": "Total potential"}
+        print_laplace_report(result, title=f"Laplace Decomposition — {comp_label[args.laplace_component]}")
+
+        if args.laplace_convergence:
+            conv = laplace_convergence(
+                x_um_arr, y_um_arr, V_target,
+                max_degree=min(max_deg + 4, 10),
+                dl_um=cfg.dl * 1e6, dV=cfg.dV,
+            )
+            print_laplace_convergence(conv)
+
+        plot_laplace_decomposition(x_um_arr, y_um_arr, V_target, result, out_path=args.out)
         return
 
     if args.freq_scan:

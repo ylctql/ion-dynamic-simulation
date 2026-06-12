@@ -1391,3 +1391,91 @@ def plot_symmetry_deviation_heatmap(report: "SymmetryReport", out_path: str | No
     plt.tight_layout()
     _save_or_show(None, "_symmetry_heatmap", fig, out_path)
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Laplace 调和多项式分解绘图
+# ---------------------------------------------------------------------------
+
+def plot_laplace_decomposition(
+    x_um: np.ndarray,
+    y_um: np.ndarray,
+    V: np.ndarray,
+    result: "LaplaceDecompositionResult",
+    out_path: str | None = None,
+) -> None:
+    """
+    绘制拉普拉斯调和多项式分解三联图：扣除直流分量后的势场 | 拟合 | 残差。
+
+    常数项（c₀）从原始势场和拟合中扣除，突出多极结构。
+
+    Parameters
+    ----------
+    x_um, y_um : ndarray
+        1D 坐标数组（µm）。
+    V : ndarray
+        2D 原始势场（V）。
+    result : LaplaceDecompositionResult
+        拟合结果。
+    out_path : str, optional
+        输出图片路径。
+    """
+    import matplotlib.pyplot as plt
+    from .laplace_decompose import eval_laplace_fit
+
+    V_fit = eval_laplace_fit(result, x_um, y_um)
+    residual = V - V_fit
+
+    # 扣除常数项（degree 0），突出多极结构
+    c0 = next((t.coefficient for t in result.terms if t.degree == 0), 0.0)
+    V_detrend = V - c0
+    V_fit_detrend = V_fit - c0
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5.2))
+
+    # 确定色标范围（使用扣除直流后的数据）
+    v_absmax = max(np.max(np.abs(V_detrend)), 1e-30)
+    r_absmax = max(np.max(np.abs(residual)), 1e-30)
+
+    # 面板 1：原始势场 − c₀
+    im0 = axes[0].pcolormesh(x_um, y_um, V_detrend.T, shading="auto", cmap="RdBu_r",
+                              vmin=-v_absmax, vmax=v_absmax)
+    axes[0].set_xlabel("x (µm)")
+    axes[0].set_ylabel("y (µm)")
+    axes[0].set_title("Potential − c₀")
+    axes[0].set_aspect("equal")
+    plt.colorbar(im0, ax=axes[0], label="V")
+
+    # 面板 2：拟合 − c₀
+    im1 = axes[1].pcolormesh(x_um, y_um, V_fit_detrend.T, shading="auto", cmap="RdBu_r",
+                              vmin=-v_absmax, vmax=v_absmax)
+    axes[1].set_xlabel("x (µm)")
+    axes[1].set_ylabel("y (µm)")
+    axes[1].set_title("Laplace fit − c₀")
+    axes[1].set_aspect("equal")
+    plt.colorbar(im1, ax=axes[1], label="V")
+
+    # 面板 3：残差
+    im2 = axes[2].pcolormesh(x_um, y_um, residual.T, shading="auto", cmap="RdBu_r",
+                              vmin=-r_absmax, vmax=r_absmax)
+    axes[2].set_xlabel("x (µm)")
+    axes[2].set_ylabel("y (µm)")
+    axes[2].set_title("Residual")
+    axes[2].set_aspect("equal")
+    plt.colorbar(im2, ax=axes[2], label="V")
+
+    # 标注 R² 和无量纲系数
+    terms_str = "  ".join(
+        f"c̃{t.degree}={t.coefficient_dimless:+.3e}" if t.coefficient_dimless is not None
+        else f"c{t.degree}={t.coefficient:+.3e}"
+        for t in result.terms if t.degree > 0
+    )
+    fig.suptitle(
+        f"Laplace Harmonic Decomposition  (max deg {result.max_degree})\n"
+        f"R² = {result.r_squared:.8f}   RMSE = {result.rmse:.3e} V\n"
+        f"{terms_str}",
+        fontsize=10,
+    )
+    plt.tight_layout()
+    _save_or_show(None, "_laplace", fig, out_path)
+    plt.close(fig)

@@ -124,12 +124,17 @@ pytest                            # 运行测试
 | `core.py` | `compute_potentials()` (DC/RF赝势/总势), `apply_savgol_smooth()`, `build_grid_1d/2d()` |
 | `trap_freq.py` | `compute_trap_freqs_at_point()`, `compute_freq_scan_1d/2d()` |
 | `symmetry.py` | `compute_symmetry_report()` — 势场对称性定量分析（镜面/旋转/多项式奇偶性/Hessian），支持 `which` 参数按需选择 |
-| `plots.py` | `plot_1d()`, `plot_2d()`, `plot_bilayer()`, `plot_freq_scan_1d/2d()`, `print_symmetry_report()`, `plot_symmetry_radar()`, `plot_symmetry_deviation_heatmap()` |
+| `plots.py` | `plot_1d()`, `plot_2d()`, `plot_bilayer()`, `plot_freq_scan_1d/2d()`, `print_symmetry_report()`, `plot_symmetry_radar()`, `plot_symmetry_deviation_heatmap()`, `plot_laplace_decomposition()` |
+| `laplace_decompose.py` | `fit_laplace_2d()` — 2D Laplace 调和多项式基分解（四极 x²-y²、十六极 x⁴-6x²y²+y⁴ 等）；`eval_laplace_fit()`, `laplace_convergence()`, `print_laplace_report()` |
 | `cli.py` | CLI 入口，参数解析 |
 
 运行: `python field_visualize.py` 或 `python -m field_visualize`
 
 对称性分析: `python field_visualize.py --csv <csv> --config <json> --symmetry m,r,p,h`（详见 `docs/symmetry_analysis.md`）
+
+拉普拉斯分解: `python -m field_visualize --csv <csv> --config <json> --laplace [--laplace-max-degree 4] [--laplace-component dc|rf|pseudo|total] [--laplace-convergence]`
+
+**注意**: 拉普拉斯分解严格适用于 DC 静电势和 RF 电势（满足 ∇²Φ = 0）。赝势 V_pseudo ∝ |∇Φ|² 不满足 Laplace 方程，分解仅作经验近似。
 
 ### `equilibrium/` — 平衡构型求解
 
