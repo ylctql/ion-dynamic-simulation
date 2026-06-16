@@ -3,6 +3,8 @@ micromotion 分析绘图（延迟 import matplotlib，供 CLI 无头与 notebook
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
 from .micromotion import (
@@ -11,6 +13,8 @@ from .micromotion import (
     MicromotionReport,
     _AXIS_INDEX,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _plt():
@@ -189,6 +193,7 @@ def plot_lattice_micromotion(
     axial_axis: str = "z",
     amp_stat: str = "median",
     show_ion_index: bool = True,
+    show_theory: bool = False,
     cross: CrossCheck | None = None,
 ):
     """离子晶格 (axial_axis × rf_axis) 平面平衡位置 + rf_axis 方向 micromotion 幅度竖线。
@@ -205,7 +210,12 @@ def plot_lattice_micromotion(
     axial_axis : 离子链方向（横轴），默认 "z" → 默认 zox 平面
     amp_stat : 竖线半长统计量，"median"（β(t) 中位，稳健默认）或 "max"（峰值）
     show_ion_index : 是否在散点旁标注离子索引
-    cross : 提供 RF 零场参考线（rf_axis 方向水平虚线 = center[rf_axis]）
+    show_theory : 叠加**理论** micromotion 幅度竖线 β_theory = |q_theory|/2·|x_eq − x_null|
+        （q_theory、x_null 来自 cross / trap_stability，绿色虚线），与数值竖线（红色
+        实线）并列对比 excess micromotion（数值 > 理论）。仅用于比对，主幅度恒为数值
+        phase-folding 测量的 β。需提供 cross，否则 warning 跳过。
+    cross : 提供 RF 零场参考线（rf_axis 方向水平虚线 = center[rf_axis]）；show_theory
+        时同时提供理论 q_theory 与 x_null
 
     Notes
     -----
@@ -250,7 +260,38 @@ def plot_lattice_micromotion(
                color="C0", edgecolor="white", linewidth=0.5,
                label="equilibrium position")
 
-    # micromotion 竖线：中心对齐平衡位置，半长 β（总长 2β = ptp）
+    # 可选理论比对：β_theory = |q_theory|/2·|x_eq − x_null|（q_theory/x_null 来自 cross）
+    beta_theory = None
+    q_th = np.nan
+    if show_theory:
+        if cross is None:
+            logger.warning(
+                "show_theory=True 需提供 cross（trap_stability 理论 q），跳过理论比对"
+            )
+        else:
+            q_th = float(cross.q_theory.get(rf_axis, np.nan))
+            if not np.isfinite(q_th):
+                logger.warning("cross.q_theory[%r] 非 finite，跳过理论比对", rf_axis)
+            else:
+                x_null = float(np.array(cross.center_um)[ai_rf])
+                beta_theory = 0.5 * abs(q_th) * np.abs(r_eq[:, ai_rf] - x_null)
+
+    # 理论竖线（绿色虚线，先画于低层，作数值线的比对底）
+    if beta_theory is not None:
+        plotted_th = False
+        for i in range(n_ions):
+            if not has_beta[i] or not np.isfinite(beta_theory[i]):
+                continue
+            zc = r_eq[i, ai_axial]
+            xc = r_eq[i, ai_rf]
+            bt = float(beta_theory[i])
+            ax.plot([zc, zc], [xc - bt, xc + bt], color="C2", ls="--", lw=1.6,
+                    alpha=0.85, solid_capstyle="round", zorder=2,
+                    label=(rf"β theory = |q_th|/2·|x−x_null|  (q_th={q_th:.4f})"
+                           if not plotted_th else None))
+            plotted_th = True
+
+    # 数值竖线（phase-folding 实测，红色实线）：中心对齐平衡位置，半长 β（总长 2β = ptp）
     plotted = False
     for i in range(n_ions):
         if not has_beta[i]:
@@ -258,9 +299,9 @@ def plot_lattice_micromotion(
         zc = r_eq[i, ai_axial]
         xc = r_eq[i, ai_rf]
         b = beta[i]
-        ax.plot([zc, zc], [xc - b, xc + b], color="C3", lw=2.2, alpha=0.85,
-                solid_capstyle="round", zorder=2,
-                label=("micromotion ±β (total 2β = ptp)" if not plotted else None))
+        ax.plot([zc, zc], [xc - b, xc + b], color="C3", lw=2.2, alpha=0.9,
+                solid_capstyle="round", zorder=3,
+                label=("micromotion ±β measured (total 2β = ptp)" if not plotted else None))
         plotted = True
         if show_ion_index:
             ax.annotate(str(i), (zc, xc), textcoords="offset points",

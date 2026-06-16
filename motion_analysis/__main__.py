@@ -103,6 +103,9 @@ def create_parser() -> argparse.ArgumentParser:
                         help="Savitzky-Golay 窗口,阶数，默认 11,3")
     parser.add_argument("--no-cross-check", action="store_true",
                         help="跳过 trap_stability 交叉验证")
+    parser.add_argument("--lattice-show-theory", action="store_true",
+                        help="在晶格 micromotion 图上叠加理论 β=|q_th|/2·|x−x_null| "
+                             "比对竖线（绿色虚线），需 cross-check 未关闭")
     parser.add_argument("--out", type=str, default=None,
                         help="JSON 输出路径")
     parser.add_argument("--plot-dir", type=str, default=None,
@@ -249,7 +252,9 @@ def main(argv: list[str] | None = None) -> int:
             (plot_qeff_histogram(report), "qeff_histogram.png"),
             (plot_qeff_vs_displacement(report, cross), "qeff_vs_displacement.png"),
             (plot_beta_vs_secular(report, cross), "beta_vs_secular.png"),
-            (plot_lattice_micromotion(report, cross=cross), "lattice_micromotion_x.png"),
+            (plot_lattice_micromotion(report, cross=cross,
+                                      show_theory=args.lattice_show_theory),
+             "lattice_micromotion_x.png"),
         ]:
             p = plot_dir / name
             fig.savefig(p, dpi=150, bbox_inches="tight")

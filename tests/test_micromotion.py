@@ -385,6 +385,29 @@ class TestLatticePlot:
                 out.append((float(xd[0]), float(yd[0]), float(yd[1])))
         return out
 
+    @staticmethod
+    def _vlines_by_style(ax, style):
+        """提取指定线型的竖线 (zc, y_lo, y_hi)：linestyle==style 且竖直（区分数值实线 / 理论虚线；RF null 水平虚线被排除）。"""
+        out = []
+        for ln in ax.get_lines():
+            xd, yd = ln.get_xdata(), ln.get_ydata()
+            if (ln.get_linestyle() == style and len(xd) == 2 and len(yd) == 2
+                    and np.allclose(xd[0], xd[1])
+                    and not np.allclose(yd[0], yd[1])):
+                out.append((float(xd[0]), float(yd[0]), float(yd[1])))
+        return out
+
+    @staticmethod
+    def _mock_cross(q_x=0.3):
+        from motion_analysis.micromotion import CrossCheck
+        return CrossCheck(
+            q_theory={"x": q_x, "y": 0.0, "z": 0.0},
+            q_measured_median={"x": q_x, "y": 0.0, "z": 0.0},
+            ratio={"x": 1.0, "y": 0.0, "z": 0.0},
+            center_um=(0.0, 0.0, 0.0), is_stable=True,
+            freq_rf_MHz=F_RF_MHZ, species="Ba135+",
+        )
+
     def test_plot_runs_and_line_count(self, tmp_path):
         import matplotlib
         matplotlib.use("Agg")
@@ -461,3 +484,52 @@ class TestLatticePlot:
             plot_lattice_micromotion(report, amp_stat="mean")
         with pytest.raises(ValueError, match="不能相同"):
             plot_lattice_micromotion(report, rf_axis="z", axial_axis="z")
+
+    def test_show_theory_lines(self, tmp_path):
+        """show_theory=True 叠加理论虚线竖线，总长 = |q|·|x_eq − x_null|（x_null=0）。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        fig = plot_lattice_micromotion(report, cross=self._mock_cross(0.3),
+                                       show_theory=True)
+        ax = fig.axes[0]
+        assert len(self._vlines_by_style(ax, "-")) == 2    # 数值实线
+        dashed = self._vlines_by_style(ax, "--")           # 理论虚线（RF null 水平被排除）
+        assert len(dashed) == 2
+        dashed.sort(key=lambda v: v[0])
+        for (zc, ylo, yhi), R0 in zip(dashed, [20.0, 60.0]):
+            assert abs(yhi - ylo) == pytest.approx(0.3 * R0, rel=0.01)
+        plt.close(fig)
+
+    def test_show_theory_default_off(self, tmp_path):
+        """默认 show_theory=False：仅数值实线竖线，无理论虚线竖线。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        fig = plot_lattice_micromotion(report, cross=self._mock_cross(0.3))
+        ax = fig.axes[0]
+        assert len(self._vlines_by_style(ax, "-")) == 2
+        assert len(self._vlines_by_style(ax, "--")) == 0
+        plt.close(fig)
+
+    def test_show_theory_without_cross_warns(self, tmp_path, caplog):
+        """show_theory=True 但 cross=None → warning，数值线照画，无理论线。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        with caplog.at_level("WARNING", logger="motion_analysis.plots"):
+            fig = plot_lattice_micromotion(report, cross=None, show_theory=True)
+        ax = fig.axes[0]
+        assert len(self._vlines_by_style(ax, "-")) == 2
+        assert len(self._vlines_by_style(ax, "--")) == 0
+        assert any("cross" in r.message for r in caplog.records)
+        plt.close(fig)
