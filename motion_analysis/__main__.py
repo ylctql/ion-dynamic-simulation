@@ -109,7 +109,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=str, default=None,
                         help="JSON 输出路径")
     parser.add_argument("--plot-dir", type=str, default=None,
-                        help="图输出目录")
+                        help="图输出目录（无头保存 PNG）")
+    parser.add_argument("--show", action="store_true",
+                        help="弹出交互窗口显示图（可缩放/平移/另存）；与 --plot-dir "
+                             "可共存；需 GUI 后端（PyQt5/tkinter + WSLg/X11）")
     return parser
 
 
@@ -238,28 +241,43 @@ def main(argv: list[str] | None = None) -> int:
             json.dump(d, f, indent=2, ensure_ascii=False)
         print(f"Results saved to {args.out}")
 
-    if args.plot_dir:
+    if args.plot_dir or args.show:
         import matplotlib
-        matplotlib.use("Agg")
+        if not args.show:
+            matplotlib.use("Agg")          # 仅保存：无头后端；--show 用默认 GUI 后端
         import matplotlib.pyplot as plt
         from .plots import (
             plot_qeff_histogram, plot_qeff_vs_displacement, plot_beta_vs_secular,
             plot_lattice_micromotion,
         )
-        plot_dir = Path(args.plot_dir)
-        plot_dir.mkdir(parents=True, exist_ok=True)
-        for fig, name in [
+        figures = [
             (plot_qeff_histogram(report), "qeff_histogram.png"),
             (plot_qeff_vs_displacement(report, cross), "qeff_vs_displacement.png"),
             (plot_beta_vs_secular(report, cross), "beta_vs_secular.png"),
             (plot_lattice_micromotion(report, cross=cross,
                                       show_theory=args.lattice_show_theory),
              "lattice_micromotion_x.png"),
-        ]:
-            p = plot_dir / name
-            fig.savefig(p, dpi=150, bbox_inches="tight")
-            print(f"Plot saved: {p}")
-            plt.close(fig)
+        ]
+        if args.plot_dir:
+            plot_dir = Path(args.plot_dir)
+            plot_dir.mkdir(parents=True, exist_ok=True)
+            for fig, name in figures:
+                p = plot_dir / name
+                fig.savefig(p, dpi=150, bbox_inches="tight")
+                print(f"Plot saved: {p}")
+        if args.show:
+            backend = matplotlib.get_backend()
+            if backend.lower() == "agg":
+                logger.warning(
+                    "--show 当前后端为 Agg（无 GUI）无法弹窗；请安装 GUI 后端"
+                    "（PyQt5/tkinter 等）并用 MPLBACKEND 指定，例如 "
+                    "MPLBACKEND=Qt5Agg python -m motion_analysis ... --show"
+                )
+            print("弹出交互窗口，关闭窗口后程序退出 ...")
+            plt.show()
+        else:
+            for fig, _ in figures:
+                plt.close(fig)
 
     return 0
 

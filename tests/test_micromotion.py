@@ -533,3 +533,23 @@ class TestLatticePlot:
         assert len(self._vlines_by_style(ax, "--")) == 0
         assert any("cross" in r.message for r in caplog.records)
         plt.close(fig)
+
+
+# ============== CLI 参数解析 ==============
+
+class TestCLI:
+    def test_show_flag(self):
+        from motion_analysis.__main__ import create_parser
+        parser = create_parser()
+        a = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json", "--show"])
+        assert a.show is True
+        b = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json"])
+        assert b.show is False
+        assert b.plot_dir is None
+
+    def test_lattice_show_theory_flag(self):
+        from motion_analysis.__main__ import create_parser
+        parser = create_parser()
+        a = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json",
+                               "--lattice-show-theory"])
+        assert a.lattice_show_theory is True
