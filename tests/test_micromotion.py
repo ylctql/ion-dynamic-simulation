@@ -421,21 +421,22 @@ class TestLatticePlot:
         plt.close(fig)
 
     def test_line_length_tracks_amplitude(self, tmp_path):
-        """R0 更大（更偏离 RF null）的离子 micromotion 竖线更长（excess micromotion）。"""
+        """R0 更大（更偏离 RF null）的离子竖线更长；竖线中心=末端帧瞬时位置（非均值）。"""
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         report = self._build_report(
             tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
         )
-        fig = plot_lattice_micromotion(report)
+        fig = plot_lattice_micromotion(report)   # 默认 amp_stat="last"
         vlines = sorted(self._vertical_lines(fig.axes[0]))  # 按 z 升序
         lengths = [abs(v[2] - v[1]) for v in vlines]
-        # z=20（R0=60）离子竖线总长 ≈ q·R0=18，远大于 z=0（R0=20）的 ≈6
+        # R0=60 离子竖线总长 ≈ q·R0=18，远大于 R0=20 的 ≈6
         assert lengths[1] > lengths[0] * 2
-        # 竖线居中于平衡位置 x_eq ≈ R0
-        for (zc, ylo, yhi), R0 in zip(vlines, [20.0, 60.0]):
-            assert 0.5 * (ylo + yhi) == pytest.approx(R0, abs=1.0)
+        # 竖线中心 = 末端帧瞬时 x 位置（含 micromotion 偏移，非时间均值 R0）
+        x_last = report.trajectory.r_um[-1, :, 0]
+        for (zc, ylo, yhi), x_end in zip(vlines, x_last):
+            assert 0.5 * (ylo + yhi) == pytest.approx(x_end, abs=1e-6)
         plt.close(fig)
 
     def test_amp_stat_max(self, tmp_path):
@@ -486,7 +487,7 @@ class TestLatticePlot:
             plot_lattice_micromotion(report, rf_axis="z", axial_axis="z")
 
     def test_show_theory_lines(self, tmp_path):
-        """show_theory=True 叠加理论虚线竖线，总长 = |q|·|x_eq − x_null|（x_null=0）。"""
+        """show_theory=True 叠加理论虚线竖线，总长 = |q|·|x_last − x_null|（x_last=末端瞬时）。"""
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
@@ -500,8 +501,9 @@ class TestLatticePlot:
         dashed = self._vlines_by_style(ax, "--")           # 理论虚线（RF null 水平被排除）
         assert len(dashed) == 2
         dashed.sort(key=lambda v: v[0])
-        for (zc, ylo, yhi), R0 in zip(dashed, [20.0, 60.0]):
-            assert abs(yhi - ylo) == pytest.approx(0.3 * R0, rel=0.01)
+        x_last = report.trajectory.r_um[-1, :, 0]
+        for (zc, ylo, yhi), x_end in zip(dashed, x_last):
+            assert abs(yhi - ylo) == pytest.approx(0.3 * abs(x_end), rel=0.01)
         plt.close(fig)
 
     def test_show_theory_default_off(self, tmp_path):

@@ -191,26 +191,31 @@ def plot_lattice_micromotion(
     *,
     rf_axis: str = "x",
     axial_axis: str = "z",
-    amp_stat: str = "median",
+    amp_stat: str = "last",
     show_ion_index: bool = True,
     show_theory: bool = False,
     cross: CrossCheck | None = None,
 ):
-    """离子晶格 (axial_axis × rf_axis) 平面平衡位置 + rf_axis 方向 micromotion 幅度竖线。
+    """离子晶格 (axial_axis × rf_axis) 平面**末端帧瞬时构型** + rf_axis micromotion 幅度竖线。
 
     默认 zox 平面（横轴 axial_axis=z 离子链，纵轴 rf_axis=x RF 径向，与 Plotter 的
-    zox 视图约定一致）：在每个离子平衡位置画散点，并以竖线（沿 rf_axis 方向）标注该
-    离子的 rf_axis micromotion 幅度——竖线以平衡位置为中心、半长 β（总长 2β =
-    peak-to-peak），即离子在 RF 驱动下的 micromotion 振荡范围。偏离 RF 零场的离子
-    β ∝ |X_sec| 更大、竖线变长 → excess micromotion 直接可视化。
+    zox 视图约定一致）：在每个离子**最后一帧瞬时位置** r(T_end)（含该时刻 RF
+    micromotion 偏移）画散点，并以竖线（沿 rf_axis 方向）标注该离子的 rf_axis
+    micromotion 幅度——竖线以该瞬时位置为中心、半长 β（总长 2β = peak-to-peak），
+    即离子在 RF 驱动下的 micromotion 振荡范围。偏离 RF 零场的离子 β ∝ |X_sec|
+    更大、竖线变长 → excess micromotion 直接可视化。
+
+    用末端帧而非时间均值：后者在 secular 振荡下把运动抹平、unphysical；末端瞬时构型
+    与末端窗 β(t_end) 同快照，位置与幅度自洽。
 
     Parameters
     ----------
     rf_axis : micromotion 幅度所在轴（竖线方向），默认 "x"
     axial_axis : 离子链方向（横轴），默认 "z" → 默认 zox 平面
-    amp_stat : 竖线半长统计量，"median"（β(t) 中位，稳健默认）或 "max"（峰值）
+    amp_stat : 竖线半长统计量，"last"（末端窗 β(t_end)，与末端构型同快照，默认）、
+        "median"（β(t) 中位）或 "max"（峰值）
     show_ion_index : 是否在散点旁标注离子索引
-    show_theory : 叠加**理论** micromotion 幅度竖线 β_theory = |q_theory|/2·|x_eq − x_null|
+    show_theory : 叠加**理论** micromotion 幅度竖线 β_theory = |q_theory|/2·|x_last − x_null|
         （q_theory、x_null 来自 cross / trap_stability，绿色虚线），与数值竖线（红色
         实线）并列对比 excess micromotion（数值 > 理论）。仅用于比对，主幅度恒为数值
         phase-folding 测量的 β。需提供 cross，否则 warning 跳过。
@@ -229,11 +234,12 @@ def plot_lattice_micromotion(
         raise ValueError(f"axial_axis 需为 x/y/z，收到 '{axial_axis}'")
     if rf_axis == axial_axis:
         raise ValueError("rf_axis 与 axial_axis 不能相同")
-    if amp_stat not in ("median", "max"):
-        raise ValueError(f"amp_stat 需为 'median' 或 'max'，收到 '{amp_stat}'")
+    if amp_stat not in ("last", "median", "max"):
+        raise ValueError(f"amp_stat 需为 'last'/'median'/'max'，收到 '{amp_stat}'")
 
-    r_eq, _ = _equilibrium_positions(report)
-    n_ions = r_eq.shape[0]
+    # 末端帧瞬时构型位置（含该时刻 RF micromotion 偏移）；时间均值在 secular 振荡下 unphysical
+    r_last = np.asarray(report.trajectory.r_um[-1], dtype=np.float64)   # (N,3)
+    n_ions = r_last.shape[0]
     ai_rf = _AXIS_INDEX[rf_axis]
     ai_axial = _AXIS_INDEX[axial_axis]
 
@@ -243,8 +249,12 @@ def plot_lattice_micromotion(
         res = report.results.get((i, rf_axis))
         if res is None or res.beta_t.size == 0:
             continue
-        beta[i] = float(np.max(res.beta_t)) if amp_stat == "max" \
-            else float(np.median(res.beta_t))
+        if amp_stat == "max":
+            beta[i] = float(np.max(res.beta_t))
+        elif amp_stat == "median":
+            beta[i] = float(np.median(res.beta_t))
+        else:   # "last"：末端窗 β，与末端构型同快照
+            beta[i] = float(res.beta_t[-1])
     has_beta = np.isfinite(beta)
 
     fig, ax = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -255,10 +265,10 @@ def plot_lattice_micromotion(
         ax.axhline(null, color="gray", ls="--", lw=1, alpha=0.7,
                    label=f"RF null {rf_axis}={null:.2f} µm")
 
-    # 平衡位置散点
-    ax.scatter(r_eq[:, ai_axial], r_eq[:, ai_rf], s=35, zorder=3,
+    # 末端帧瞬时位置散点
+    ax.scatter(r_last[:, ai_axial], r_last[:, ai_rf], s=35, zorder=3,
                color="C0", edgecolor="white", linewidth=0.5,
-               label="equilibrium position")
+               label="last-frame position")
 
     # 可选理论比对：β_theory = |q_theory|/2·|x_eq − x_null|（q_theory/x_null 来自 cross）
     beta_theory = None
@@ -274,7 +284,7 @@ def plot_lattice_micromotion(
                 logger.warning("cross.q_theory[%r] 非 finite，跳过理论比对", rf_axis)
             else:
                 x_null = float(np.array(cross.center_um)[ai_rf])
-                beta_theory = 0.5 * abs(q_th) * np.abs(r_eq[:, ai_rf] - x_null)
+                beta_theory = 0.5 * abs(q_th) * np.abs(r_last[:, ai_rf] - x_null)
 
     # 理论竖线（绿色虚线，先画于低层，作数值线的比对底）
     if beta_theory is not None:
@@ -282,8 +292,8 @@ def plot_lattice_micromotion(
         for i in range(n_ions):
             if not has_beta[i] or not np.isfinite(beta_theory[i]):
                 continue
-            zc = r_eq[i, ai_axial]
-            xc = r_eq[i, ai_rf]
+            zc = r_last[i, ai_axial]
+            xc = r_last[i, ai_rf]
             bt = float(beta_theory[i])
             ax.plot([zc, zc], [xc - bt, xc + bt], color="C2", ls="--", lw=1.6,
                     alpha=0.85, solid_capstyle="round", zorder=2,
@@ -291,13 +301,13 @@ def plot_lattice_micromotion(
                            if not plotted_th else None))
             plotted_th = True
 
-    # 数值竖线（phase-folding 实测，红色实线）：中心对齐平衡位置，半长 β（总长 2β = ptp）
+    # 数值竖线（phase-folding 实测，红色实线）：中心对齐末端瞬时位置，半长 β（总长 2β = ptp）
     plotted = False
     for i in range(n_ions):
         if not has_beta[i]:
             continue
-        zc = r_eq[i, ai_axial]
-        xc = r_eq[i, ai_rf]
+        zc = r_last[i, ai_axial]
+        xc = r_last[i, ai_rf]
         b = beta[i]
         ax.plot([zc, zc], [xc - b, xc + b], color="C3", lw=2.2, alpha=0.9,
                 solid_capstyle="round", zorder=3,
@@ -314,7 +324,7 @@ def plot_lattice_micromotion(
 
     ax.set_xlabel(f"{axial_axis} (µm)")
     ax.set_ylabel(f"{rf_axis} (µm)")
-    stat_label = "median" if amp_stat == "median" else "max"
+    stat_label = amp_stat   # last / median / max
     fig.suptitle(
         f"Ion lattice ({axial_axis}o{rf_axis}) — {rf_axis} micromotion amplitude "
         f"(β {stat_label}, line total = 2β)",

@@ -290,8 +290,8 @@ python -m motion_analysis <run_dir> --csv <csv> --config <json> --show
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `qeff_histogram.png`        | 各轴 $q_\text{eff}$ 分布直方图（RF 径向轴 vs 轴向对比）                                                                                                                                                                                    |
 | `qeff_vs_displacement.png`  | $q_\text{eff}$ vs 离子平衡位置偏离阱中心的距离（$r_\text{eq}$ 用收敛段均值，标注 $q_\text{theory}$ 水平线）                                                                                                                                            |
-| `beta_vs_secular.png`       | 所有窗 $\beta(t)$ vs $                                                                                                                                                                                                        |
-| `lattice_micromotion_x.png` | zox 平面晶格平衡位置散点 + 每离子 $x$ 方向 micromotion 竖线（**数值 phase-folding 实测**，红色实线，居中、总长 $2\beta$=ptp），偏离 RF 零场的离子竖线变长 → excess micromotion 直接成像；提供 `cross` 时叠加 RF null 水平虚线；`--lattice-show-theory` 时另叠加**理论** $\beta_\text{theory}= |
+| `beta_vs_secular.png`       | 所有窗 $\beta(t)$ vs $|X_\text{sec}-\text{center}|$ 散点 + 理论斜率 $q_\text{theory}/2$ |
+| `lattice_micromotion_x.png` | zox 平面晶格**末端帧瞬时位置**（$r(T_\text{end})$，含该时刻 RF micromotion 偏移）散点 + 每离子 $x$ 方向 micromotion 竖线（**数值 phase-folding 实测**，红色实线，以该瞬时位置为中心、半长 β=末端窗 $\beta(t_\text{end})$，总长 $2\beta$=ptp），偏离 RF 零场的离子竖线变长 → excess micromotion 直接成像；**用末端帧而非时间均值**（后者在 secular 振荡下抹平运动、unphysical）；提供 `cross` 时叠加 RF null 水平虚线；`--lattice-show-theory` 时另叠加**理论** $\beta_\text{theory}=|q_\text{theory}|/2\cdot|x_\text{last}-x_\text{null}|$ 绿色虚线竖线（仅比对，excess 时数值线长于理论线） |
 
 
 `plot_ion_timeseries`（notebook 用，非 CLI）按 `dropped_frames` 自动裁掉 warmup 段绘图，并在发生裁剪时画 $t^*$ 竖虚线。
