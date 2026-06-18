@@ -17,6 +17,25 @@ from .core import AXIS_INDEX, build_grid_1d, compute_potentials, um_to_norm
 CoordAxis = str  # "x" | "y" | "z"
 
 
+def quadratic_fit_r2(coord_um: np.ndarray, V_total: np.ndarray) -> float:
+    """
+    纯二次（谐性）模型在给定 1D 范围上的拟合优度 R²。
+
+    势阱频只反映阱底的局部曲率 k2（无穷小量）；R² 则衡量在 *整个扫描范围* 内
+    势场被纯抛物线 V=a+bx+cx² 描述得多好，从而刻画势场的整体谐性：
+    R²≈1 → 该范围内势场几乎为理想谐振势，阱频描述整个区域而非仅原点附近；
+    R² 偏低 → 非谐成分在范围边缘增长，阱频仅在中心附近有效。
+
+    始终用 degree=2 拟合，与调用方用于提取 k2 的拟合阶数无关，从而把"谐性"
+    与"阱频提取方式"解耦。拟合失败（如点数不足、含 NaN）返回 NaN。
+    """
+    try:
+        _, r2 = fit_potential_1d(coord_um, V_total, degree=2)
+        return float(r2)
+    except (ValueError, np.linalg.LinAlgError, RuntimeError):
+        return float("nan")
+
+
 def compute_trap_freqs_at_point(
     potential_interps: list,
     field_interps: list,
@@ -56,6 +75,8 @@ def compute_trap_freqs_at_point(
             result[f"f_{axis}"] = k2_to_trap_freq_MHz(k2, ION_MASS)
         except (ValueError, np.linalg.LinAlgError, RuntimeError):
             result[f"f_{axis}"] = float("nan")
+        # 谐性指标：纯二次模型在该轴扫描范围上的 R²（与 k2 拟合相互独立）
+        result[f"r2_quad_{axis}"] = quadratic_fit_r2(coord_um, V_total)
     return result
 
 

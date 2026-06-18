@@ -565,15 +565,37 @@ def main() -> None:
             n_pts=args.freq_n_pts,
             fit_degree=args.freq_fit_degree,
         )
+        print("=" * 60)
         print(
-            "Trap frequencies at (x=%.1f, y=%.1f, z=%.1f) μm:"
+            "Trap frequencies at (x=%.1f, y=%.1f, z=%.1f) μm"
             % (xc_um, yc_um, zc_um)
         )
-        for k, v in freqs.items():
+        print(
+            "Fit ranges: x[%.0f,%.0f] y[%.0f,%.0f] z[%.0f,%.0f] μm  "
+            "(freq fit degree: %d)"
+            % (
+                xr_um[0], xr_um[1], yr_um[0], yr_um[1], zr_um[0], zr_um[1],
+                args.freq_fit_degree,
+            )
+        )
+        print("=" * 60)
+        for axis in "xyz":
+            v = freqs[f"f_{axis}"]
             if np.isnan(v):
-                print("  %s: N/A (k2<=0 or fit failed)" % k)
+                print("  f_%s: N/A (k2<=0 or fit failed)" % axis)
             else:
-                print("  %s: %.4f MHz" % (k, v))
+                print("  f_%s: %.4f MHz" % (axis, v))
+        print()
+        print(
+            "--- Harmonicity: quadratic-only R² over scan range "
+            "(1.000 = pure harmonic) ---"
+        )
+        for axis in "xyz":
+            r2 = freqs[f"r2_quad_{axis}"]
+            if np.isnan(r2):
+                print("  %s: R² = N/A" % axis)
+            else:
+                print("  %s: R² = %.5f" % (axis, r2))
         return
 
     xc = um_to_norm(xc_um, dl)

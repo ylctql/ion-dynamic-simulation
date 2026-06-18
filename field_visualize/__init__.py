@@ -21,6 +21,7 @@ from .trap_freq import (
     compute_freq_scan_1d,
     compute_freq_scan_2d,
     compute_trap_freqs_at_point,
+    quadratic_fit_r2,
 )
 from .symmetry import (
     SymmetryReport,
@@ -61,6 +62,7 @@ __all__ = [
     "compute_trap_freqs_at_point",
     "compute_freq_scan_1d",
     "compute_freq_scan_2d",
+    "quadratic_fit_r2",
     "plot_1d",
     "plot_2d",
     "plot_bilayer",
