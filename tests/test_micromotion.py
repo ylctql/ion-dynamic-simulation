@@ -221,6 +221,33 @@ class TestAnalyzeRun:
         assert d["n_ions"] == N
         assert len(d["q_eff"]) == N
 
+    def test_report_to_dict_serializes_rf_null(self, tmp_path):
+        """带 cross 的 report_to_dict 应序列化 rf_null_um 字段。"""
+        from motion_analysis.micromotion import CrossCheck
+        N = 1
+        n_frames = 4000
+        dt_us = 0.001
+        for k in range(n_frames):
+            t = k * dt_us
+            r = np.array([[40.0 * (1.0 + 0.15 * np.cos(OMEGA_RF * t)), 0.0, 0.0]])
+            np.savez(tmp_path / f"frame{k}.npz",
+                     r=r, v=np.zeros_like(r), t_us=t)
+        report = analyze_run(
+            tmp_path, freq_rf_MHz=F_RF_MHZ, check_sampling=False,
+            axes=("x",), window_us=0.1,
+        )
+        cross = CrossCheck(
+            q_theory={"x": 0.3, "y": 0.0, "z": 0.0},
+            q_measured_median={"x": 0.3, "y": 0.0, "z": 0.0},
+            ratio={"x": 1.0, "y": 0.0, "z": 0.0},
+            center_um=(-40.0, 0.0, 0.0), is_stable=True,
+            freq_rf_MHz=F_RF_MHZ, species="Ba135+",
+            rf_null_um=(0.0, 0.0, 0.0),
+        )
+        d = report_to_dict(report, cross)
+        assert d["cross_check"]["rf_null_um"] == [0.0, 0.0, 0.0]
+        assert d["cross_check"]["center_um"] == [-40.0, 0.0, 0.0]
+
 
 # ============== detect_warmup: 瞬态收敛检测 ==============
 
@@ -506,6 +533,32 @@ class TestLatticePlot:
             assert abs(yhi - ylo) == pytest.approx(0.3 * abs(x_end), rel=0.01)
         plt.close(fig)
 
+    def test_show_theory_z_offset_separates_lines(self, tmp_path):
+        """理论虚线沿 z 错开与实测实线并排（不再被覆盖）；theory_z_offset=0 则重合。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        # 默认偏移：理论与实测 z 不重合
+        fig = plot_lattice_micromotion(report, cross=self._mock_cross(0.3),
+                                       show_theory=True)
+        ax = fig.axes[0]
+        solid_z = {round(zc, 6) for zc, _, _ in self._vlines_by_style(ax, "-")}
+        dashed_z = {round(zc, 6) for zc, _, _ in self._vlines_by_style(ax, "--")}
+        assert solid_z and dashed_z
+        assert solid_z.isdisjoint(dashed_z), "理论线应 z 错开，不与实测线同位"
+        plt.close(fig)
+        # offset=0：理论与实测 z 重合
+        fig0 = plot_lattice_micromotion(report, cross=self._mock_cross(0.3),
+                                        show_theory=True, theory_z_offset=0.0)
+        ax0 = fig0.axes[0]
+        solid_z0 = {round(zc, 6) for zc, _, _ in self._vlines_by_style(ax0, "-")}
+        dashed_z0 = {round(zc, 6) for zc, _, _ in self._vlines_by_style(ax0, "--")}
+        assert solid_z0 == dashed_z0, "offset=0 时理论与实测应同 z"
+        plt.close(fig0)
+
     def test_show_theory_default_off(self, tmp_path):
         """默认 show_theory=False：仅数值实线竖线，无理论虚线竖线。"""
         import matplotlib
@@ -536,6 +589,114 @@ class TestLatticePlot:
         assert any("cross" in r.message for r in caplog.records)
         plt.close(fig)
 
+    def test_rf_null_line_uses_rf_null_not_center(self, tmp_path):
+        """RF null 灰线用 cross.rf_null_um（赝势最小），而非含 DC 偏置的 center_um。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from motion_analysis.micromotion import CrossCheck
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        cross = CrossCheck(
+            q_theory={"x": 0.3, "y": 0.0, "z": 0.0},
+            q_measured_median={"x": 0.3, "y": 0.0, "z": 0.0},
+            ratio={"x": 1.0, "y": 0.0, "z": 0.0},
+            center_um=(-40.0, 0.0, 0.0),   # DC 偏移后的平衡点（旧"RF null"误标处）
+            is_stable=True, freq_rf_MHz=F_RF_MHZ, species="Ba135+",
+            rf_null_um=(0.0, 0.0, 0.0),   # 真 RF null
+        )
+        fig = plot_lattice_micromotion(report, cross=cross)
+        # RF null 灰线（axhline，水平虚线）y 应=0（rf_null），而非 -40（center）。
+        # axhline 是 y 恒定的水平线；按"y 恒定 + 虚线"筛选其 y 值。
+        ax = fig.axes[0]
+        hys = []
+        for ln in ax.get_lines():
+            yd = np.asarray(ln.get_ydata(), dtype=float)
+            if yd.size >= 2 and np.std(yd) < 1e-9 and ln.get_linestyle() == "--":
+                hys.append(float(yd[0]))
+        assert any(abs(y) < 1e-9 for y in hys), f"RF null 线应=0，得到 {hys}"
+        assert not any(abs(y + 40) < 1e-9 for y in hys), "不应使用 center_um=-40"
+        plt.close(fig)
+
+    def test_equal_aspect_default_on(self, tmp_path):
+        """默认 equal_aspect=True：aspect==1.0（等比），figsize 比例 ≈ 数据跨度比。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        fig = plot_lattice_micromotion(report, cross=self._mock_cross(0.3),
+                                       show_theory=True)
+        ax = fig.axes[0]
+        assert ax.get_aspect() == 1.0          # 等比
+        xl, yl = ax.get_xlim(), ax.get_ylim()
+        xspan, yspan = (xl[1] - xl[0]), (yl[1] - yl[0])
+        w, h = fig.get_size_inches()
+        if xspan >= yspan:
+            assert w >= h                       # 横向更宽的晶格画框更宽
+        # 画框比例与数据比例方向一致（figsize 跟随数据）
+        assert (w >= h) == (xspan >= yspan)
+        plt.close(fig)
+
+    def test_no_equal_aspect(self, tmp_path):
+        """equal_aspect=False：aspect=='auto'，figsize 为默认 9×5。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        fig = plot_lattice_micromotion(report, cross=self._mock_cross(0.3),
+                                       equal_aspect=False)
+        ax = fig.axes[0]
+        assert ax.get_aspect() == "auto"
+        w, h = fig.get_size_inches()
+        assert (w, h) == (9.0, 5.0)
+        plt.close(fig)
+
+    def test_axis_ranges_clamp_lims(self, tmp_path):
+        """axis_ranges 按物理轴指定 → xlim/ylim 被钳到该范围（含未涉及的第三轴被忽略）。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        # 默认 zox 平面：横轴 z、纵轴 x。z-range→xlim，x-range→ylim；y-range 不相关被忽略。
+        fig = plot_lattice_micromotion(
+            report, cross=self._mock_cross(0.3),
+            axis_ranges={"z": (-5.0, 50.0), "x": (-10.0, 10.0), "y": (0.0, 1.0)},
+        )
+        ax = fig.axes[0]
+        assert ax.get_xlim() == (-5.0, 50.0)
+        assert ax.get_ylim() == (-10.0, 10.0)
+        plt.close(fig)
+
+    def test_scatter_span_collected_dense_lattice(self):
+        """密集晶格（散点跨度 ≫ 仅有的几条竖线）xlim 应跟随散点，非塌缩到竖线 z。
+
+        回归 ``ax.relim()`` 不收集 scatter (PathCollection) 的坑：散点很多但只有
+        少数离子有竖线时，xlim 必须覆盖全部散点的跨度。直接测 _apply_lattice_aspect。
+        """
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from motion_analysis.plots import _apply_lattice_aspect
+        fig, ax = plt.subplots()
+        # 散点 z 散布在 [-100,100]（模拟密集晶格），ax.relim 不收集 scatter
+        z_scatter = np.linspace(-100, 100, 200)
+        x_scatter = np.linspace(-3, 3, 200)
+        ax.scatter(z_scatter, x_scatter, s=5)
+        ax.plot([0, 0], [-1, 1], "r-")          # 仅一条竖线（如只有 1 离子有 results）
+        _apply_lattice_aspect(ax, fig, "z", "x", None, True, z_scatter, x_scatter)
+        xl = ax.get_xlim()
+        # xlim 必须覆盖散点 z 跨度（~200），不能塌缩到竖线 z=0 附近
+        assert (xl[1] - xl[0]) > 150, f"xlim 跨度 {xl} 未覆盖密集散点（漏 scatter）"
+        assert ax.get_aspect() == 1.0            # 等比生效
+        plt.close(fig)
+
 
 # ============== CLI 参数解析 ==============
 
@@ -555,3 +716,42 @@ class TestCLI:
         a = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json",
                                "--lattice-show-theory"])
         assert a.lattice_show_theory is True
+
+    def test_axis_range_flags(self):
+        """--x-range/--y-range/--z-range 解析为 (lo,hi) tuple；--no-equal-aspect 关等比。"""
+        from motion_analysis.__main__ import create_parser, _collect_axis_ranges
+        parser = create_parser()
+        a = parser.parse_args([
+            "r", "--csv", "c.csv", "--config", "g.json",
+            "--x-range", "-5", "5", "--y-range", "-3", "3", "--z-range", "0", "60",
+            "--no-equal-aspect",
+        ])
+        assert a.x_range == [-5.0, 5.0]
+        assert a.y_range == [-3.0, 3.0]
+        assert a.z_range == [0.0, 60.0]
+        assert a.equal_aspect is False
+        assert _collect_axis_ranges(a) == {"x": (-5.0, 5.0), "y": (-3.0, 3.0),
+                                           "z": (0.0, 60.0)}
+        # 默认：无 range，equal_aspect=True
+        b = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json"])
+        assert b.equal_aspect is True
+        assert _collect_axis_ranges(b) is None
+
+    def test_axis_range_rejects_bad(self):
+        """非法 range（hi≤lo）报 ArgumentTypeError；非数值/缺数由 argparse type/nargs 拦。"""
+        import argparse
+        import pytest
+        from motion_analysis.__main__ import _collect_axis_ranges, create_parser
+        parser = create_parser()
+        # nargs=2 负责拦截个数，type=float 拦截非数值
+        a = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json",
+                               "--x-range", "5", "-5"])   # hi<lo
+        with pytest.raises(argparse.ArgumentTypeError):
+            _collect_axis_ranges(a)
+        a2 = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json",
+                                "--x-range", "5", "5"])    # hi==lo
+        with pytest.raises(argparse.ArgumentTypeError):
+            _collect_axis_ranges(a2)
+        with pytest.raises(SystemExit):
+            parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json",
+                               "--x-range", "a", "b"])     # 非数值→argparse 报错退出

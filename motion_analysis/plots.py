@@ -119,7 +119,12 @@ def plot_qeff_vs_displacement(report: MicromotionReport, cross: CrossCheck | Non
     plt = _plt()
     r_eq, _ = _equilibrium_positions(report)   # (N,3) 平衡位置，裁掉各轴瞬态
     n_ions = r_eq.shape[0]
-    center = np.array(cross.center_um) if cross is not None else r_eq.mean(axis=0)
+    # 偏离参考用真 RF null（赝势最小）；无 cross 时用离子质心。
+    if cross is not None:
+        ref = cross.rf_null_um if cross.rf_null_um is not None else cross.center_um
+        center = np.array(ref)
+    else:
+        center = r_eq.mean(axis=0)
     fig, axes = plt.subplots(1, len(report.axes), figsize=(4 * len(report.axes), 4),
                              sharey=True, layout="constrained")
     if len(report.axes) == 1:
@@ -133,8 +138,11 @@ def plot_qeff_vs_displacement(report: MicromotionReport, cross: CrossCheck | Non
         if cross is not None:
             qt = cross.q_theory.get(ax_label, np.nan)
             if np.isfinite(qt):
-                axes[k].axhline(qt, color="r", ls="--", lw=1,
-                                label=f"q_theory={qt:.4f}")
+                # q_eff 是非负幅度，对标 |q_theory|（q 符号仅约定方向，不影响幅度）；
+                # 与 plot_beta_vs_secular / plot_lattice_micromotion 一致。
+                aqt = abs(qt)
+                axes[k].axhline(aqt, color="r", ls="--", lw=1,
+                                label=f"|q_theory|={aqt:.4f}")
             axes[k].legend(fontsize=8)
         axes[k].set_xlabel(f"|r_eq − center| {ax_label} (µm)")
         if k == 0:
@@ -151,7 +159,11 @@ def plot_beta_vs_secular(report: MicromotionReport, cross: CrossCheck | None = N
     线性阱预期 β = (q/2)·|X_sec − center|，叠加理论斜率线 q_theory/2。
     """
     plt = _plt()
-    center = np.array(cross.center_um) if cross is not None else np.zeros(3)
+    if cross is not None:
+        ref = cross.rf_null_um if cross.rf_null_um is not None else cross.center_um
+        center = np.array(ref)
+    else:
+        center = np.zeros(3)
     fig, axes = plt.subplots(1, len(report.axes), figsize=(4 * len(report.axes), 4),
                              sharey=True, layout="constrained")
     if len(report.axes) == 1:
@@ -186,6 +198,31 @@ def plot_beta_vs_secular(report: MicromotionReport, cross: CrossCheck | None = N
     return fig
 
 
+def _theory_offset_auto(axial_pos_um: np.ndarray) -> float:
+    """理论竖线的自动 z 偏移量 (µm)，挂钩于中位离子间距。
+
+    稀疏晶格（N < 4 或间距退化）回退到轴向跨度的 1.5%。密集晶格下偏移 ≈ 0.35·中位间距
+    （绿线中心落在两红线之间约 1/3 处，清晰且不蹭邻居）；间距退化（< 1e-6µm，离子近重合）
+    时记 warning，提示绿线可能蹭邻居、建议缩窄 --ions 范围或手动设 theory_z_offset。
+    """
+    pos = np.asarray(axial_pos_um, dtype=np.float64)
+    n = pos.size
+    if n < 4:
+        return 0.015 * float(np.ptp(pos)) if n > 1 else 0.0
+    gaps = np.diff(np.sort(pos))
+    gaps = gaps[gaps > 0]            # 忽略近重合离子（实测可有间距 ~1e-4 的对）
+    if gaps.size == 0:
+        return 0.015 * float(np.ptp(pos))
+    med_gap = float(np.median(gaps))
+    offset = 0.35 * med_gap
+    if med_gap < 1e-6:              # 间距退化（离子近重合），偏移无意义
+        logger.warning(
+            "晶格过密（N=%d, 中位轴向间距=%.3gµm 退化）：绿线可能蹭邻居离子，"
+            "建议缩窄 --ions 范围或手动设 theory_z_offset", n, med_gap,
+        )
+    return offset
+
+
 def plot_lattice_micromotion(
     report: MicromotionReport,
     *,
@@ -194,6 +231,9 @@ def plot_lattice_micromotion(
     amp_stat: str = "last",
     show_ion_index: bool = True,
     show_theory: bool = False,
+    theory_z_offset: float | None = None,
+    equal_aspect: bool = True,
+    axis_ranges: dict[str, tuple[float, float]] | None = None,
     cross: CrossCheck | None = None,
 ):
     """离子晶格 (axial_axis × rf_axis) 平面**末端帧瞬时构型** + rf_axis micromotion 幅度竖线。
@@ -219,13 +259,28 @@ def plot_lattice_micromotion(
         （q_theory、x_null 来自 cross / trap_stability，绿色虚线），与数值竖线（红色
         实线）并列对比 excess micromotion（数值 > 理论）。仅用于比对，主幅度恒为数值
         phase-folding 测量的 β。需提供 cross，否则 warning 跳过。
+    theory_z_offset : 理论竖线沿 axial_axis 的平移量 (µm)，避免被实测竖线（同 z 同中心）
+        完全覆盖。None 时自动取 **中位轴向离子间距的 35%**（稀疏晶格 N<4 时回退到轴向跨度
+        的 1.5%）：实测线留在离子原位，理论线错开到 +z 侧并排比对高度。偏移挂钩于离子间距
+        而非全局跨度，保证密集晶格（N≫100，间距 ≪ 跨度）下绿线紧贴各自红线、不跨越邻居
+        导致肉眼把绿_i 错配到红_{i+k}（看似"中心不一/位移乱"的视觉错觉）。设 0 可禁用平移。
+    equal_aspect : 两维（axial_axis × rf_axis）是否等比——横纵 1µm 代表相同物理长度
+        （默认 True）。等比下按 xlim/ylim 跨度比动态调 figsize（短边基准 5"，比例限
+        [0.4, 5]），避免固定画框把晶格压扁/拉伸；晶格过扁长时建议配合 axis_ranges 缩放到
+        感兴趣区段。设 False 回退自由比例（matplotlib auto）。
+    axis_ranges : 各**物理轴**的显示范围 (µm)，dict key="x"/"y"/"z"，值 (lo, hi)。仅取与
+        本图相关的两轴——横轴 axial_axis、纵轴 rf_axis 对应的物理轴；未提供该轴时按数据
+        （含竖线端点）自动适配。如默认 zox 平面，axis_ranges={"z":(0,30),"x":(-5,5)}
+        等价于 CLI --z-range 0,30 --x-range -5,5。
     cross : 提供 RF 零场参考线（rf_axis 方向水平虚线 = center[rf_axis]）；show_theory
         时同时提供理论 q_theory 与 x_null
 
     Notes
     -----
-    不强制等比坐标（与 Plotter 的晶格视图不同）：离子链轴向范围通常远大于 RF 径向
-    micromotion 幅度，等比会压扁竖线致不可读；此处以竖线（幅度信息）可读性优先。
+    默认等比坐标（两维 µm 尺度一致），与 Plotter 的晶格视图一致：保证 micromotion 竖线长度
+    在两维上不被扭曲，晶格几何形状（间距、链长）忠实反映。等比下 figsize 按数据跨度比动态
+    设置；晶格过扁长（轴向 ≫ 径向）时整图会很长，建议用 axis_ranges（CLI --x-range/
+    --y-range/--z-range）缩放到感兴趣区段。
     """
     plt = _plt()
     if rf_axis not in _AXIS_INDEX:
@@ -259,9 +314,11 @@ def plot_lattice_micromotion(
 
     fig, ax = plt.subplots(figsize=(9, 5), layout="constrained")
 
-    # RF 零场参考线（若提供 cross）
+    # RF 零场参考线：用真 RF null（赝势最小，与 DC 偏置无关），而非 center_um
+    # （后者为 V_total 最小，含 DC 偏置会被推离 RF null，误标为 "RF null"）。
     if cross is not None:
-        null = float(np.array(cross.center_um)[ai_rf])
+        ref = cross.rf_null_um if cross.rf_null_um is not None else cross.center_um
+        null = float(np.array(ref)[ai_rf])
         ax.axhline(null, color="gray", ls="--", lw=1, alpha=0.7,
                    label=f"RF null {rf_axis}={null:.2f} µm")
 
@@ -283,22 +340,29 @@ def plot_lattice_micromotion(
             if not np.isfinite(q_th):
                 logger.warning("cross.q_theory[%r] 非 finite，跳过理论比对", rf_axis)
             else:
-                x_null = float(np.array(cross.center_um)[ai_rf])
+                ref = cross.rf_null_um if cross.rf_null_um is not None else cross.center_um
+                x_null = float(np.array(ref)[ai_rf])
                 beta_theory = 0.5 * abs(q_th) * np.abs(r_last[:, ai_rf] - x_null)
 
-    # 理论竖线（绿色虚线，先画于低层，作数值线的比对底）
+    # 理论竖线（绿色虚线）：沿 z 错开 theory_z_offset 与实测线并排，避免被红实线完全
+    # 覆盖（加粗方案在 excess 情形实测>理论时理论线整段被盖、仅露细翼，不可读）。
     if beta_theory is not None:
+        if theory_z_offset is None:
+            # 偏移挂钩于中位离子间距（密集晶格不跨邻居），稀疏晶格回退到跨度 1.5%。
+            # 旧的 1.5%·span 在 N=1000 时偏移 ≈ 0.15·span ≫ 间距，绿线整体右移跨过
+            # 几十个邻居 → 肉眼把绿_i 错配到红_{i+k}，看似"中心不一/位移乱"。
+            theory_z_offset = _theory_offset_auto(r_last[:, ai_axial])
         plotted_th = False
         for i in range(n_ions):
             if not has_beta[i] or not np.isfinite(beta_theory[i]):
                 continue
-            zc = r_last[i, ai_axial]
+            zc = r_last[i, ai_axial] + theory_z_offset   # 错开到 +z 侧
             xc = r_last[i, ai_rf]
             bt = float(beta_theory[i])
-            ax.plot([zc, zc], [xc - bt, xc + bt], color="C2", ls="--", lw=1.6,
+            ax.plot([zc, zc], [xc - bt, xc + bt], color="C2", ls="--", lw=2.0,
                     alpha=0.85, solid_capstyle="round", zorder=2,
-                    label=(rf"β theory = |q_th|/2·|x−x_null|  (q_th={q_th:.4f})"
-                           if not plotted_th else None))
+                    label=(rf"β theory = |q_th|/2·|x−x_null|  (q_th={q_th:.4f}, "
+                           rf"z+{theory_z_offset:.2f}µm)" if not plotted_th else None))
             plotted_th = True
 
     # 数值竖线（phase-folding 实测，红色实线）：中心对齐末端瞬时位置，半长 β（总长 2β = ptp）
@@ -332,4 +396,76 @@ def plot_lattice_micromotion(
     )
     ax.legend(fontsize=8, loc="best")
     ax.grid(True, alpha=0.3)
+
+    # 等比坐标（两维 µm 尺度一致）+ 各物理轴显示范围
+    _apply_lattice_aspect(
+        ax, fig, axial_axis, rf_axis, axis_ranges, equal_aspect,
+        r_last[:, ai_axial], r_last[:, ai_rf],
+    )
     return fig
+
+
+def _apply_lattice_aspect(
+    ax, fig, axial_axis: str, rf_axis: str,
+    axis_ranges: dict[str, tuple[float, float]] | None, equal_aspect: bool,
+    axial_pos: np.ndarray, rf_pos: np.ndarray,
+):
+    """对晶格图应用各物理轴显示范围 + 可选等比坐标（按跨度比动态调 figsize）。
+
+    横轴 = axial_axis 物理轴、纵轴 = rf_axis 物理轴；axis_ranges 按物理轴名 ("x"/"y"/"z")
+    取 (lo, hi)，未指定的轴按散点 + 竖线端点 + RF null 自动适配。
+
+    手动收集数据范围而非 ``ax.relim()``：后者**不收集 scatter (PathCollection)**，密集晶格
+    下会漏掉散点、只按竖线缩放（如 1000 离子只画 4 条竖线时 xlim 塌缩到竖线 z 附近）。
+    """
+    ranges = axis_ranges or {}
+    x_range = ranges.get(axial_axis)   # 横轴（axial 物理轴）
+    y_range = ranges.get(rf_axis)      # 纵轴（rf 物理轴）
+
+    xs = list(np.asarray(axial_pos, dtype=np.float64).ravel())
+    ys = list(np.asarray(rf_pos, dtype=np.float64).ravel())
+    for ln in ax.get_lines():
+        xd, yd = ln.get_xdata(), ln.get_ydata()
+        if len(xd) != 2 or len(yd) != 2:
+            continue
+        x_eq = np.allclose(xd[0], xd[1])
+        y_eq = np.allclose(yd[0], yd[1])
+        if x_eq and not y_eq:        # 竖线（micromotion 竖线）：x 数据、y 端点
+            xs.append(float(xd[0]))
+            ys.extend([float(yd[0]), float(yd[1])])
+        elif y_eq and not x_eq:      # 水平参考线（RF null）：y 数据（x 为 axes 坐标，丢弃）
+            ys.append(float(yd[0]))
+    xs = np.asarray(xs, dtype=np.float64)
+    ys = np.asarray(ys, dtype=np.float64)
+    xs = xs[np.isfinite(xs)]
+    ys = ys[np.isfinite(ys)]
+
+    def _span(vals):
+        if vals.size == 0:
+            return -1.0, 1.0
+        lo, hi = float(vals.min()), float(vals.max())
+        if hi <= lo:
+            return lo - 0.5, hi + 0.5
+        m = 0.05 * (hi - lo)
+        return lo - m, hi + m
+
+    xlo, xhi = _span(xs)
+    ylo, yhi = _span(ys)
+    if x_range is not None:
+        xlo, xhi = float(x_range[0]), float(x_range[1])
+    if y_range is not None:
+        ylo, yhi = float(y_range[0]), float(y_range[1])
+    ax.set_xlim(xlo, xhi)
+    ax.set_ylim(ylo, yhi)
+
+    if equal_aspect:
+        xs_span, ys_span = (xhi - xlo), (yhi - ylo)
+        if xs_span > 0 and ys_span > 0:
+            ratio = min(max(xs_span / ys_span, 0.4), 5.0)
+            base = 5.0
+            if ratio >= 1.0:
+                w, h = base * ratio, base
+            else:
+                w, h = base, base / ratio
+            fig.set_size_inches(w, h)
+        ax.set_aspect("equal", adjustable="box")

@@ -106,6 +106,20 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lattice-show-theory", action="store_true",
                         help="在晶格 micromotion 图上叠加理论 β=|q_th|/2·|x−x_null| "
                              "比对竖线（绿色虚线），需 cross-check 未关闭")
+    parser.add_argument("--x-range", dest="x_range", nargs=2, type=float,
+                        default=None, metavar=("LO", "HI"),
+                        help="晶格图 x 物理轴显示范围 (µm)，空格分隔如 --x-range -5 5；"
+                             "仅当 x 为横轴(axial)或纵轴(rf)时生效")
+    parser.add_argument("--y-range", dest="y_range", nargs=2, type=float,
+                        default=None, metavar=("LO", "HI"),
+                        help="晶格图 y 物理轴显示范围 (µm)，如 --y-range -3 3")
+    parser.add_argument("--z-range", dest="z_range", nargs=2, type=float,
+                        default=None, metavar=("LO", "HI"),
+                        help="晶格图 z 物理轴显示范围 (µm)，如 --z-range 0 60")
+    parser.add_argument("--no-equal-aspect", dest="equal_aspect",
+                        action="store_false",
+                        help="禁用晶格图等比坐标（默认两维 µm 尺度相等）")
+    parser.set_defaults(equal_aspect=True)
     parser.add_argument("--out", type=str, default=None,
                         help="JSON 输出路径")
     parser.add_argument("--plot-dir", type=str, default=None,
@@ -123,6 +137,25 @@ def _parse_smooth(args) -> tuple[tuple[str, ...] | None, tuple[int, int]]:
     axes = tuple(a for a in raw.split(",") if a in "xyz") or None
     sg = args.smooth_sg.split(",")
     return axes, (int(sg[0]), int(sg[1]) if len(sg) > 1 else 3)
+
+
+def _collect_axis_ranges(args) -> dict[str, tuple[float, float]] | None:
+    """从 args.{x,y,z}_range 组装 axis_ranges dict（仅含已指定的轴）。
+
+    argparse 用 ``nargs=2 type=float`` 直接吃空格分隔的两数（正负均支持，无需 '=' 语法）。
+    校验 HI>LO，否则报 ArgumentTypeError（保留与旧版一致的严格校验）。
+    """
+    ranges = {}
+    for name in ("x", "y", "z"):
+        v = getattr(args, f"{name}_range", None)
+        if v is None:
+            continue
+        lo, hi = float(v[0]), float(v[1])
+        if hi <= lo:
+            raise argparse.ArgumentTypeError(
+                f"--{name}-range 的 HI 需大于 LO，收到 LO={lo}, HI={hi}")
+        ranges[name] = (lo, hi)
+    return ranges or None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -254,8 +287,12 @@ def main(argv: list[str] | None = None) -> int:
             (plot_qeff_histogram(report), "qeff_histogram.png"),
             (plot_qeff_vs_displacement(report, cross), "qeff_vs_displacement.png"),
             (plot_beta_vs_secular(report, cross), "beta_vs_secular.png"),
-            (plot_lattice_micromotion(report, cross=cross,
-                                      show_theory=args.lattice_show_theory),
+            (plot_lattice_micromotion(
+                report, cross=cross,
+                show_theory=args.lattice_show_theory,
+                equal_aspect=args.equal_aspect,
+                axis_ranges=_collect_axis_ranges(args),
+            ),
              "lattice_micromotion_x.png"),
         ]
         if args.plot_dir:

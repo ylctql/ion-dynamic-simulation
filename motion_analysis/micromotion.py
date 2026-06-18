@@ -707,10 +707,13 @@ class CrossCheck:
     q_theory: dict[str, float]                 # {"x":..,"y":..,"z":..}
     q_measured_median: dict[str, float]        # 各离子 q_eff 中位数
     ratio: dict[str, float]                    # measured_median / theory
-    center_um: tuple[float, float, float]
+    center_um: tuple[float, float, float]      # V_total 最小（离子平衡点；含 DC 偏置）
     is_stable: bool
     freq_rf_MHz: float
     species: str
+    rf_null_um: tuple[float, float, float] | None = None
+    """真 RF 零场点（赝势最小，excess-MM 为零的物理参考，与 DC 偏置无关）。
+    lattice excess-MM 图的参考线用此值，而非 center_um（后者含 DC 偏置会偏移）。"""
 
 
 def _build_field_inputs(
@@ -745,7 +748,15 @@ def _build_field_inputs(
         from utils import Voltage, constant
         voltage_list = [Voltage(f"U{i+1}", 0.0, constant(1.0), 0.0)
                         for i in range(grid_voltage.shape[1])]
-    return cfg, sp, potential_interps, field_interps, voltage_list
+    # 真实 CSV 域边界（各轴物理 µm）：grid_coord 已无量纲化（×unit_l/dl），转回 µm 乘 dl·1e6。
+    # 供 find_trap_center/find_rf_null 把粗搜索收缩到域内，避免顶到边界（x/y 越界→NaN 稀疏化、
+    # 或被插值器外推成假势阱，使 argmin 落到非物理的边界点）。
+    domain_um = tuple(
+        (float(np.unique(grid_coord[:, k]).min() * cfg.dl * 1e6),
+         float(np.unique(grid_coord[:, k]).max() * cfg.dl * 1e6))
+        for k in range(3)
+    )
+    return cfg, sp, potential_interps, field_interps, voltage_list, domain_um
 
 
 def cross_check_q(
@@ -772,18 +783,24 @@ def cross_check_q(
     smooth_axes / smooth_sg 透传给场插值器构建（与 trap_stability CLI 约定一致）。
     """
     from trap_stability.stability import (
-        compute_stability_from_field, find_trap_center,
+        compute_stability_from_field, find_trap_center, find_rf_null,
     )
 
-    cfg, sp, potential_interps, field_interps, voltage_list = _build_field_inputs(
+    cfg, sp, potential_interps, field_interps, voltage_list, domain_um = _build_field_inputs(
         str(csv_path), str(config_path), species,
         smooth_axes=smooth_axes, smooth_sg=smooth_sg,
     )
     if center_um is None:
         center_um = find_trap_center(
             potential_interps, field_interps, voltage_list, cfg,
+            domain_um=domain_um,
         )
         logger.info("自动检测阱中心: (%.2f, %.2f, %.2f) µm", *center_um)
+    # 真 RF null（赝势最小）：lattice excess-MM 图参考线用此值，不受 DC 偏置影响。
+    rf_null_um = find_rf_null(
+        potential_interps, field_interps, voltage_list, cfg, domain_um=domain_um,
+    )
+    logger.info("RF null (赝势最小): (%.2f, %.2f, %.2f) µm", *rf_null_um)
 
     res = compute_stability_from_field(
         potential_interps=potential_interps,
@@ -817,6 +834,7 @@ def cross_check_q(
         is_stable=bool(res.is_stable),
         freq_rf_MHz=res.freq_rf_MHz,
         species=species,
+        rf_null_um=tuple(float(v) for v in rf_null_um),
     )
 
 
@@ -859,6 +877,7 @@ def report_to_dict(report: MicromotionReport, cross: CrossCheck | None = None) -
             "q_measured_median": cross.q_measured_median,
             "ratio_measured_over_theory": cross.ratio,
             "center_um": list(cross.center_um),
+            "rf_null_um": list(cross.rf_null_um) if cross.rf_null_um is not None else None,
             "is_stable": cross.is_stable,
             "species": cross.species,
         }

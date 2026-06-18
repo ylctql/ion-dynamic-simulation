@@ -93,63 +93,85 @@ def _secular_freq_mhz(a: float, q: float, Omega: float) -> float:
     return omega_sec / (2 * pi * 1e6)
 
 
-def find_trap_center(
-    potential_interps: list,
-    field_interps: list,
-    voltage_list: list,
-    cfg,
-    grid_extent_um: tuple[float, float, float] = (100.0, 100.0, 300.0),
-    n_coarse: int = 15,
-) -> tuple[float, float, float]:
-    """
-    自动检测陷阱中心：在粗网格上找 V_total 最小值，再用 1D 拟合精化。
+def _clip_search_extent(extent_um: float, lo: float, hi: float, margin: float = 0.1) -> float:
+    """把搜索半范围收缩到 [lo,hi] 域内（留 margin 比例余量），避免顶到 CSV 边界。
 
-    Returns
-    -------
-    (xc_um, yc_um, zc_um) 陷阱中心坐标 (μm)
+    domain 未给（lo>hi 哨兵）时原样返回 extent_um。
+    """
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        return extent_um
+    half = (hi - lo) / 2.0 * (1.0 - margin)   # 域内可用的对称半范围
+    return min(extent_um, half)
+
+
+def _find_potential_minimum(
+    potential_interps, field_interps, voltage_list, cfg,
+    *,
+    which: str,
+    grid_extent_um: tuple[float, float, float],
+    n_coarse: int,
+    domain_um: tuple[tuple[float, float], ...] | None,
+) -> tuple[float, float, float]:
+    """粗网格 argmin + 1D 精化找指定势分量的最小点（内部复用）。
+
+    which: "total" → V_total（DC+赝势，阱中心/离子平衡点）；
+           "pseudo" → V_pseudo（纯 RF 赝势，即真 RF null）。
+
+    domain_um 给定时，粗搜索与精化范围都裁到域内（留 10% 余量），避免顶到 CSV
+    边界——x/y 越界点被插值器填 NaN（nanargmin 跳过致有效点稀疏化、argmin 落到
+    非物理边界点），这是旧实现把阱中心/RF null 误判到 ±80µm 边界的根因。
     """
     from field_visualize.core import compute_potentials, um_to_norm
 
     dl = cfg.dl
-    # 构建粗 3D 网格
-    xg = np.linspace(-grid_extent_um[0], grid_extent_um[0], n_coarse)
-    yg = np.linspace(-grid_extent_um[1], grid_extent_um[1], n_coarse)
-    zg = np.linspace(-grid_extent_um[2], grid_extent_um[2], n_coarse)
+    # 域内可用半范围（无 domain 时退化为 grid_extent）
+    dom = domain_um if domain_um is not None else ((1.0, -1.0),) * 3   # lo>hi 哨兵→不裁
+    ext = tuple(
+        _clip_search_extent(grid_extent_um[k], dom[k][0], dom[k][1]) for k in range(3)
+    )
+    # 粗网格中心：优先用域中点（无 domain 时仍以 0 为中心，与旧行为一致）
+    centers = tuple((dom[k][0] + dom[k][1]) / 2.0 if domain_um is not None else 0.0
+                    for k in range(3))
+    xg = np.linspace(centers[0] - ext[0], centers[0] + ext[0], n_coarse)
+    yg = np.linspace(centers[1] - ext[1], centers[1] + ext[1], n_coarse)
+    zg = np.linspace(centers[2] - ext[2], centers[2] + ext[2], n_coarse)
     xx, yy, zz = np.meshgrid(xg, yg, zg, indexing="ij")
     r_um = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
     r_norm = r_um * 1e-6 / dl
 
-    _, _, _, V_total = compute_potentials(
+    V_dc, _, V_pseudo, V_total = compute_potentials(
         potential_interps, field_interps, voltage_list, cfg, r_norm
     )
+    V = V_total if which == "total" else V_pseudo
 
-    idx_min = np.nanargmin(V_total)
+    idx_min = np.nanargmin(V)
     xc, yc, zc = r_um[idx_min]
 
     # 1D 精化
-    from FieldParser.potential_fit import fit_potential_1d, get_center_and_k2
+    from FieldParser.potential_fit import fit_potential_1d
     from field_visualize.core import build_grid_1d
 
-    for axis_idx, (axis_name, coarse_val, extent) in enumerate([
-        ("x", xc, grid_extent_um[0]),
-        ("y", yc, grid_extent_um[1]),
-        ("z", zc, grid_extent_um[2]),
+    for axis_idx, (coarse_val, extent, half_dom) in enumerate([
+        (xc, ext[0], dom[0]), (yc, ext[1], dom[1]), (zc, ext[2], dom[2]),
     ]):
         axis = ("x", "y", "z")[axis_idx]
-        fine_extent = extent * 0.3  # 在粗最小值附近缩小范围
-        coord_um = np.linspace(coarse_val - fine_extent, coarse_val + fine_extent, 200)
-        vary_range = (
-            um_to_norm(coord_um[0], dl),
-            um_to_norm(coord_um[-1], dl),
-        )
+        fine_extent = extent * 0.3
+        lo_f, hi_f = coarse_val - fine_extent, coarse_val + fine_extent
+        # 精化范围也裁到域内
+        if domain_um is not None:
+            lo_f = max(lo_f, half_dom[0] + 0.05 * (half_dom[1] - half_dom[0]))
+            hi_f = min(hi_f, half_dom[1] - 0.05 * (half_dom[1] - half_dom[0]))
+        coord_um = np.linspace(lo_f, hi_f, 200)
+        vary_range = (um_to_norm(coord_um[0], dl), um_to_norm(coord_um[-1], dl))
         consts = [um_to_norm(xc, dl), um_to_norm(yc, dl), um_to_norm(zc, dl)]
         r_fine = build_grid_1d(axis, vary_range, consts[0], consts[1], consts[2], 200)
-        _, _, _, V_fine = compute_potentials(
+        _, _, V_psf, V_tf = compute_potentials(
             potential_interps, field_interps, voltage_list, cfg, r_fine
         )
+        V_fine = V_tf if which == "total" else V_psf
         try:
             fit_result, _ = fit_potential_1d(coord_um, V_fine, degree=2)
-            refined = fit_result[0]  # center
+            refined = fit_result[0]
             if axis_idx == 0:
                 xc = refined
             elif axis_idx == 1:
@@ -157,9 +179,67 @@ def find_trap_center(
             else:
                 zc = refined
         except (ValueError, np.linalg.LinAlgError):
-            pass  # 保持粗值
+            pass
 
     return xc, yc, zc
+
+
+def find_trap_center(
+    potential_interps: list,
+    field_interps: list,
+    voltage_list: list,
+    cfg,
+    grid_extent_um: tuple[float, float, float] = (100.0, 100.0, 300.0),
+    n_coarse: int = 15,
+    domain_um: tuple[tuple[float, float], ...] | None = None,
+) -> tuple[float, float, float]:
+    """
+    自动检测陷阱中心（V_total = DC + RF 赝势的最小值，即离子平衡点）。
+
+    注意：含 DC 偏置时，V_total 最小点会被 DC 场推离真 RF null；若需要 excess
+    micromotion 的物理参考点（RF 零场），用 :func:`find_rf_null`。
+
+    domain_um : 各轴 (lo, hi) µm，给定时把搜索裁到 CSV 域内，避免边界伪最小值。
+
+    Returns
+    -------
+    (xc_um, yc_um, zc_um) 陷阱中心坐标 (μm)
+    """
+    return _find_potential_minimum(
+        potential_interps, field_interps, voltage_list, cfg,
+        which="total", grid_extent_um=grid_extent_um, n_coarse=n_coarse,
+        domain_um=domain_um,
+    )
+
+
+def find_rf_null(
+    potential_interps: list,
+    field_interps: list,
+    voltage_list: list,
+    cfg,
+    grid_extent_um: tuple[float, float, float] = (100.0, 100.0, 300.0),
+    n_coarse: int = 15,
+    domain_um: tuple[tuple[float, float], ...] | None = None,
+) -> tuple[float, float, float]:
+    """
+    检测真 RF 零场点（RF 赝势 V_pseudo 的最小值）。
+
+    物理上 RF 赝势 ∝ |E_RF|²，其最小点即 RF 场为零处——excess micromotion 为零的
+    参考点，与 DC 偏置无关（恒在几何对称中心附近）。用于 lattice excess-MM 图的
+    参考线，比 :func:`find_trap_center`（DC 偏移后的 V_total 最小）更贴合 micromotion 物理。
+
+    对 RF-only / 无轴向 DC 的配置，赝势沿离子链轴是零线（无轴向最小），轴向分量
+    不可靠——调用方应仅取径向分量，或提供 domain 限定在轴向阱内。
+
+    Returns
+    -------
+    (x_null, y_null, z_null) µm，径向分量可靠，轴向分量仅在有轴向 DC 时有意义。
+    """
+    return _find_potential_minimum(
+        potential_interps, field_interps, voltage_list, cfg,
+        which="pseudo", grid_extent_um=grid_extent_um, n_coarse=n_coarse,
+        domain_um=domain_um,
+    )
 
 
 def compute_stability_from_field(
