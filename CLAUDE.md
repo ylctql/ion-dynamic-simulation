@@ -122,13 +122,15 @@ pytest                            # 运行测试
 | 文件 | 关键内容 |
 |------|---------|
 | `core.py` | `compute_potentials()` (DC/RF赝势/总势), `apply_savgol_smooth()`, `build_grid_1d/2d()` |
-| `trap_freq.py` | `compute_trap_freqs_at_point()`, `compute_freq_scan_1d/2d()` |
+| `trap_freq.py` | `compute_trap_freqs_at_point()`（除 `f_x/f_y/f_z` 外额外返回每轴纯二次模型 R² 谐性指标 `r2_quad_*`）, `quadratic_fit_r2()`, `compute_freq_scan_1d/2d()` |
 | `symmetry.py` | `compute_symmetry_report()` — 势场对称性定量分析（镜面/旋转/多项式奇偶性/Hessian），支持 `which` 参数按需选择 |
 | `plots.py` | `plot_1d()`, `plot_2d()`, `plot_bilayer()`, `plot_freq_scan_1d/2d()`, `print_symmetry_report()`, `plot_symmetry_radar()`, `plot_symmetry_deviation_heatmap()`, `plot_laplace_decomposition()` |
 | `laplace_decompose.py` | `fit_laplace_2d()` — 2D Laplace 调和多项式基分解（四极 x²-y²、十六极 x⁴-6x²y²+y⁴ 等）；`eval_laplace_fit()`, `laplace_convergence()`, `print_laplace_report()` |
 | `cli.py` | CLI 入口，参数解析 |
 
 运行: `python field_visualize.py` 或 `python -m field_visualize`
+
+阱频与谐性: `python -m field_visualize --csv <csv> --config <json> --freq [--x-range ...] [--freq-fit-degree 2|4]` — 输出 `f_x/f_y/f_z` 并附加每轴**纯二次模型 R²** 谐性指标（刻画势场在扫描范围内的整体谐性，弥补阱频仅反映原点局部曲率的不足；详见 `docs/harmonicity.md`）
 
 对称性分析: `python field_visualize.py --csv <csv> --config <json> --symmetry m,r,p,h`（详见 `docs/symmetry_analysis.md`）
 
@@ -212,6 +214,36 @@ pytest                            # 运行测试
 python -m trap_stability --csv <csv> --config <json> [--center 0,0,0] [--species Ca40+] [--out result.json]
 ```
 
+### `motion_analysis/` — 动力学后分析（micromotion 数值测量）
+
+基于 `continuous_sampling/` 的 `frame*.npz` 轨迹，逐离子数值测量 RF micromotion 幅度 β(t) 与有效调制深度 q_eff，并与 `trap_stability` 的理论 q 交叉验证。
+
+物理：Paul 阱中离子运动为**乘性调制** x(t)≈X_sec(t)·[1+(q/2)cos(Ωt)]（非恒幅加性模型）。
+
+| 文件 | 关键内容 |
+|------|---------|
+| `micromotion.py` | `load_continuous_sampling()`（RF 频率来自 config；含采样率/总时长断言）、`compute_micromotion()`（phase-folding 得时变 β(t) + FFT 低通提取 secular 包络并回归全局 q_eff）、`detect_warmup()`（secular 包络稳态检测瞬态收敛点 t*）、`analyze_run()` 多离子批处理（含 warmup 裁剪）、`cross_check_q()` 对接 trap_stability 理论 q |
+| `plots.py` | `plot_ion_timeseries`/`plot_qeff_histogram`/`plot_qeff_vs_displacement`/`plot_beta_vs_secular`/`plot_lattice_micromotion`（zox 平面晶格**末端帧瞬时**位置 + 每离子 x 方向 micromotion 竖线，excess micromotion 成像；`show_theory` 叠理论比对竖线、`theory_z_offset` 挂钩中位离子间距、`equal_aspect=True` 默认等比、`axis_ranges` 按物理轴定尺度） |
+| `__main__.py` | CLI 入口；`python -m motion_analysis` |
+| `micromotion_analysis.ipynb` | 调用库的展示层 notebook |
+
+**数据流**: `continuous_sampling/frame*.npz` → `load_continuous_sampling`（RF 频率从 config）→ `analyze_run` 逐 (ion,axis) 调 `detect_warmup` 裁瞬态 → `compute_micromotion`（FFT 低通提 secular 包络 + 回归 q_eff；phase-folding 滑窗得 β(t)）→ `cross_check_q`（trap_stability 理论 q 对比）
+
+**瞬态裁剪（warmup）**: 默认逐 (ion,axis) 自动检测瞬态收敛点 t*（secular 包络滑窗稳态 + 3 窗中值滤波 + ≥3 连续 bad 段；混合 rel/abs 容差防冷离子过裁），裁掉弛豫段再分析。干净稳态/静止轴返回 no-op（`t*=t[0]`，结果与不裁一致）。CLI：`--no-auto-trim` 关闭、`--warmup-us`（相对）/`--trim-start-us`（绝对）手动 override、`--warmup-tol`(0.1)/`--warmup-periods`(3) 调参。结果记入 `IonAxisResult.t_star_us/dropped_frames/warmup_reason` 与 JSON `per_ion`。
+
+**采样要求**: 每 RF 周期 ≥ 8 点（默认 `--interval 0.08 --step 10` 满足）；总时长 ≥ 3 个 secular 周期。不满足时 `load_continuous_sampling` 抛错并给出参数建议。
+
+运行（先采集再分析）:
+```bash
+python main.py --N 3 --time 20 --continuous-sampling --continuous-sampling-frames 20000 --interval 0.08 --step 10
+python -m motion_analysis continuous_sampling/t030.00_interval0.08_step10 \
+    --csv monolithic20241118.csv --config default.json --out mm.json --plot-dir plots
+```
+
+说明文档: `docs/micromotion_analysis.md`（物理原理、测量方法、warmup 裁剪、CLI/输出格式）
+
+规划文档: `docs/plan/micromotion_analysis.md`
+
 ## 核心类型 (`utils.py`)
 
 - `CommandType` — START/PAUSE/RESUME/STOP（子进程控制）
@@ -248,6 +280,7 @@ pytest                # 所有测试
 | `tests/test_parameters.py` | Parameters 构建、同位素掺杂、初态 |
 | `tests/test_field_optimize.py` | FastEvaluator 预计算、目标函数、NaN 保护、优化收敛、CLI 解析、JSON 输出 |
 | `tests/test_trap_stability.py` | a/q 教科书公式验证、物种质量标度、稳定性判断、secular 频率一致性、非谐常数（合成+场积分）、fit_degree=2/4/6、CLI 解析 |
+| `tests/test_micromotion.py` | 合成数据回收已知 q（常位移/secular 调制）、q=0 退化、负 q、β(t) 跟踪 secular、加载/采样校验异常、多离子批处理 |
 | `tests/test_cpu_cuda_error_accumulation.py` | 圆轨道 CPU/CUDA 误差对比 |
 
 ## 开发注意事项
