@@ -69,3 +69,69 @@ def test_parse_save_times_us_range_step_zero_raises():
 
     with pytest.raises(ValueError, match="step"):
         parse_save_times_us("range(0,10,0)")
+
+
+# ============== --continuous-sampling-plot ==============
+
+_ROOT = Path(__file__).resolve().parent.parent
+_CSV = "60electrodes_x100y100z600.csv"
+_CFG = "default.json"
+
+
+def test_continuous_sampling_plot_default_false():
+    parser = create_parser()
+    args = parser.parse_args([])
+    assert args.continuous_sampling_plot is False
+
+
+def test_continuous_sampling_plot_flag_parsed():
+    parser = create_parser()
+    args = parser.parse_args(["--continuous-sampling", "--continuous-sampling-plot"])
+    assert args.continuous_sampling_plot is True
+
+
+def _try_build(args_list):
+    """parse_and_build（用项目根 + 真实 csv/config）；csv/config 缺失则 skip。"""
+    import pytest
+    from Interface.cli import parse_and_build
+    parser = create_parser()
+    args = parser.parse_args(args_list)
+    try:
+        return parse_and_build(args, _ROOT)
+    except FileNotFoundError:
+        pytest.skip("csv/config 文件缺失，跳过 parse_and_build 测试")
+
+
+def test_continuous_sampling_plot_implies_show_plot():
+    parsed = _try_build([
+        "--N", "2", "--csv", _CSV, "--config", _CFG,
+        "--continuous-sampling", "--continuous-sampling-frames", "5",
+        "--continuous-sampling-plot",
+    ])
+    assert parsed.continuous_sampling_plot is True
+    assert parsed.vision.plot_fig is not None      # 不再被强制 None
+    assert parsed.vision.show_plot is True         # imply 弹窗
+    assert parsed.vision.save_times_us is None     # 聚焦逐帧 npz
+
+
+def test_continuous_sampling_plot_requires_continuous_sampling():
+    import pytest
+    from Interface.cli import parse_and_build
+    parser = create_parser()
+    args = parser.parse_args([
+        "--N", "2", "--csv", _CSV, "--config", _CFG, "--continuous-sampling-plot",
+    ])
+    with pytest.raises(ValueError, match="须配合"):
+        parse_and_build(args, _ROOT)
+
+
+def test_pure_continuous_sampling_unchanged():
+    """回归：纯 --continuous-sampling 仍强制 plot_fig=None / show_plot=None。"""
+    parsed = _try_build([
+        "--N", "2", "--csv", _CSV, "--config", _CFG,
+        "--continuous-sampling", "--continuous-sampling-frames", "5",
+    ])
+    assert parsed.continuous_sampling is True
+    assert parsed.continuous_sampling_plot is False
+    assert parsed.vision.plot_fig is None
+    assert parsed.vision.show_plot is None

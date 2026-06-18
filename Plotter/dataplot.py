@@ -65,6 +65,8 @@ class DataPlotter:
         save_rv_status_dir: str | None = None,
         save_rv_path: str | None = None,
         save_final_image: str | None = None,
+        continuous_save_dir: str | None = None,
+        continuous_n_frames: int | None = None,
         target_time_dt: float | None = None,
         show_plot: bool = True,
         species_label: str | None = None,
@@ -156,6 +158,11 @@ class DataPlotter:
         self.species_label = species_label
         self.final_frame_saved = False
         self.last_output_time_us = -10.0
+        # continuous-sampling 边看边存：逐帧存 frame{idx}.npz + 按帧数发 STOP
+        self.continuous_save_dir = continuous_save_dir
+        self.continuous_n_frames = continuous_n_frames
+        self._continuous_frame_count = 0
+        self._stop_sent = False
 
         # 无量纲坐标转 um
         self._dl_um = dl * 1e6
@@ -457,6 +464,24 @@ class DataPlotter:
                 return False
             f = item
 
+        # continuous 边看边存：逐帧保存 frame{idx}.npz（与纯 --continuous-sampling 同格式）
+        if self.continuous_save_dir is not None and self.continuous_n_frames is not None:
+            idx = self._continuous_frame_count
+            if idx < self.continuous_n_frames:
+                save_frame_rv_npz(
+                    f,
+                    os.path.join(self.continuous_save_dir, f"frame{idx}.npz"),
+                    self.dl, self.dt,
+                )
+                self._continuous_frame_count += 1
+            # 达到帧数发 STOP（与 target_time_dt 共用 _stop_sent，只发一次）
+            if (
+                self._continuous_frame_count >= self.continuous_n_frames
+                and not self._stop_sent
+            ):
+                self._stop_sent = True
+                self.queue_control.put(Message(CommandType.STOP))
+
         # 更新各子图
         colors = self._compute_colors(f.r, f.v)
         t_us = f.timestamp * self._dt_us
@@ -546,6 +571,7 @@ class DataPlotter:
             self.target_time_dt is not None
             and f.timestamp >= self.target_time_dt
             and not self.final_frame_saved
+            and not self._stop_sent
         ):
             if self.save_final_image:
                 os.makedirs(os.path.dirname(self.save_final_image) or ".", exist_ok=True)
@@ -554,6 +580,7 @@ class DataPlotter:
                 )
                 logger.info("已保存最后一帧: %s", self.save_final_image)
                 self.final_frame_saved = True
+            self._stop_sent = True
             self.queue_control.put(Message(CommandType.STOP))
 
         self.bm.update()

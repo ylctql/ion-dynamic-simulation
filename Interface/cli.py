@@ -186,6 +186,7 @@ class ParsedRun:
     smooth_sg: tuple[int, int] = (11, 3)
     continuous_sampling: bool = False
     continuous_sampling_frames: int = 1
+    continuous_sampling_plot: bool = False
     poly_fit: bool = False
     poly_fit_mode: str = "quartic"
     poly_fit_npts: int = 8
@@ -241,6 +242,15 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="N",
         dest="continuous_sampling_frames",
         help="连续采样模式下保存的总帧数（含 queue 中的初始帧），默认 1",
+    )
+    parser.add_argument(
+        "--continuous-sampling-plot",
+        action="store_true",
+        dest="continuous_sampling_plot",
+        help=(
+            "连续采样 + 实时绘图：弹窗显示同时逐帧存 frame{i}.npz（自动启用实时显示，"
+            "无需再叠 --plot）；与纯 --continuous-sampling（无窗口、仅存 npz）二选一"
+        ),
     )
     parser.add_argument("--alpha", type=float, default=0.0, help="同位素参杂比例；单同位素模式下为该同位素丰度")
     parser.add_argument(
@@ -592,6 +602,9 @@ def parse_and_build(
     else:
         color_mode = "y_pos"
 
+    # continuous-sampling-plot：提前读取，供 plot_fig 默认推导与后续 continuous 分支共用
+    continuous_sampling_plot = bool(getattr(args, "continuous_sampling_plot", False))
+
     # 6. 解析 plot_fig（有效值: xoy, zoy, zox）；bilayer 时由 DataPlotter 固定为双 z-x 面
     valid_views: set[str] = {"xoy", "zoy", "zox"}
     if getattr(args, "bilayer", False) and args.plot_fig is not None:
@@ -605,8 +618,8 @@ def parse_and_build(
     elif getattr(args, "bilayer", False) and (args.plot or args.save_times_us):
         plot_fig = cast(list[PlotFig], ["zox", "zox"])
     else:
-        # save_times_us 需 plotter 才能保存，指定时启用 plot_fig（无窗口模式）
-        plot_fig = cast(list[PlotFig], ["zoy", "zox"]) if (args.plot or args.save_times_us) else None
+        # save_times_us / continuous-sampling-plot 需 plotter，指定时启用 plot_fig
+        plot_fig = cast(list[PlotFig], ["zoy", "zox"]) if (args.plot or args.save_times_us or continuous_sampling_plot) else None
 
     # show_plot：仅 --plot 时弹窗；仅 save_times_us 时无窗口
     show_plot = args.plot
@@ -655,17 +668,26 @@ def parse_and_build(
     continuous_sampling_frames = int(getattr(args, "continuous_sampling_frames", 1))
     if continuous_sampling and continuous_sampling_frames < 1:
         raise ValueError("--continuous-sampling-frames 须为 >= 1 的整数")
+    if continuous_sampling_plot and not continuous_sampling:
+        raise ValueError("--continuous-sampling-plot 须配合 --continuous-sampling 使用")
 
     poly_fit = bool(getattr(args, "poly_fit", False))
     poly_fit_mode = getattr(args, "poly_fit_mode", "quartic") or "quartic"
     poly_fit_npts = int(getattr(args, "poly_fit_npts", 8))
     if continuous_sampling:
-        if args.plot:
-            logger.warning("连续采样模式下忽略 --plot")
-        if args.save_times_us:
-            logger.warning("连续采样模式下忽略 --save-times-us")
-        plot_fig = None
-        save_times_us = None
+        if continuous_sampling_plot:
+            # 边计算边实时显示 + 逐帧存 npz：保留 plot_fig，弹窗（imply show_plot）
+            if args.save_times_us:
+                logger.warning("连续采样绘图模式下忽略 --save-times-us（聚焦逐帧 npz）")
+            save_times_us = None
+            show_plot = True
+        else:
+            if args.plot:
+                logger.warning("连续采样模式下忽略 --plot（用 --continuous-sampling-plot 开启绘图）")
+            if args.save_times_us:
+                logger.warning("连续采样模式下忽略 --save-times-us")
+            plot_fig = None
+            save_times_us = None
 
     # 11. 构建 Vision
     vision = Vision(
@@ -698,6 +720,7 @@ def parse_and_build(
         smooth_sg=smooth_sg,
         continuous_sampling=continuous_sampling,
         continuous_sampling_frames=continuous_sampling_frames,
+        continuous_sampling_plot=continuous_sampling_plot,
         poly_fit=poly_fit,
         poly_fit_mode=poly_fit_mode,
         poly_fit_npts=poly_fit_npts,

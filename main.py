@@ -254,7 +254,8 @@ def _consume_continuous_sampling(
     """
     f_last: Frame | None = None
     saved = 0
-    last_output_time_us = -10.0
+    # 每 N 帧输出一次进度，避免逐帧 INFO 刷屏；末帧兜底输出一次（确保看到完成）
+    progress_every = 50
     while saved < n_frames:
         item = _get_from_queue(queue_data, proc)
         if item is None:
@@ -270,12 +271,12 @@ def _consume_continuous_sampling(
         f_last = item
         frame_path = out_dir / f"frame{saved}.npz"
         _save_continuous_frame_npz(f_last, frame_path, cfg)
-        logger.info("连续采样: %s", frame_path)
         saved += 1
-        time_us = f_last.timestamp * dt_si * 1e6
-        if time_us - last_output_time_us >= 10.0:
-            logger.info("Simulation Time: %.3f μs", time_us)
-            last_output_time_us = time_us
+        if saved % progress_every == 0 or saved >= n_frames:
+            time_us = f_last.timestamp * dt_si * 1e6
+            logger.info(
+                "连续采样: 已保存 %d/%d 帧 (t=%.3f μs)", saved, n_frames, time_us
+            )
         if saved >= n_frames:
             queue_control.put(Message(CommandType.STOP))
             break
@@ -393,6 +394,38 @@ def run(parsed: ParsedRun) -> Frame | None:
         out_dir = _continuous_sampling_dir(
             _ROOT, t0_us, parsed.interval, parsed.step
         )
+
+        if parsed.continuous_sampling_plot:
+            # continuous + 实时绘图：复用 DataPlotter，边显示边逐帧存 frame{i}.npz。
+            # 注入 continuous_save_dir/n_frames 让 plot() 兼任逐帧存 + 按帧数 STOP；
+            # target_time_dt=None（continuous 后端 time=inf 不自行 STOP，禁用时间分支）。
+            plotter_kwargs = parsed.vision.to_dataplot_kwargs(cfg.dl, cfg.dt, mass)
+            plotter_kwargs["target_time_dt"] = None
+            plotter_kwargs["device"] = actual_device
+            plotter_kwargs["backend_interval"] = parsed.interval
+            plotter_kwargs["continuous_save_dir"] = str(out_dir)
+            plotter_kwargs["continuous_n_frames"] = parsed.continuous_sampling_frames
+            if not plotter_kwargs.get("show_plot", True):
+                import matplotlib
+                matplotlib.use("Agg")
+            plotter = DataPlotter(
+                queue_data,
+                queue_control,
+                frame_init,
+                **plotter_kwargs,
+            )
+            f_last = plotter.start(
+                save_path=parsed.vision.save_final_image, proc=proc
+            )
+            drained = _drain_queue_after_stop(queue_data, queue_control, proc)
+            if drained is not None:
+                f_last = drained
+            proc.join()
+            if f_last is not None:
+                logger.info("Simulation Time: %.3f μs", f_last.timestamp * cfg.dt * 1e6)
+            return f_last
+
+        # 纯 continuous（无绘图）：逐帧存 npz
         f_last = _consume_continuous_sampling(
             queue_data,
             queue_control,
