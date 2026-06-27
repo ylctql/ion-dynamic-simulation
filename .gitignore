@@ -66,12 +66,17 @@ bilayer/r0_single_layer/*
 saves/
 continuous_sampling/
 secular_sampling/
+outputs/
+collision_pressure/results/
 
 # 性能测试结果
 benchmark/benchmark_results/
 tests/test_results/
 equilibrium/results/
 bilayer/out/
+
+# 本地临时脚本
+_commit_run.sh
 
 # 参考文献
 reference/
