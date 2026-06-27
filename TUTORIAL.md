@@ -136,7 +136,7 @@ python main.py --csv data/monolithic20241118.csv \
 
 - `--csv`：电场数据文件。仅传文件名时自动在 `data/` 下查找
 - `--config`：电压配置 JSON。仅传文件名时自动在 `FieldConfiguration/configs/` 下查找
-- `--smooth-axes z`（默认）：沿 z 轴做 Savitzky-Golay 平滑
+- `--smooth-axes x,y,z`（默认）：沿 x,y,z 三轴做 Savitzky-Golay 平滑
 - `--smooth-sg 11,3`（默认）：平滑窗口 11 点、3 阶多项式
 
 ### 4.2 理想谐振势 (--trap-freq)
@@ -546,6 +546,6 @@ python main.py --N 50 --time 50 --plot \
 ```
   --device DEVICE           cpu / cuda (默认 cpu)
   --calc_method METHOD      RK4 / VV (默认 VV)
-  --smooth-axes AXES        场平滑方向 (默认 z)
+  --smooth-axes AXES        场平滑方向 (默认 x,y,z)
   --smooth-sg WIN,POLY      Savitzky-Golay 参数 (默认 11,3)
 ```

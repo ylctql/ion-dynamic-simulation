@@ -292,9 +292,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--smooth-axes",
         type=str,
-        default="z",
+        default="x,y,z",
         metavar="AXES",
-        help="势场平滑方向：默认 z；可指定 x,y,z 或 x,y 或 x；指定 none 关闭滤波",
+        help="势场平滑方向：默认 x,y,z（三轴同时平滑）；可指定 x,y,z 或 x,y 或单个轴；指定 none 关闭滤波",
     )
     parser.add_argument(
         "--smooth-sg",
@@ -645,10 +645,10 @@ def parse_and_build(
     if save_rv_status_dir == "":
         save_rv_status_dir = None
 
-    # 10. 解析 smooth 选项（默认沿 z 方向滤波，--smooth-axes none 关闭）
+    # 10. 解析 smooth 选项（默认沿 x,y,z 三轴滤波，--smooth-axes none 关闭）
     smooth_axes: tuple[str, ...] | None = None
     smooth_sg: tuple[int, int] = (11, 3)
-    raw_smooth = getattr(args, "smooth_axes", "z")
+    raw_smooth = getattr(args, "smooth_axes", "x,y,z")
     if raw_smooth and raw_smooth.strip().lower() != "none":
         axes_parts = [a.strip().lower() for a in raw_smooth.split(",") if a.strip()]
         valid_axes = [a for a in axes_parts if a in "xyz"]

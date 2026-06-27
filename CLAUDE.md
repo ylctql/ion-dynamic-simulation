@@ -292,7 +292,7 @@ pytest                # 所有测试
 5. **同位素支持**: Ba133-Ba138 混合/单同位素/掺杂（alpha 比例），通过 `Parameters._apply_isotope_doping()` 处理
 6. **JSON 配置版本**: `ImgSimulation` JSON 需要 `version: 1`
 7. **`use_zero_force` 语义**: 为 True 时 ionsim 内部忽略 Python 外力（仅保留 C++ 库仑力），与 `dynamics.force: "trap"` 配合时应设为 False
-8. **Savitzky-Golay 平滑**: `--smooth-axes` 默认沿 z 轴对格点势场做平滑，影响力函数和场可视化
+8. **Savitzky-Golay 平滑**: `--smooth-axes` 默认沿 x,y,z 三轴对格点势场做平滑，影响力函数和场可视化
 9. **能源单位**: `equilibrium` 模块使用 eV；外势做了零点平移（`V_shifted = V_true - V_min_grid`）
 10. **externals/**: 可放置本地 Eigen/pybind11 以支持离线构建，此目录内容不应修改
 
