@@ -30,7 +30,20 @@ class FieldSettings:
     # ----- 理想谐振势参数 -----
     trap_freq_MHz: tuple[float, float, float] | None = None  # (fx, fy, fz) MHz，与 csv_filename 互斥
 
+    # ----- 显式多项式系数势参数 -----
+    poly_potential: str | None = None  # 多项式系数势 JSON 路径，与 csv_filename/trap_freq_MHz 互斥
+
     def __post_init__(self) -> None:
+        # 三种势场来源至多选一：CSV 网格 / 理想谐振 / 显式多项式系数
+        field_sources = [
+            bool(self.csv_filename),
+            self.trap_freq_MHz is not None,
+            self.poly_potential is not None,
+        ]
+        if sum(field_sources) > 1:
+            raise ValueError(
+                "csv_filename / trap_freq_MHz / poly_potential 三者至多选一（势场来源互斥）"
+            )
         if self.dissipation_mode == "scalar":
             self.g = float(self.g)
         else:

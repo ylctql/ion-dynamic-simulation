@@ -8,7 +8,14 @@ from pathlib import Path
 
 import numpy as np
 
-from .core import apply_savgol_smooth, build_grid_2d, um_to_norm, norm_to_um, compute_potentials
+from .core import (
+    build_grid_2d,
+    um_to_norm,
+    norm_to_um,
+    compute_potentials,
+    load_field_bundle,
+    resolve_field_path,
+)
 from .plots import (
     plot_1d,
     plot_2d,
@@ -30,11 +37,6 @@ def main() -> None:
 
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-
-    from FieldConfiguration.constants import init_from_config
-    from FieldConfiguration.loader import build_voltage_list, field_settings_from_config
-    from FieldParser.calc_field import calc_field, calc_potential
-    from FieldParser.csv_reader import read as read_csv
 
     parser = argparse.ArgumentParser(description="电场电势可视化")
     parser.add_argument(
@@ -272,14 +274,6 @@ def main() -> None:
         DEFAULT_CSV_DIR,
     )
 
-    def _resolve_path(arg: str, default_full: str, default_dir: str) -> str:
-        if not arg:
-            return str(root / default_full)
-        p = Path(arg)
-        if not p.is_absolute() and "/" not in arg and "\\" not in arg:
-            return str(root / default_dir / arg)
-        return str(root / arg) if not p.is_absolute() else arg
-
     config_arg = args.config
     csv_arg = args.csv
     if args.bilayer:
@@ -288,47 +282,30 @@ def main() -> None:
         if not csv_arg.strip():
             csv_arg = DEFAULT_BILAYER_CSV
 
-    config_path = _resolve_path(config_arg, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
-    csv_path = _resolve_path(csv_arg, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
-    if not Path(csv_path).is_absolute():
-        csv_path = str(root / csv_path)
-    if not Path(config_path).is_absolute():
-        config_path = str(root / config_path)
+    config_path = resolve_field_path(config_arg, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
+    csv_path = resolve_field_path(csv_arg, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
 
-    cfg, config = init_from_config(config_path)
-    grid_coord, grid_voltage = read_csv(
-        csv_path, None, normalize=True, dl=cfg.dl, dV=cfg.dV
-    )
-    n_voltage = grid_voltage.shape[1]
-    if config:
-        field_settings = field_settings_from_config(csv_path, config_path, n_voltage, cfg)
-    else:
-        from FieldConfiguration.field_settings import FieldSettings
-
-        field_settings = FieldSettings(csv_filename=csv_path, voltage_list=[])
-        field_settings.voltage_list = build_voltage_list(
-            {"voltage_list": []}, n_voltage, cfg
-        )
-
-    # 势场平滑（默认沿 z；--smooth-axes none 关闭）
+    # 势场平滑（默认沿 z；--smooth-axes none 关闭）；CSV+config 加载见 load_field_bundle
     raw_smooth = args.smooth_axes or ""
     if raw_smooth.strip().lower() != "none":
         axes_parts = [a.strip().lower() for a in raw_smooth.split(",") if a.strip()]
-        valid_axes = [a for a in axes_parts if a in "xyz"]
-        if valid_axes:
-            try:
-                sg_parts = [p.strip() for p in args.smooth_sg.split(",")]
-                wl = int(sg_parts[0]) if sg_parts else 11
-                poly = int(sg_parts[1]) if len(sg_parts) >= 2 else 3
-            except (ValueError, IndexError):
-                wl, poly = 11, 3
-            grid_voltage = apply_savgol_smooth(
-                grid_coord, grid_voltage, tuple(valid_axes), window_length=wl, polyorder=poly
-            )
+        axes = tuple(a for a in axes_parts if a in "xyz")
+    else:
+        axes = ()
+    try:
+        sg_parts = [p.strip() for p in args.smooth_sg.split(",")]
+        wl = int(sg_parts[0]) if sg_parts else 11
+        poly = int(sg_parts[1]) if len(sg_parts) >= 2 else 3
+    except (ValueError, IndexError):
+        wl, poly = 11, 3
 
-    potential_interps = calc_potential(grid_coord, grid_voltage)
-    field_interps = calc_field(grid_coord, grid_voltage)
-    voltage_list = field_settings.voltage_list
+    bundle = load_field_bundle(
+        csv_path, config_path, smooth_axes=axes, smooth_window=wl, smooth_polyorder=poly
+    )
+    cfg = bundle.cfg
+    potential_interps = bundle.potential_interps
+    field_interps = bundle.field_interps
+    voltage_list = bundle.voltage_list
 
     def parse_range(s: str) -> tuple[float, float]:
         a, b = s.split(",")

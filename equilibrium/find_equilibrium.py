@@ -751,11 +751,7 @@ def main() -> None:
         DEFAULT_CSV_DIR,
         DEFAULT_CSV_PATH,
     )
-    from FieldConfiguration.constants import init_from_config
-    from FieldConfiguration.loader import build_voltage_list, field_settings_from_config
-    from FieldParser.calc_field import calc_field, calc_potential
-    from FieldParser.csv_reader import read as read_csv
-    from field_visualize.core import apply_savgol_smooth, compute_potentials, um_to_norm
+    from field_visualize.core import load_field_bundle, resolve_field_path
 
     from equilibrium.energy import total_energy_and_grad
     from equilibrium.phonon import solve_phonon_modes, total_hessian
@@ -764,16 +760,8 @@ def main() -> None:
         write_potential_fit_coeff_json,
     )
 
-    def _resolve_path(arg: str, default_full: str, default_dir: str) -> str:
-        if not arg:
-            return str(_ROOT / default_full)
-        p = Path(arg)
-        if not p.is_absolute() and "/" not in arg and "\\" not in arg:
-            return str(_ROOT / default_dir / arg)
-        return str(_ROOT / arg) if not p.is_absolute() else arg
-
-    config_path = _resolve_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
-    csv_path = _resolve_path(args.csv, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
+    config_path = resolve_field_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
+    csv_path = resolve_field_path(args.csv, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
 
     center_um = _parse_center(args.center, parser)
     x_range = _parse_range_2(args.x_range, "x_range", parser)
@@ -803,34 +791,20 @@ def main() -> None:
         )
     else:
         # CSV 格点数据路径
-        cfg, config = init_from_config(config_path)
-        grid_coord, grid_voltage = read_csv(csv_path, None, normalize=True, dl=cfg.dl, dV=cfg.dV)
-        n_voltage = grid_voltage.shape[1]
-        if config:
-            field_settings = field_settings_from_config(csv_path, config_path, n_voltage, cfg)
-        else:
-            from FieldConfiguration.field_settings import FieldSettings
-
-            field_settings = FieldSettings(csv_filename=csv_path, voltage_list=[])
-            field_settings.voltage_list = build_voltage_list({"voltage_list": []}, n_voltage, cfg)
-
         if args.smooth_axes.strip().lower() != "none":
             axes = tuple(a.strip().lower() for a in args.smooth_axes.split(",") if a.strip() in "xyz")
-            if axes:
-                parts = [p.strip() for p in args.smooth_sg.split(",")]
-                wl = int(parts[0]) if parts else 11
-                poly = int(parts[1]) if len(parts) >= 2 else 3
-                grid_voltage = apply_savgol_smooth(grid_coord, grid_voltage, axes, window_length=wl, polyorder=poly)
+        else:
+            axes = ()
+        parts = [p.strip() for p in args.smooth_sg.split(",")]
+        wl = int(parts[0]) if parts else 11
+        poly = int(parts[1]) if len(parts) >= 2 else 3
 
-        potential_interps = calc_potential(grid_coord, grid_voltage)
-        field_interps = calc_field(grid_coord, grid_voltage)
-        voltage_list = field_settings.voltage_list
+        bundle = load_field_bundle(
+            csv_path, config_path, smooth_axes=axes, smooth_window=wl, smooth_polyorder=poly
+        )
+        compute_V_total = bundle.compute_V_total
 
-        def compute_V_total(r_norm: np.ndarray) -> np.ndarray:
-            _, _, _, v_total = compute_potentials(potential_interps, field_interps, voltage_list, cfg, r_norm)
-            return v_total
-
-        v_grid_all = np.asarray(compute_V_total(grid_coord), dtype=float).ravel()
+        v_grid_all = np.asarray(compute_V_total(bundle.grid_coord), dtype=float).ravel()
         v_grid_valid = v_grid_all[np.isfinite(v_grid_all)]
         if v_grid_valid.size == 0:
             parser.error("格点总势场全为非有限值，无法确定统一势能零点")
@@ -838,7 +812,7 @@ def main() -> None:
 
         fit = fit_potential_3d_quartic(
             compute_V_total=compute_V_total,
-            um_to_norm=lambda v: um_to_norm(v, cfg.dl),
+            um_to_norm=bundle.um_to_norm,
             center_um=center_um,
             range_um=range_um,
             n_pts_per_axis=(args.fit_n_pts_x, args.fit_n_pts_y, args.fit_n_pts_z),

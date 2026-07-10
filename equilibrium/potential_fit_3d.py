@@ -13,6 +13,8 @@ fit_potential_3d_quartic: V_shifted = Σ c_{ijk} u^i v^j w^k，由 fit_mode 选�
 from __future__ import annotations
 
 import json
+import re
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -154,6 +156,9 @@ def write_potential_fit_coeff_json(
         "csv": csv_name,
         "config": config_name,
         "fit_mode": fit.fit_mode if fit.fit_mode else "none",
+        "center_um": [float(c) for c in fit.center_um],
+        "scale_um": float(fit.scale_um),
+        "potential_offset_V": float(fit.potential_offset_V),
         "coefficients": quartic_fit_coeff_map(fit),
     }
     with p.open("w", encoding="utf-8") as f:
@@ -519,5 +524,158 @@ def make_ideal_trap_fit(
         fit_mode="quadratic",
         basis_exps=_QUADRATIC_BASIS_EXPS,
     )
+
+
+# ---------------------------------------------------------------------------
+# 显式系数 → FitResult3D（无需 CSV/拟合，供动力学直接指定多项式势）
+# ---------------------------------------------------------------------------
+
+# 单项式因子：x / y / z 或 x^n 形式
+_TERM_FACTOR_RE = re.compile(r"^(x|y|z)(?:\^(\d+))?$")
+
+
+def parse_term_label(label: str) -> tuple[int, int, int]:
+    """
+    quartic_3d_term_label 的反函数：单项式标签字符串 -> 指数 (i,j,k)。
+
+    支持 "1"（常数）、"x"、"x^2"、"x*y"、"x^2*y^3*z" 等；
+    变量出现顺序无关（"y*x" 与 "x*y" 等价），但同一变量重复出现视为非法。
+    每变量次数须在 0..4（与 (5,5,5) 系数张量一致，对应高次 quartic 拟合）。
+
+    Raises
+    ------
+    ValueError
+        标签无法解析、变量重复、或某变量次数越界时。
+    """
+    s = str(label).strip()
+    if s in ("", "1"):
+        return (0, 0, 0)
+    idx = {"x": 0, "y": 1, "z": 2}
+    exps = [0, 0, 0]
+    seen: set[str] = set()
+    for tok in s.split("*"):
+        tok = tok.strip()
+        if not tok:
+            raise ValueError(f"单项式标签 {label!r} 含空因子")
+        m = _TERM_FACTOR_RE.match(tok)
+        if not m:
+            raise ValueError(
+                f"无法解析单项式因子 {tok!r}（来自标签 {label!r}）；"
+                f"应为 x/y/z 或 x^n 形式（如 x^2、y*z）"
+            )
+        var, exp_s = m.group(1), m.group(2)
+        if var in seen:
+            raise ValueError(f"单项式标签 {label!r} 中变量 {var} 重复出现")
+        seen.add(var)
+        exp = int(exp_s) if exp_s else 1
+        if exp < 0 or exp > DEGREE_QUARTIC:
+            raise ValueError(
+                f"单项式因子 {tok!r} 次数 {exp} 越界，每变量次数须在 0..{DEGREE_QUARTIC}"
+            )
+        exps[idx[var]] = exp
+    return (exps[0], exps[1], exps[2])
+
+
+def fit_result_from_coeff_map(
+    coeff_map: dict[str, float],
+    center_um: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    scale_um: float = 100.0,
+    potential_offset_V: float = 0.0,
+) -> FitResult3D:
+    """
+    由 {项标签: 系数} 直接构造 FitResult3D，无需 CSV 数据或拟合。
+
+    系数定义在缩放坐标 u=(x-x0)/L, v, w 上，量纲为伏特 (V)，与
+    fit_potential_3d_quartic 的拟合系数完全同量纲——故可用于把"高次拟合"
+    得到的系数直接喂回，或手写任意多项式势。
+
+    Parameters
+    ----------
+    coeff_map : dict[str, float]
+        项标签（如 "x^2"、"x^2*y^3*z"、"1"）-> 系数 (V)。
+    center_um : tuple
+        势场中心 (x0, y0, z0) (µm)。
+    scale_um : float
+        缩放半跨度 L (µm)。
+    potential_offset_V : float
+        势能零点平移 (V)，默认 0。
+
+    Returns
+    -------
+    FitResult3D
+        可直接用于 eval_fit_3d / grad_fit_3d / hessian_fit_3d，或经
+        FieldParser.poly_force._make_field_callable 转为动力学力场。
+    """
+    coeffs = np.zeros((5, 5, 5), dtype=float)
+    seen: set[tuple[int, int, int]] = set()
+    exps: list[tuple[int, int, int]] = []
+    for label, val in coeff_map.items():
+        e = parse_term_label(label)
+        if e in seen:
+            raise ValueError(
+                f"项 {label!r} 解析为 (i,j,k)={e}，与已有项重复（同一单项式被多次指定）"
+            )
+        seen.add(e)
+        coeffs[e] = float(val)
+        exps.append(e)
+    # 规范化基底顺序：按总次数、再字典序
+    exps.sort(key=lambda t: (sum(t), t))
+    return FitResult3D(
+        coeffs=coeffs,
+        center_um=tuple(float(c) for c in center_um),
+        scale_um=float(scale_um),
+        potential_offset_V=float(potential_offset_V),
+        r_squared=1.0,
+        fit_mode=None,
+        basis_exps=tuple(exps),
+    )
+
+
+def load_poly_potential_json(path: Path | str) -> FitResult3D:
+    """
+    从 JSON 加载显式多项式系数势场。
+
+    文件格式（与 write_potential_fit_coeff_json 导出兼容，可往返）::
+
+        {
+          "coefficients": {"x^2": <V>, "x^2*y^3*z": <V>, "1": <V>, ...},
+          "center_um": [0.0, 0.0, 0.0],   // 缺省 (0,0,0)
+          "scale_um": 100.0,               // 缺省 100
+          "potential_offset_V": 0.0        // 缺省 0
+        }
+
+    导出文件中的 csv/config/fit_mode 字段（若存在）被忽略。
+
+    若省略 center_um / scale_um，则分别回退到 (0,0,0) / 100.0 并发出 UserWarning：
+    对手写的原点中心势这是有意为之，但对从 config 拟合导出的文件而言，
+    缺失 scale_um 会使系数无定义（force 幅度错误），故提醒用户显式给出。
+
+    Raises
+    ------
+    ValueError
+        缺少 'coefficients' 字段时。
+    FileNotFoundError
+        文件不存在时。
+    """
+    p = Path(path)
+    with p.open(encoding="utf-8") as f:
+        data = json.load(f)
+    if "coefficients" not in data:
+        raise ValueError(
+            f"多项式势 JSON {p} 缺少 'coefficients' 字段（项标签 -> 系数 V）"
+        )
+    if "center_um" not in data or "scale_um" not in data:
+        warnings.warn(
+            f"多项式势 JSON {p} 未显式给出 center_um/scale_um，"
+            f"回退到默认 center_um=(0,0,0)、scale_um=100.0。"
+            f"若此文件来自 config 拟合导出（potential_fit_coeff.json），"
+            f"缺失 scale_um 会导致力幅度错误——请用最新版 find_equilibrium 重新导出。",
+            UserWarning,
+            stacklevel=2,
+        )
+    center_um = tuple(data.get("center_um", (0.0, 0.0, 0.0)))
+    scale_um = float(data.get("scale_um", 100.0))
+    offset = float(data.get("potential_offset_V", 0.0))
+    return fit_result_from_coeff_map(data["coefficients"], center_um, scale_um, offset)
 
 

@@ -163,6 +163,8 @@ DEFAULT_SAVE_FIG_DIR = os.environ.get("ISM_DEFAULT_SAVE_FIG_DIR", "saves/images/
 # 仅传文件名时使用的默认目录（写死，便于日常只传文件名）
 DEFAULT_CSV_DIR = "data"
 DEFAULT_CONFIG_DIR = "FieldConfiguration/configs"
+DEFAULT_POLY_POTENTIAL_DIR = "FieldConfiguration/configs/poly_potential"
+DEFAULT_POLY_POTENTIAL_EXAMPLE = "FieldConfiguration/configs/poly_potential/example.json"
 # --bilayer 且未传 --csv / --config 时使用的默认场文件（相对上述目录）
 DEFAULT_BILAYER_CSV = "bilayer8.csv"
 DEFAULT_BILAYER_CONFIG = "bilayer8.json"
@@ -334,6 +336,12 @@ def create_parser() -> argparse.ArgumentParser:
         type=float,
         metavar=("FX", "FY", "FZ"),
         help="理想谐振势阱频 (MHz)，与 --csv 互斥",
+    )
+    field_group.add_argument(
+        "--poly-potential",
+        type=str,
+        default=None,
+        help="多项式系数势 JSON 路径（显式单项式系数，单位 V，与高次拟合同量纲）；可仅传文件名(如 example.json)则自动在 FieldConfiguration/configs/poly_potential/ 下查找；与 --csv/--trap-freq 互斥",
     )
     parser.add_argument(
         "--g",
@@ -547,6 +555,7 @@ def parse_and_build(
 
     # 4. 构建 FieldSettings
     trap_freq = getattr(args, "trap_freq", None)
+    poly_potential = getattr(args, "poly_potential", None)
     g_cli = getattr(args, "g", None)  # CLI --g 优先级最高，覆盖 JSON 中的值
 
     if trap_freq is not None:
@@ -555,6 +564,17 @@ def parse_and_build(
             voltage_list=[],
             g=g_cli if g_cli is not None else 0.1,
             trap_freq_MHz=(trap_freq[0], trap_freq[1], trap_freq[2]),
+        )
+    elif poly_potential is not None:
+        # 裸文件名自动在 FieldConfiguration/configs/poly_potential/ 下查找（同 --csv/--config）
+        poly_path = _resolve_path(
+            poly_potential, DEFAULT_POLY_POTENTIAL_EXAMPLE, DEFAULT_POLY_POTENTIAL_DIR
+        )
+        field_settings = FieldSettings(
+            csv_filename="",
+            voltage_list=[],
+            g=g_cli if g_cli is not None else 0.1,
+            poly_potential=poly_path,
         )
     else:
         csv_path = _resolve_path(csv_input, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)

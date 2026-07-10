@@ -212,3 +212,77 @@ def build_harmonic_force(
     omega = np.array(freq_MHz) * 2.0 * np.pi * 1e6   # rad/s
     k = (omega * cfg.dt) ** 2                          # dimensionless spring constants
     return make_harmonic_force(k[0], k[1], k[2], gamma)
+
+
+# ---------------------------------------------------------------------------
+# Polynomial potential force (explicit coefficients -> static analytic field)
+# ---------------------------------------------------------------------------
+
+# Module-level state for polynomial potential force (fork-inherited by children)
+_poly_field: Callable[[np.ndarray], np.ndarray] | None = None
+_charge_p: np.ndarray | None = None
+_gamma_p: float | np.ndarray = 0.0
+
+
+def poly_potential_force(r: np.ndarray, v: np.ndarray, t: float) -> np.ndarray:
+    """
+    多项式势场力：F = charge * E(r) - gamma * v。
+
+    E(r) 由显式多项式系数势的解析梯度给出（时不变，无 RF 微运动分辨），
+    等价于谐和力的任意阶多项式推广。E 已在 _make_field_callable 中转为归一化单位。
+    """
+    r = np.asarray(r, dtype=float, order="C")
+    v = np.asarray(v, dtype=float, order="C")
+    E = _poly_field(r)                         # (N, 3) 归一化电场
+    F = _charge_p.reshape(-1, 1) * E
+    g = np.asarray(_gamma_p, dtype=float)
+    if np.any(g != 0):
+        F = F - g * v
+    return F.astype(float, order="C")
+
+
+def make_poly_potential_force(
+    field_callable: Callable[[np.ndarray], np.ndarray],
+    charge: np.ndarray,
+    gamma: float | np.ndarray = 0.0,
+) -> Callable[[np.ndarray, np.ndarray, float], np.ndarray]:
+    """设置模块级多项式势力状态并返回 callable（供 fork 子进程继承）。"""
+    global _poly_field, _charge_p, _gamma_p
+    _poly_field = field_callable
+    _charge_p = np.asarray(charge, dtype=float)
+    g = np.asarray(gamma, dtype=float)
+    _gamma_p = float(g) if g.ndim == 0 else g
+    return poly_potential_force
+
+
+def build_poly_potential_force(
+    fit,
+    cfg,
+    charge: np.ndarray,
+    gamma: float | np.ndarray = 0.0,
+) -> Callable[[np.ndarray, np.ndarray, float], np.ndarray]:
+    """
+    由显式系数构造的 FitResult3D 构建时不变多项式势力 callable。
+
+    复用 FieldParser.poly_force._make_field_callable 将 FitResult3D（µm/V 单位）
+    转为归一化 E 场 callable（含 dl/dV 单位换算），再包装为力。
+
+    Parameters
+    ----------
+    fit : FitResult3D
+        由 load_poly_potential_json / fit_result_from_coeff_map 得到的拟合结果。
+    cfg : Config
+        提供无量纲化常数 dl, dV。
+    charge : np.ndarray, shape (N,)
+        各离子电荷（单位 e）。
+    gamma : float | np.ndarray
+        耗散强度（同 CSV 力的约定）。
+
+    Returns
+    -------
+    force callable compatible with the C++ ionsim kernel.
+    """
+    from .poly_force import _make_field_callable
+
+    field_callable = _make_field_callable(fit, cfg.dl, cfg.dV)
+    return make_poly_potential_force(field_callable, charge, gamma)

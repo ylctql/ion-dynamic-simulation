@@ -3,12 +3,17 @@
 """
 from __future__ import annotations
 
-from typing import Callable, Literal
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, Literal
 
 import numpy as np
 from scipy.signal import savgol_filter
 
 from utils import Voltage
+
+if TYPE_CHECKING:
+    from FieldConfiguration.constants import Config
 
 CoordAxis = Literal["x", "y", "z"]
 AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
@@ -204,3 +209,135 @@ def build_grid_2d(
     r[:, i1] = cc1.ravel()
     r[:, i2] = cc2.ravel()
     return r, (cc1, cc2)
+
+
+# ---------------------------------------------------------------------------
+# CSV+config 总势场加载束（三处 CLI 入口共用，避免重复样板）
+# ---------------------------------------------------------------------------
+
+
+def resolve_field_path(
+    arg: str,
+    default_full: str,
+    default_dir: str,
+    *,
+    root: Path | None = None,
+) -> str:
+    """
+    将 --csv / --config 参数解析为绝对路径（field_visualize / equilibrium 各 CLI 共用）。
+
+    - 空 → ``<root>/<default_full>``
+    - 裸文件名（不含 ``/`` 或 ``\\``）→ ``<root>/<default_dir>/<arg>``
+    - 含分隔符的相对路径 → ``<root>/<arg>``
+    - 绝对路径 → 原样返回
+
+    root 缺省为本仓库根（core.py 所在目录的上一级）。
+    """
+    base = root if root is not None else Path(__file__).resolve().parent.parent
+    if not arg:
+        return str(base / default_full)
+    p = Path(arg)
+    if not p.is_absolute() and "/" not in arg and "\\" not in arg:
+        return str(base / default_dir / arg)
+    return str(base / arg) if not p.is_absolute() else arg
+
+
+@dataclass(frozen=True)
+class FieldBundle:
+    """CSV + config 加载后的总势场束：插值器、电压列表与已包装的总势 callable。"""
+
+    cfg: "Config"
+    grid_coord: np.ndarray
+    potential_interps: list
+    field_interps: list
+    voltage_list: list
+    compute_V_total: Callable[[np.ndarray], np.ndarray]
+    um_to_norm: Callable[[float], float]
+
+
+def load_field_bundle(
+    csv_path: str,
+    config_path: str,
+    *,
+    smooth_axes: tuple[str, ...] = ("z",),
+    smooth_window: int = 11,
+    smooth_polyorder: int = 3,
+) -> FieldBundle:
+    """
+    从 CSV + config 加载总势场束。
+
+    流程：读格点 → 由 config 构 FieldSettings → 沿 ``smooth_axes`` 做
+    Savitzky-Golay 平滑 → 建 DC/RF 势与场插值器 → 包装
+    ``compute_V_total(r_norm)`` 与 ``um_to_norm(val_um)``。
+
+    供 ``equilibrium.fit_potential``、``equilibrium.find_equilibrium``、
+    ``field_visualize`` 三处 CLI 共用，避免重复的加载样板。
+
+    Parameters
+    ----------
+    csv_path, config_path : str
+        已解析的绝对路径（用 :func:`resolve_field_path` 得到）。
+    smooth_axes : tuple[str, ...]
+        平滑方向，如 ``("z",)`` / ``("x","y","z")``；传空元组 ``()`` 关闭平滑。
+    smooth_window, smooth_polyorder : int
+        Savitzky-Golay 窗口长度与多项式阶数。
+
+    Returns
+    -------
+    FieldBundle
+        含 cfg / grid_coord / potential_interps / field_interps / voltage_list
+        / compute_V_total / um_to_norm。势能零点平移（V_min_grid）由调用方按需
+        从 ``compute_V_total(grid_coord)`` 自行计算（与各自 CLI 的错误处理耦合）。
+    """
+    from FieldConfiguration.constants import init_from_config
+    from FieldConfiguration.loader import build_voltage_list, field_settings_from_config
+    from FieldParser.calc_field import calc_field, calc_potential
+    from FieldParser.csv_reader import read as read_csv
+
+    cfg, config = init_from_config(config_path)
+    grid_coord, grid_voltage = read_csv(
+        csv_path, None, normalize=True, dl=cfg.dl, dV=cfg.dV
+    )
+    n_voltage = grid_voltage.shape[1]
+    if config:
+        field_settings = field_settings_from_config(csv_path, config_path, n_voltage, cfg)
+    else:
+        from FieldConfiguration.field_settings import FieldSettings
+
+        field_settings = FieldSettings(csv_filename=csv_path, voltage_list=[])
+        field_settings.voltage_list = build_voltage_list(
+            {"voltage_list": []}, n_voltage, cfg
+        )
+
+    axes = tuple(smooth_axes)
+    if axes:
+        grid_voltage = apply_savgol_smooth(
+            grid_coord,
+            grid_voltage,
+            axes,
+            window_length=smooth_window,
+            polyorder=smooth_polyorder,
+        )
+
+    potential_interps = calc_potential(grid_coord, grid_voltage)
+    field_interps = calc_field(grid_coord, grid_voltage)
+    voltage_list = field_settings.voltage_list
+
+    def compute_V_total(r_norm: np.ndarray) -> np.ndarray:
+        _, _, _, v_total = compute_potentials(
+            potential_interps, field_interps, voltage_list, cfg, r_norm
+        )
+        return v_total
+
+    def _um_to_norm(val_um: float) -> float:
+        return um_to_norm(val_um, cfg.dl)
+
+    return FieldBundle(
+        cfg=cfg,
+        grid_coord=grid_coord,
+        potential_interps=potential_interps,
+        field_interps=field_interps,
+        voltage_list=voltage_list,
+        compute_V_total=compute_V_total,
+        um_to_norm=_um_to_norm,
+    )

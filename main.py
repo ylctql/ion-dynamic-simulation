@@ -142,6 +142,18 @@ def _build_force(
             field_settings.trap_freq_MHz, cfg,
             gamma=field_settings.get_gamma(),
         )
+    if field_settings.poly_potential:
+        from equilibrium.potential_fit_3d import load_poly_potential_json
+        from FieldParser.force import build_poly_potential_force
+
+        poly_path = Path(field_settings.poly_potential)
+        if not poly_path.is_absolute():
+            poly_path = root / poly_path
+        logger.info("启用多项式系数势: %s", poly_path)
+        fit = load_poly_potential_json(poly_path)
+        return build_poly_potential_force(
+            fit, cfg, charge, gamma=field_settings.get_gamma()
+        )
     if not field_settings.csv_filename:
         return _zero_force
     csv_path = Path(field_settings.csv_filename)

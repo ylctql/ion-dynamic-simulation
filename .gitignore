@@ -74,6 +74,8 @@ benchmark/benchmark_results/
 tests/test_results/
 equilibrium/results/
 bilayer/out/
+ImgSimulation/meta
+ImgSimulation/traj_zx
 
 # 本地临时脚本
 _commit_run.sh
