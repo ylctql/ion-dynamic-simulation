@@ -341,3 +341,92 @@ def load_field_bundle(
         compute_V_total=compute_V_total,
         um_to_norm=_um_to_norm,
     )
+
+
+def load_poly_field_bundle(
+    poly_path: str,
+    *,
+    config_path: str | None = None,
+) -> FieldBundle:
+    """
+    从多项式系数势 JSON 加载 FieldBundle（伪装为单电极 DC、V_bias=1）。
+
+    将显式系数 :class:`~equilibrium.potential_fit_3d.FitResult3D` 包装为与
+    :func:`compute_potentials` 兼容的接口，使整条 field_visualize 管线
+    （plot_1d/plot_2d/plot_bilayer/阱频/对称性/Laplace）零改动复用：
+
+    - ``potential_interps``: ``eval_fit_3d(r*dl_um) / dV`` → V_poly / dV（归一化），
+      盆地外发散值置 NaN（复用现有全链路 NaN 过滤：set_ylim_from_data /
+      _index_argmin_valid_* / apply_offset_min / _filter_valid）。
+    - ``field_interps``: ``_make_field_callable(fit, dl, dV)`` → 归一化 E（复用现成，
+      与 calc_field 输出同格式）。
+    - ``voltage_list``: 单个 DC 电极 ``Voltage("poly", V0=0.0, V_bias=1.0)``。
+
+    由此 :func:`compute_potentials` 给出 ``V_dc = V_poly``、``V_pseudo = 0``、
+    ``V_total = V_poly``。注意 poly 指定的是**总势**（DC + RF 赝势已合并、不可
+    分离），故绘图时经 ``source_label`` 强制走 ``both_zero`` 分支画 ``V_total``
+    并标 "Total potential"（见 :func:`field_visualize.plots._decomp_mode_and_note`），
+    而非按 ``V_pseudo=0`` 误判为 dc_only / 标 "Static potential"。
+
+    dl/dV 在 µm↔归一化往返中完全抵消（``norm_to_um(um_to_norm(x,dl),dl)=x``），
+    故 cfg 用合成默认（无 ``config_path`` 时回退 freq_RF_default）不影响任何输出。
+    ``--freq``/``--symmetry`` 只用 ``cfg.dl`` 且抵消；赝势被 ``is_rf=False`` 跳过，
+    ``Omega`` 不参与。
+
+    .. note::
+        - 仅供 ``field_visualize`` 使用；**不可流入 ``equilibrium`` 模块**
+          （``find_equilibrium``/``fit_potential`` 会访问 ``bundle.grid_coord``，此处为 None）。
+        - ``eval_fit_3d`` 返回平移势 ``V_shifted = V_true - V_min_ref``
+          （不加回 ``potential_offset_V``）；对可视化无影响（形状/曲率/对称性与零点平移无关）。
+
+    Parameters
+    ----------
+    poly_path : str
+        多项式势 JSON 路径（已用 :func:`resolve_field_path` 解析）。
+    config_path : str | None
+        可选电压配置 JSON 路径，仅影响 cfg.dl/dV（因抵消而无功能影响）。
+        None 时用合成默认。
+
+    Returns
+    -------
+    FieldBundle
+    """
+    from equilibrium.potential_fit_3d import eval_fit_3d, load_poly_potential_json
+    from FieldConfiguration.constants import init_from_config
+    from FieldParser.poly_force import _make_field_callable
+    from utils import Voltage, constant
+
+    fit = load_poly_potential_json(poly_path)
+
+    # cfg：--config > 合成默认（dl/dV 抵消，合成默认安全）
+    cfg, _ = init_from_config(config_path if config_path else "<poly_no_config>")
+    dl, dV = cfg.dl, cfg.dV
+    dl_um = dl * 1e6  # m → µm
+
+    def _poly_pot_interp(r_norm: np.ndarray) -> np.ndarray:
+        r_um = np.atleast_2d(r_norm) * dl_um
+        V = eval_fit_3d(fit, r_um)
+        return np.where(np.isfinite(V), V, np.nan) / dV
+
+    potential_interps = [_poly_pot_interp]
+    field_interps = [_make_field_callable(fit, dl, dV)]
+    voltage_list = [Voltage("poly", V0=0.0, f=constant(1.0), V_bias=1.0)]
+
+    def compute_V_total(r_norm: np.ndarray) -> np.ndarray:
+        _, _, _, v_total = compute_potentials(
+            potential_interps, field_interps, voltage_list, cfg, r_norm
+        )
+        return v_total
+
+    def _um_to_norm(val_um: float) -> float:
+        return um_to_norm(val_um, dl)
+
+    return FieldBundle(
+        cfg=cfg,
+        grid_coord=None,  # poly 无网格；field_visualize CLI 不消费此字段
+        potential_interps=potential_interps,
+        field_interps=field_interps,
+        voltage_list=voltage_list,
+        compute_V_total=compute_V_total,
+        um_to_norm=_um_to_norm,
+    )

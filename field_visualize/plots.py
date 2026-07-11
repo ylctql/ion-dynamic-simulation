@@ -84,6 +84,26 @@ def _note_for_dc_rf_mode(mode: _DcRfMode) -> str | None:
     return None
 
 
+def _decomp_mode_and_note(
+    V_dc: np.ndarray, V_pseudo: np.ndarray, source_label: str | None
+) -> tuple[_DcRfMode, str | None]:
+    """
+    决定 DC/RF 分解绘图模式与说明 note。
+
+    ``source_label`` 非空时（如 poly-potential：用户指定的本就是**总势**，
+    DC 与 RF 赝势已合并、不可分离），强制走 ``both_zero`` 分支——即画
+    ``V_total`` 并标 "Total potential"——并用 ``source_label`` 作为 note
+    说明来源。否则按 ``V_dc``/``V_pseudo`` 实际分布自动分类。
+
+    这样避免了把"总势"误标为 "Static potential (DC)" 并附 "RF pseudopotential
+    is zero" 的误导性说明。
+    """
+    if source_label is not None:
+        return "both_zero", source_label
+    mode = _classify_dc_rf_coverage(V_dc, V_pseudo)
+    return mode, _note_for_dc_rf_mode(mode)
+
+
 def _index_argmin_valid_1d(V: np.ndarray) -> int | None:
     V = np.asarray(V, dtype=float)
     m = np.isfinite(V)
@@ -603,6 +623,7 @@ def plot_1d(
     fit_degree: int | None = None,
     out_path: str | None = None,
     mark_potential_min: bool = False,
+    source_label: str | None = None,
 ) -> None:
     """1D 绘图：电势随单坐标变化"""
     import matplotlib.pyplot as plt
@@ -618,8 +639,7 @@ def plot_1d(
     if offset_min:
         V_dc, V_pseudo, V_total = apply_offset_min(V_dc, V_pseudo, V_total)
 
-    decomp_mode = _classify_dc_rf_coverage(V_dc, V_pseudo)
-    decomp_note = _note_for_dc_rf_mode(decomp_mode)
+    decomp_mode, decomp_note = _decomp_mode_and_note(V_dc, V_pseudo, source_label)
 
     x_um = norm_to_um(x_const, cfg.dl)
     y_um = norm_to_um(y_const, cfg.dl)
@@ -752,6 +772,7 @@ def plot_bilayer(
     show_rf_amp: bool = False,
     out_path: str | None = None,
     mark_potential_min: bool = False,
+    source_label: str | None = None,
 ) -> None:
     """
     在 y = ±y0 的 zox 平面上去采样并绘制静电势、赝势、总电势。
@@ -820,8 +841,7 @@ def plot_bilayer(
 
     dc_stack = np.concatenate([V_dc_p.ravel(), V_dc_n.ravel()])
     ps_stack = np.concatenate([V_ps_p.ravel(), V_ps_n.ravel()])
-    decomp_mode = _classify_dc_rf_coverage(dc_stack, ps_stack)
-    decomp_note = _note_for_dc_rf_mode(decomp_mode)
+    decomp_mode, decomp_note = _decomp_mode_and_note(dc_stack, ps_stack, source_label)
 
     if decomp_mode == "both":
         col_defs: list[tuple[str, tuple[float, float], int]] = [
@@ -980,6 +1000,7 @@ def plot_2d(
     show_rf_amp: bool = False,
     out_path: str | None = None,
     mark_potential_min: bool = False,
+    source_label: str | None = None,
 ) -> None:
     """2D 绘图：热力图或三维曲面"""
     import matplotlib.pyplot as plt
@@ -999,8 +1020,7 @@ def plot_2d(
     V_pseudo_2d = V_pseudo.reshape(cc1.shape)
     V_total_2d = V_total.reshape(cc1.shape)
 
-    decomp_mode = _classify_dc_rf_coverage(V_dc, V_pseudo)
-    decomp_note = _note_for_dc_rf_mode(decomp_mode)
+    decomp_mode, decomp_note = _decomp_mode_and_note(V_dc, V_pseudo, source_label)
 
     other = next(c for c in "xyz" if c not in vary_axes)
     suptitle_base = f"Potential distribution ({other}={const_um:.1f} μm)"

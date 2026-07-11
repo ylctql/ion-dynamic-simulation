@@ -179,6 +179,14 @@ def main() -> None:
         metavar="UM",
         help="双层模式：半间距 y0 (μm)，绘制 y=+y0 与 y=-y0 两个截面",
     )
+    parser.add_argument(
+        "--poly-potential",
+        type=str,
+        default=None,
+        help="多项式系数势 JSON 路径（与 --csv 互斥）；可仅传文件名则自动在 "
+        "FieldConfiguration/configs/poly_potential/ 下查找。poly 指定的是总势"
+        "（DC + RF 赝势已合并），按 total 标注；--freq/--symmetry/--laplace 均可用",
+    )
     # --- 对称性分析参数 ---
     parser.add_argument(
         "--symmetry",
@@ -272,40 +280,72 @@ def main() -> None:
         DEFAULT_CSV_PATH,
         DEFAULT_CONFIG_DIR,
         DEFAULT_CSV_DIR,
+        DEFAULT_POLY_POTENTIAL_EXAMPLE,
+        DEFAULT_POLY_POTENTIAL_DIR,
     )
 
-    config_arg = args.config
-    csv_arg = args.csv
-    if args.bilayer:
-        if not config_arg.strip():
-            config_arg = DEFAULT_BILAYER_CONFIG
-        if not csv_arg.strip():
-            csv_arg = DEFAULT_BILAYER_CSV
-
-    config_path = resolve_field_path(config_arg, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
-    csv_path = resolve_field_path(csv_arg, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
-
-    # 势场平滑（默认沿 z；--smooth-axes none 关闭）；CSV+config 加载见 load_field_bundle
-    raw_smooth = args.smooth_axes or ""
-    if raw_smooth.strip().lower() != "none":
-        axes_parts = [a.strip().lower() for a in raw_smooth.split(",") if a.strip()]
-        axes = tuple(a for a in axes_parts if a in "xyz")
+    poly_mode = args.poly_potential is not None
+    if poly_mode:
+        # poly-potential 模式：与 --csv 互斥；--config 可选（仅影响 cfg.dl/dV，因抵消而无功能影响）
+        if args.csv.strip():
+            parser.error("--poly-potential 与 --csv 互斥")
+        poly_path = resolve_field_path(
+            args.poly_potential,
+            DEFAULT_POLY_POTENTIAL_EXAMPLE,
+            DEFAULT_POLY_POTENTIAL_DIR,
+        )
+        config_path = (
+            resolve_field_path(args.config, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
+            if args.config.strip()
+            else None
+        )
+        from .core import load_poly_field_bundle
+        bundle = load_poly_field_bundle(poly_path, config_path=config_path)
     else:
-        axes = ()
-    try:
-        sg_parts = [p.strip() for p in args.smooth_sg.split(",")]
-        wl = int(sg_parts[0]) if sg_parts else 11
-        poly = int(sg_parts[1]) if len(sg_parts) >= 2 else 3
-    except (ValueError, IndexError):
-        wl, poly = 11, 3
+        config_arg = args.config
+        csv_arg = args.csv
+        if args.bilayer:
+            if not config_arg.strip():
+                config_arg = DEFAULT_BILAYER_CONFIG
+            if not csv_arg.strip():
+                csv_arg = DEFAULT_BILAYER_CSV
 
-    bundle = load_field_bundle(
-        csv_path, config_path, smooth_axes=axes, smooth_window=wl, smooth_polyorder=poly
-    )
+        config_path = resolve_field_path(config_arg, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_DIR)
+        csv_path = resolve_field_path(csv_arg, DEFAULT_CSV_PATH, DEFAULT_CSV_DIR)
+
+        # 势场平滑（默认沿 z；--smooth-axes none 关闭）；CSV+config 加载见 load_field_bundle
+        raw_smooth = args.smooth_axes or ""
+        if raw_smooth.strip().lower() != "none":
+            axes_parts = [a.strip().lower() for a in raw_smooth.split(",") if a.strip()]
+            axes = tuple(a for a in axes_parts if a in "xyz")
+        else:
+            axes = ()
+        try:
+            sg_parts = [p.strip() for p in args.smooth_sg.split(",")]
+            wl = int(sg_parts[0]) if sg_parts else 11
+            poly = int(sg_parts[1]) if len(sg_parts) >= 2 else 3
+        except (ValueError, IndexError):
+            wl, poly = 11, 3
+
+        bundle = load_field_bundle(
+            csv_path, config_path, smooth_axes=axes, smooth_window=wl, smooth_polyorder=poly
+        )
+
     cfg = bundle.cfg
     potential_interps = bundle.potential_interps
     field_interps = bundle.field_interps
     voltage_list = bundle.voltage_list
+
+    # poly-potential 无 RF 分量：--show-rf-amp 仅画零线，静默跳过
+    show_rf_amp = args.show_rf_amp
+    if poly_mode and show_rf_amp:
+        print("Warning: --show-rf-amp 无效（poly-potential 无 RF 分量），已跳过。")
+        show_rf_amp = False
+
+    # poly 指定的是总势（DC + RF 赝势已合并），绘图按 total 分支标注，不走 dc_only
+    poly_source_label = (
+        "Polynomial total potential (DC + RF pseudopotential)" if poly_mode else None
+    )
 
     def parse_range(s: str) -> tuple[float, float]:
         a, b = s.split(",")
@@ -322,6 +362,21 @@ def main() -> None:
     yr_um = parse_range(args.y_range)
     zr_um = parse_range(args.z_range)
     dl = cfg.dl
+
+    if poly_mode:
+        # 采样范围超出多项式有效拟合区域时提醒（poly 外推不可信）
+        from equilibrium.potential_fit_3d import load_poly_potential_json as _load_fit
+        _fit_chk = _load_fit(poly_path)
+        _max_extent = max(
+            abs(xr_um[0] - xc_um), abs(xr_um[1] - xc_um),
+            abs(yr_um[0] - yc_um), abs(yr_um[1] - yc_um),
+            abs(zr_um[0] - zc_um), abs(zr_um[1] - zc_um),
+        )
+        if _max_extent > 2.0 * _fit_chk.scale_um:
+            print(
+                f"Warning: 采样范围超出多项式有效拟合区域 "
+                f"(scale_um={_fit_chk.scale_um:.1f} µm)，边缘结果可能不准确。"
+            )
 
     def parse_freq_scan_n(s: str, dim: int):
         parts = [p.strip() for p in s.split(",")]
@@ -521,9 +576,10 @@ def main() -> None:
             n_pts=n_pts,
             mode=args.mode,
             offset_min=args.offset,
-            show_rf_amp=args.show_rf_amp,
+            show_rf_amp=show_rf_amp,
             out_path=args.out,
             mark_potential_min=args.mark_potential_min,
+            source_label=poly_source_label,
         )
         return
 
@@ -598,10 +654,11 @@ def main() -> None:
             z_const=zc,
             n_pts=n_pts,
             offset_min=args.offset,
-            show_rf_amp=args.show_rf_amp,
+            show_rf_amp=show_rf_amp,
             fit_degree=args.fit,
             out_path=args.out,
             mark_potential_min=args.mark_potential_min,
+            source_label=poly_source_label,
         )
     elif len(vary_parts) == 2:
         a1, a2 = vary_parts[0], vary_parts[1]
@@ -623,9 +680,10 @@ def main() -> None:
             n_pts=n_pts,
             mode=args.mode,
             offset_min=args.offset,
-            show_rf_amp=args.show_rf_amp,
+            show_rf_amp=show_rf_amp,
             out_path=args.out,
             mark_potential_min=args.mark_potential_min,
+            source_label=poly_source_label,
         )
     else:
         raise ValueError("--vary 须为单坐标 (x/y/z) 或两个坐标 (如 x,y)")

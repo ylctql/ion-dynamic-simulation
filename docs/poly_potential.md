@@ -167,6 +167,32 @@ fit = fit_result_from_coeff_map(
 
 > 与其它力场一样，`build_poly_potential_force` 使用**模块级状态**（供 `fork` 子进程继承），因此单进程内不要同时实例化多个多项式势力（后设置的会覆盖前者）——通过 `main.py` / CLI 使用时无此问题。
 
+### 7.4 势场可视化（field_visualize）
+
+`--poly-potential` 也可直接用于 `field_visualize` 做 1D/2D 可视化与阱频/对称性分析，与 CSV 路径完全一致：
+
+```bash
+# 1D 势曲线
+python -m field_visualize --poly-potential 1000_poly_sym.json --vary z --x-range -150,150 --n-pts 500
+# 2D 热力图（xoy 平面）
+python -m field_visualize --poly-potential 1000_poly_sym.json --vary x,y --x-range -80,80 --y-range -80,80
+# 阱频（poly 二次系数 → 三轴频率）
+python -m field_visualize --poly-potential 1000_poly_sym.json --freq --z-range -50,50
+# 对称性 / Laplace 分解同理（--symmetry / --laplace）
+```
+
+实现上 `field_visualize/core.py::load_poly_field_bundle(poly_path, *, config_path=None)` 把 `FitResult3D` 包装成"单电极 DC、`V_bias=1`"的 `FieldBundle`：
+- `potential_interps` 返回 `eval_fit_3d(r·dl_um)/dV`（盆地外发散值置 NaN，复用全链路 NaN 过滤）；
+- `field_interps` 复用 `FieldParser/poly_force._make_field_callable`；
+- `compute_potentials` 据此给出 `V_dc=V_poly`、`V_pseudo=0`、`V_total=V_poly`。**poly 指定的是总势**（DC + RF 赝势已合并、不可分离），故绘图经 `source_label` 强制走 `both_zero` 分支画 `V_total`、标 "Total potential"，而非按 `V_pseudo=0` 误判为 dc_only / 标 "Static potential"。
+
+整条管线（`plot_1d`/`plot_2d`/`plot_bilayer`/阱频/对称性/Laplace）零改动复用。要点：
+- poly 是**总势**（DC + RF 赝势合并，时不变、不分辨 RF 微运动），`--show-rf-amp` 因 poly 不分离 RF 幅度而自动跳过；
+- 与 `--csv` 互斥；`--config` 可选（`dl/dV` 在 µm↔归一化往返中抵消，不提供时用合成默认频率 35.28 MHz，不影响结果）；
+- `eval_fit_3d` 返回平移势 `V_shifted = V_true − V_min_ref`（不加回 `potential_offset_V`）；对可视化无影响（形状/曲率/对称性与零点平移无关）；
+- 采样范围超出 `scale_um` 时 CLI 打印警告——多项式外推不可信（见 §9）；
+- `--freq` 的阱频用硬编码 Ba135 质量（`field_visualize` 模块预存局限，非 poly 特有）。
+
 ## 8. 系数从哪来
 
 两条路径，**二者产出的系数逐字段、逐量纲一致**——`--poly-potential` 读取的 JSON 与 `equilibrium` 拟合导出的 JSON 是同一种文件。
