@@ -135,6 +135,12 @@ class DataPlotter:
         else:
             self._bilayer_split = None
             self.plot_fig = plot_fig or ["zoy", "zox"]
+        # σ_y 标题目标子图：优先 zoy；若无 zoy 则落在第一个子图，
+        # 保证任意 --plot-fig 组合（如仅 zox）下 σ_y 始终可见。
+        # bilayer 不使用此字段（其标题走 _bilayer_titles_for_r_um）。
+        self._sigma_y_axis = next(
+            (i for i, v in enumerate(self.plot_fig) if v == "zoy"), 0
+        )
         self.color_mode = color_mode
         self.ion_size = ion_size
         self.x_range = x_range
@@ -509,7 +515,7 @@ class DataPlotter:
                 xy = self._get_xy(f.r, view)
                 self.artists[i].set_offsets(xy)
                 self.artists[i].set_facecolor(colors)
-                if view == "zoy":
+                if i == self._sigma_y_axis:
                     self.ax[i].set_title(
                         f"t = {t_us:.3f} μs  |  σ_y = {sigma_y:.3f} μm",
                         fontsize=14,
