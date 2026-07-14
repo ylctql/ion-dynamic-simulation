@@ -4,11 +4,15 @@ poly-potential x²/x⁴ 系数扫描（动力学部分）。
 对每组 (x², x⁴) 组合跑一次 N 离子动力学（VV + CUDA 等，见顶部常量）：
   * 固定 softmode.json 中其余系数（y²/z²/z⁴…），仅改 x²(coeffs[2,0,0]) 与 x⁴(coeffs[4,0,0])；
   * 初态用随机种子生成的均匀随机盒（seed 记入 log，可复现）；
-  * 终止条件：σ_y < SIGMA_Y_THRESH_UM（提前 STOP，记录跨越时刻）或模拟达 TIME_MAX_US；
-  * 存结束位置为 ``{idx:04d}.npy``（µm），并追加一行 scan.log。
+  * 终止条件（按优先级）：
+      1. 发散   —— 后端子进程异常退出（C++ 抛错/段错误）或帧坐标出现 NaN/inf；
+      2. 逃逸   —— 任一离子坐标超出 ±ESCAPE_LIM_UM（晶格明显散开，逐帧检测，记录逃逸方向）；
+      3. 塌缩   —— σ_y < SIGMA_Y_THRESH_UM（提前 STOP，记录跨越时刻）；
+      4. 超时   —— 模拟达 TIME_MAX_US（backend 自停）。
+  * 存结束位置为 ``{idx:04d}.npy``（µm），并追加一行 scan.log（含状态/逃逸方向/挂钟耗时）。
 
 架构（方案 B）：复用 main.py 的 backend 启停（``_create_backend_and_start``），
-backend 在 ``time = 50µs`` 自动 STOP；σ_y 达标则由本模块的消费者提前 STOP。
+backend 在 ``time = 50µs`` 自动 STOP；发散/逃逸/σ_y 达标则由本模块消费者提前 STOP。
 ``main.py`` / ``backend.py`` 不改动。
 """
 from __future__ import annotations
@@ -17,6 +21,7 @@ import multiprocessing as mp
 import os
 import time
 import traceback
+from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
 from typing import Callable
@@ -33,16 +38,33 @@ CONFIG_JSON = "1000.json"               # 提供 cfg(dt,dl,dV)；softmode.json �
 SOFTMODE_JSON = "softmode.json"         # 基底系数（固定项）来源（poly_potential/ 下）
 TIME_MAX_US = 50.0                      # 模拟物理时间上限 (µs)
 SIGMA_Y_THRESH_UM = 0.0005              # σ_y 早终止阈值 (µm)
+ESCAPE_LIM_UM = 600.0                   # 逃逸判定阈值：任一离子超出 ±600µm 视为晶格散开逃逸
 INIT_RANGE_UM = (100.0, 100.0, 100.0)   # 种子化初态随机盒 ±范围(每轴 µm)；勿超 scale_um
 GAMMA = None                            # None→FieldSettings.get_gamma() 默认(0.1)；可覆盖
 STEP = 10                               # 每帧积分步数
-INTERVAL = 1.0                          # 帧间隔(dt 单位)→决定 σ_y 检查粒度
+INTERVAL = 1.0                          # 帧间隔(dt 单位)→决定 σ_y/逃逸检查粒度
 BATCH = 50                              # 每批帧数
 BASE_SEED = 0
 FIXED_SEED = False                      # True→整网格共用一初态(受控扫描)；False→每轮 seed=BASE_SEED+idx
 OUT_DIR = "param_scan/results"
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# 结局状态码（写入 log 的 status 列）
+STATUS_REACHED = "reached"      # σ_y 达标塌缩
+STATUS_TIMEOUT = "timeout"      # 跑满 50µs 未达标、无逃逸
+STATUS_ESCAPED = "escaped"      # 检测到离子逃逸 (±ESCAPE_LIM_UM)
+STATUS_DIVERGED = "diverged"    # 后端发散/崩溃（异常退出或 NaN/inf）
+STATUS_ERROR = "error"          # 扫描侧异常（force 构建/初态等，非动力学发散）
+
+# 控制台人类可读标签
+_STATUS_LABEL = {
+    STATUS_REACHED: "✓ 塌缩达标",
+    STATUS_TIMEOUT: "· 跑满未达标",
+    STATUS_ESCAPED: "⚠ 离子逃逸",
+    STATUS_DIVERGED: "✗ 发散",
+    STATUS_ERROR: "✗ 异常",
+}
 
 
 def parse_axis_spec(spec: str) -> list[float]:
@@ -76,6 +98,43 @@ def sigma_y_um(r_norm: np.ndarray, dl: float) -> float:
     return float(np.std(r[:, 1] * dl * 1e6))
 
 
+def detect_escape(r_um: np.ndarray, limit_um: float = ESCAPE_LIM_UM) -> str:
+    """
+    检测是否有离子坐标超出 ±limit_um，返回逃逸方向描述（无逃逸返回 ``""``）。
+
+    返回形如 ``"+x(3),-y(1)"``：+x 方向 3 个、-y 方向 1 个离子超出 limit。
+    方向按 ``+x,-x,+y,-y,+z,-z`` 固定顺序，仅列出有逃逸者；同一离子可同时计入
+    多个方向（如斜向逃逸）。调用方应已保证 ``r_um`` 为有限值（NaN 不计入）。
+    """
+    r = np.asarray(r_um, dtype=float)
+    checks = [
+        ("+x", r[:, 0] > limit_um),
+        ("-x", r[:, 0] < -limit_um),
+        ("+y", r[:, 1] > limit_um),
+        ("-y", r[:, 1] < -limit_um),
+        ("+z", r[:, 2] > limit_um),
+        ("-z", r[:, 2] < -limit_um),
+    ]
+    parts = [
+        f"{label}({int(np.count_nonzero(mask))})"
+        for label, mask in checks
+        if np.any(mask)
+    ]
+    return ",".join(parts)
+
+
+@dataclass
+class RunResult:
+    """单轮动力学结局（run_until_sigma_or_time 的返回）。"""
+
+    status: str            # STATUS_* 之一
+    r_um: np.ndarray       # 结束位置 (N,3) µm（diverged 时为最后帧，可能含 NaN）
+    sim_time_us: float     # 事件时刻：reached→跨越、escaped→逃逸、timeout→TIME_MAX、diverged→最后帧
+    sigma_y_um: float      # 对应时刻 σ_y (µm)；diverged/error 为 nan
+    escape: str            # 逃逸方向描述；无则 ""
+    note: str = ""         # 附加说明（如发散原因），仅控制台打印，不入 log
+
+
 def _build_parsed():
     """构造一次 ParsedRun（cfg / params / field_settings）；force 由调用方每点重建。"""
     os.environ.setdefault("MPLBACKEND", "Agg")  # headless 批跑，避免 matplotlib 找显示
@@ -99,17 +158,18 @@ def _build_parsed():
     return parse_and_build(args, ROOT)
 
 
-def run_until_sigma_or_time(parsed, force: Callable, cfg, log_every_us: float = 5.0):
+def run_until_sigma_or_time(parsed, force: Callable, cfg, log_every_us: float = 5.0) -> RunResult:
     """
-    跑到 σ_y < SIGMA_Y_THRESH_UM（提前 STOP，记录跨越帧）或 backend 自停于 TIME_MAX_US。
+    跑一轮，按 发散 → 逃逸 → 塌缩 → 超时 的优先级判定结局。
 
-    Returns
-    -------
-    (r_um_final, reached, sim_time_us, sigma_y_final_um)
-        r_um_final : (N, 3) µm，模拟结束位置
-        reached    : 是否在 50µs 内达到 σ_y < 阈值
-        sim_time_us: 达标→跨越时刻 (µs)；未达标→TIME_MAX_US
-        sigma_y_final_um : 模拟结束时 σ_y (µm)
+    * **发散**：``_get_from_queue`` 抛 RuntimeError（后端异常退出，exitcode≠0，多为
+      C++ 抛错或段错误）→ status=diverged；或某帧坐标出现 NaN/inf → 同样 diverged。
+    * **逃逸**：某帧任一离子超出 ±ESCAPE_LIM_UM → status=escaped，记录逃逸方向、提前 STOP。
+    * **塌缩**：σ_y < SIGMA_Y_THRESH_UM → status=reached，提前 STOP。
+    * **超时**：backend 自停于 TIME_MAX_US → status=timeout。
+
+    发散/逃逸/塌缩触发后向 backend 发 STOP 并排空尾帧（排空期间的后端崩溃被吞掉，
+    因状态已确定）。最后 join 子进程。
     """
     # 延迟导入：main 顶层会拉起 matplotlib / DataPlotter，仅 scan 路径需要
     from main import _consume_queue_until_done, _create_backend_and_start, _get_from_queue
@@ -120,28 +180,73 @@ def run_until_sigma_or_time(parsed, force: Callable, cfg, log_every_us: float = 
     dl_um = dl * 1e6
     dt_si = cfg.dt
 
+    def _safe_stop_drain() -> None:
+        """发 STOP 并排空队列；排空期间后端崩溃忽略（状态已记录）。"""
+        try:
+            q_ctrl.put(Message(CommandType.STOP))
+            _consume_queue_until_done(q_data, q_ctrl, proc)
+        except RuntimeError:
+            pass
+
     final = frame_init
-    reached = False
-    cross = None  # (r_um, t_us, sigma_y) 跨越帧
+    status = STATUS_TIMEOUT
+    event_t = TIME_MAX_US
+    event_sigma = sigma_y_um(final.r, dl)
+    escape = ""
+    note = ""
     last_log_us = -log_every_us
+    last_t_us = 0.0  # 最后接收帧的时刻（frame_init 视为 t0=0）
+
     try:
         while True:
-            item = _get_from_queue(q_data, proc)
+            try:
+                item = _get_from_queue(q_data, proc)
+            except RuntimeError as e:
+                # 后端发散/崩溃（C++ 抛错或段错误）
+                status = STATUS_DIVERGED
+                note = str(e)
+                event_t = last_t_us
+                event_sigma = float("nan")
+                break
             if item is None:
                 continue
             if item is False:
-                break  # backend 自停于 50µs
+                break  # backend 自停于 50µs → timeout
             final = item
-            sigma_y = sigma_y_um(final.r, dl)
             t_us = final.timestamp * dt_si * 1e6
+            last_t_us = t_us
+
+            # 1) 发散检测：非有限坐标（NaN/inf）
+            if not np.all(np.isfinite(final.r)):
+                status = STATUS_DIVERGED
+                note = "非有限坐标(NaN/inf)"
+                event_t = t_us
+                event_sigma = float("nan")
+                _safe_stop_drain()
+                break
+
+            # 2) 逃逸检测：超出 ±ESCAPE_LIM_UM（晶格散开）
+            esc = detect_escape(final.r * dl_um)
+            if esc:
+                status = STATUS_ESCAPED
+                escape = esc
+                event_t = t_us
+                event_sigma = sigma_y_um(final.r, dl)
+                print(f"        ⚠ 检测到离子逃逸 @ t={t_us:.3f}µs：{esc}", flush=True)
+                _safe_stop_drain()
+                break
+
+            # 3) σ_y 进度日志 + 塌缩检测
+            sigma_y = sigma_y_um(final.r, dl)
+            event_sigma = sigma_y  # 跟踪最新 σ_y（timeout 时用）
             if t_us - last_log_us >= log_every_us:
                 print(f"        t={t_us:7.3f}µs  σ_y={sigma_y:.6g}µm", flush=True)
                 last_log_us = t_us
             if sigma_y < SIGMA_Y_THRESH_UM:
-                reached = True
-                cross = (final.r.copy() * dl_um, t_us, sigma_y)
-                q_ctrl.put(Message(CommandType.STOP))
-                _consume_queue_until_done(q_data, q_ctrl, proc)  # 排空尾帧
+                status = STATUS_REACHED
+                event_t = t_us
+                event_sigma = sigma_y
+                _safe_stop_drain()
                 break
     finally:
         proc.join(timeout=120)
@@ -149,10 +254,14 @@ def run_until_sigma_or_time(parsed, force: Callable, cfg, log_every_us: float = 
             proc.terminate()
             proc.join()
 
-    if reached:
-        r_um, t_us, sigma_y = cross
-        return r_um, True, t_us, sigma_y
-    return final.r * dl_um, False, TIME_MAX_US, sigma_y_um(final.r, dl)
+    return RunResult(
+        status=status,
+        r_um=final.r * dl_um,
+        sim_time_us=event_t,
+        sigma_y_um=event_sigma,
+        escape=escape,
+        note=note,
+    )
 
 
 def run_scan(
@@ -171,7 +280,7 @@ def run_scan(
 
     输出布局::
 
-        <out_dir>/scan.log              # log（所有运行序号汇总）
+        <out_dir>/scan.log              # log（所有运行序号汇总，TAB 分隔）
         <out_dir>/positions/{idx:04d}.npy  # 各轮结束位置 (N,3) µm
 
     log 与 npy 的写入策略：
@@ -223,14 +332,15 @@ def run_scan(
     if new_log and log_path.exists():
         log_path.unlink()  # 截断重开
         print(f"已截断旧 log，重开：{log_path}")
-    write_header(log_path)  # 幂等：追加模式下已有内容则不重写表头
+    write_header(log_path)  # 幂等：追加模式下已有内容则不重写表头（表头不符则抛错）
 
     overwrite = force or new_log  # new_log 强制重跑覆盖旧 npy
 
     grid = list(product(x2_list, x4_list))
     total = len(grid)
     print(f"扫描网格：{len(x2_list)} × {len(x4_list)} = {total} 组；N={p.N} "
-          f"{DEVICE}/{CALC_METHOD} γ={gamma} 阈值 σ_y<{SIGMA_Y_THRESH_UM}µm 上限 {TIME_MAX_US}µs")
+          f"{DEVICE}/{CALC_METHOD} γ={gamma} 阈值 σ_y<{SIGMA_Y_THRESH_UM}µm "
+          f"逃逸±{ESCAPE_LIM_UM}µm 上限 {TIME_MAX_US}µs")
     print(f"输出：log={log_path}  npy={pos_dir}/{'{idx:04d}.npy'}  "
           f"({'覆盖/重跑' if overwrite else '追加/续跑(跳过已存在)'} )")
 
@@ -242,6 +352,7 @@ def run_scan(
         seed = base_seed if fixed_seed else base_seed + idx
         print(f"[{idx}/{total}] x²={x2:g} x⁴={x4:g} seed={seed}", flush=True)
         wall_t0 = time.time()
+        res: RunResult | None = None
         try:
             # 1) 种子化初态（均匀随机盒）→ 无量纲注入 params
             rng = np.random.default_rng(seed)
@@ -254,36 +365,52 @@ def run_scan(
             coeff_map["x^4"] = float(x4)
             fit = fit_result_from_coeff_map(coeff_map, center_um, scale_um, offset)
             force = build_poly_potential_force(fit, cfg, charge, gamma)
-            # 3) 跑到 σ_y 达标或 50µs
-            r_um, reached, t_us, sigma_y = run_until_sigma_or_time(parsed, force, cfg)
-            # 4) 存 npy + 追加 log（含 seed）
-            np.save(npy_path, r_um)
-            append_row(
-                log_path,
-                run_idx=idx,
-                x2_coeff=x2,
-                x4_coeff=x4,
-                seed=seed,
-                reached_threshold=reached,
-                sim_time_us=t_us,
-                sigma_y_final_um=sigma_y,
-            )
-            print(
-                f"        → reached={int(reached)} t={t_us:.3f}µs σ_y={sigma_y:.6g}µm "
-                f"({time.time() - wall_t0:.1f}s)",
-                flush=True,
-            )
+            # 3) 跑到 发散/逃逸/σ_y 达标/50µs
+            res = run_until_sigma_or_time(parsed, force, cfg)
         except Exception:
-            print(f"        !! 失败，记 NaN 跳过：\n{traceback.format_exc()}", flush=True)
-            append_row(
-                log_path,
-                run_idx=idx,
-                x2_coeff=x2,
-                x4_coeff=x4,
-                seed=seed,
-                reached_threshold=False,
-                sim_time_us=0.0,
-                sigma_y_final_um=float("nan"),
-            )
+            # run_until_sigma_or_time 之外的异常（force 构建/初态等）
+            print(f"        !! 运行异常，记 error 跳过：\n{traceback.format_exc()}", flush=True)
+
+        wall_dt = time.time() - wall_t0
+
+        if res is not None:
+            status = res.status
+            r_um = res.r_um
+            t_us = res.sim_time_us
+            sigma_y = res.sigma_y_um
+            escape = res.escape
+            note = res.note
+        else:
+            status = STATUS_ERROR
+            r_um = np.full((p.N, 3), np.nan)
+            t_us = 0.0
+            sigma_y = float("nan")
+            escape = ""
+            note = ""
+
+        reached = status == STATUS_REACHED
+        np.save(npy_path, r_um)
+        append_row(
+            log_path,
+            run_idx=idx,
+            x2_coeff=x2,
+            x4_coeff=x4,
+            seed=seed,
+            reached_threshold=reached,
+            status=status,
+            sim_time_us=t_us,
+            sigma_y_final_um=sigma_y,
+            escape=escape,
+            wall_time_s=wall_dt,
+        )
+        # 控制台人类可读摘要
+        label = _STATUS_LABEL.get(status, status)
+        extra = f" 逃逸[{escape}]" if escape else ""
+        print(
+            f"        → {label}{extra}  t={t_us:.3f}µs σ_y={sigma_y:.6g}µm ({wall_dt:.1f}s)",
+            flush=True,
+        )
+        if status == STATUS_DIVERGED and note:
+            print(f"        发散原因：{note}", flush=True)
 
     print(f"完成：{total} 组 → {out}（log: {log_path}）")

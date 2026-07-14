@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-VALUE_COLS = ["sigma_y_final_um", "sim_time_us", "reached_threshold"]
+VALUE_COLS = ["sigma_y_final_um", "sim_time_us", "reached_threshold", "wall_time_s"]
 
 
 def _round_key(v: float) -> float:
