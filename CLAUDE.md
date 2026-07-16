@@ -71,6 +71,7 @@ pytest                            # 运行测试
 | `calc_field.py` | `calc_field()` — 对每个电极做 E = -grad(V)，返回 `RegularGridInterpolator` 列表；`calc_potential()` — 势插值 |
 | `force.py` | `build_force()` → `make_force()` → 模块级 `force(r,v,t)` 函数（裁剪边界、加权求和、耗散项） |
 | `potential_fit.py` | `fit_potential_1d()` — 1D 多项式拟合，`k2_to_trap_freq_MHz()` — 阱频计算 |
+| `poly_force.py` | `calc_field_from_poly()` — 对每电极基做 3D 多项式拟合，以解析梯度替代格点插值得全局光滑力场；`main.py --poly-fit N` 启用并指定总次数（正整数，项数 C(N+3,3)；不带值默认 4=quartic；不传则用格点插值） |
 
 ### `ComputeKernel/` — C++ 计算核心
 
@@ -142,7 +143,7 @@ pytest                            # 运行测试
 
 | 文件 | 关键内容 |
 |------|---------|
-| `potential_fit_3d.py` | `fit_potential_3d_quartic()` — 3D 多项式拟合（默认 `quartic` 35 项；另有 125/27/10/4 项基组）；`grad_fit_3d()`, `hessian_fit_3d()` |
+| `potential_fit_3d.py` | `fit_potential_3d_quartic()` — 3D 多项式拟合（`fit_mode` 支持非负整数 N=总次数≤N 基 C(N+3,3) 项，如 4→35/6→84；另有 quartic/none/even/quartic_even/quadratic 字符串基组）；`grad_fit_3d()`, `hessian_fit_3d()`，系数数组与求值/梯度/Hessian 均按实际次数动态 |
 | `energy.py` | `trap_energy_and_grad()`, `coulomb_energy_and_grad()`, `total_energy_and_grad()` — 能量单位 eV |
 | `phonon.py` | `solve_phonon_modes()` — Hessian + 动力学矩阵对角化 → 声子模；`PhononResult` |
 | `find_equilibrium.py` | CLI：L-BFGS-B 最小化总势能，含 Hessian/声子谱/模式向量可视化 |

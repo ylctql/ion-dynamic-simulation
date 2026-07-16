@@ -130,8 +130,7 @@ def _build_force(
     *,
     smooth_axes: tuple[str, ...] | None = None,
     smooth_sg: tuple[int, int] = (11, 3),
-    poly_fit: bool = False,
-    poly_fit_mode: str = "quartic",
+    poly_fit: int | None = None,
     poly_fit_npts: int = 8,
 ) -> Callable:
     """根据 field_settings 构建 force 回调"""
@@ -172,13 +171,13 @@ def _build_force(
             window_length=smooth_sg[0],
             polyorder=smooth_sg[1],
         )
-    if poly_fit:
+    if poly_fit is not None:
         from FieldParser.poly_force import calc_field_from_poly
 
-        logger.info("启用多项式拟合: mode=%s, npts=%d", poly_fit_mode, poly_fit_npts)
+        logger.info("启用多项式拟合: 次数=%s, npts=%d", poly_fit, poly_fit_npts)
         field_interps = calc_field_from_poly(
             grid_coord, grid_voltage, cfg.dl, cfg.dV,
-            fit_mode=poly_fit_mode, n_pts_per_axis=poly_fit_npts,
+            fit_mode=poly_fit, n_pts_per_axis=poly_fit_npts,
         )
         gamma = field_settings.get_gamma()
         return make_force(
@@ -390,7 +389,6 @@ def run(parsed: ParsedRun) -> Frame | None:
         smooth_axes=parsed.smooth_axes,
         smooth_sg=parsed.smooth_sg,
         poly_fit=parsed.poly_fit,
-        poly_fit_mode=parsed.poly_fit_mode,
         poly_fit_npts=parsed.poly_fit_npts,
     )
     proc, frame_init, queue_control, queue_data = _create_backend_and_start(

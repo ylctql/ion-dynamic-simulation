@@ -2,13 +2,15 @@
 总势场 3D 多项式拟合（缩放坐标 u,v,w）
 
 fit_potential_3d_quartic: V_shifted = Σ c_{ijk} u^i v^j w^k，由 fit_mode 选基底：
-- quartic（默认）：总次数 i+j+k≤4，35 项；
+- 非负整数 N：总次数 i+j+k≤N 的完整三元多项式基，C(N+3,3) 项（如 4→35、6→84）；
+- quartic：总次数 i+j+k≤4，35 项（等价于 N=4）；
 - none：0≤i,j,k≤4 张量积，5³=125 项；
 - even：在 125 项上删去 i,j,k 任一为奇数的项（仅全偶次），27 项；
 - quartic_even：quartic 上仅保留 i,j,k 全偶，10 项；
 - quadratic：常数 + u²,v²,w²，4 项。
 
-系数存 (5,5,5)，未用位置为 0，与 numpy polynomial.polyval3d 兼容。
+系数存 (D+1,D+1,D+1)，D 为基底每变量最高次且 D≥4（故既有字符串模式仍为 (5,5,5)），
+未用位置为 0，与 numpy polynomial.polyval3d 兼容；求值/梯度/Hessian 均按 coeffs 实际维度动态计算。
 """
 from __future__ import annotations
 
@@ -58,34 +60,40 @@ QUADRATIC_FIT_EXPS: tuple[tuple[int, int, int], ...] = (
 )
 
 
-def normalize_fit_mode(fit_mode: str | None) -> str | None:
+def normalize_fit_mode(fit_mode: str | int | None) -> str | int | None:
     """
-    None：张量积 125 项；'none'：同上；'quartic'：总次数≤4（35 项）；'even'：125 项中去奇次（27）；
+    None/'none'：张量积 125 项；'even'：125 项中去奇次（27）；'quartic'：总次数≤4（35 项）；
     'quartic_even'：quartic + 全偶（10）；'quadratic'：常数 + 轴二次（4）。
+    非负整数 N：总次数 ≤N 的完整三元多项式基（C(N+3,3) 项），如 4→35、6→84；数字字符串 "6" 同样解析为 6。
     """
     if fit_mode is None:
         return None
+    # bool 是 int 子类，先排除
+    if isinstance(fit_mode, bool):
+        raise ValueError(f"fit_mode 不接受布尔值: {fit_mode!r}")
+    if isinstance(fit_mode, int):
+        if fit_mode < 0:
+            raise ValueError(f"fit_mode 整数须非负，得到 {fit_mode}")
+        return fit_mode
     s = str(fit_mode).strip().lower()
     if s in ("", "none"):
         return None
-    if s == "even":
-        return "even"
-    if s == "quartic":
-        return "quartic"
-    if s == "quartic_even":
-        return "quartic_even"
-    if s == "quadratic":
-        return "quadratic"
+    if s in ("even", "quartic", "quartic_even", "quadratic"):
+        return s
+    if s.isdigit():  # 数字字符串 → 整数（便于 CLI 透传）
+        return int(s)
     raise ValueError(
-        f"fit_mode={fit_mode!r} 不受支持，请使用 none、even、quartic、quartic_even、quadratic"
+        f"fit_mode={fit_mode!r} 不受支持，请使用非负整数(总次数 N)、none、even、quartic、quartic_even、quadratic"
     )
 
 
-def fit_mode_basis_exponents(fit_mode: str | None) -> tuple[tuple[int, int, int], ...]:
+def fit_mode_basis_exponents(fit_mode: str | int | None) -> tuple[tuple[int, int, int], ...]:
     """按 fit_mode 返回拟合用单项式指数 (i,j,k)，对应 u^i v^j w^k。"""
     key = normalize_fit_mode(fit_mode)
     if key is None:
         return TENSOR_MAXDEG4_EXPS
+    if isinstance(key, int):  # 非负整数 N → 总次数 ≤N 完整基
+        return quartic_3d_exponents_total_degree(key)
     if key == "even":
         return tuple(
             (i, j, k)
@@ -176,7 +184,7 @@ class FitResult3D:
     V_shifted = V_true - V_min_ref（将零点平移到参考最小势）。坐标单位: μm
     """
 
-    coeffs: np.ndarray  # shape (5,5,5)，c[i,j,k] 对应 u^i v^j w^k；未使用的项恒为 0
+    coeffs: np.ndarray  # shape (D+1,D+1,D+1)，D≥4；c[i,j,k] 对应 u^i v^j w^k，未使用的项恒为 0
     center_um: tuple[float, float, float]
     scale_um: float  # L，坐标缩放半跨度
     potential_offset_V: float  # 参考最小势 V_min_ref（被减去）
@@ -185,16 +193,20 @@ class FitResult3D:
     basis_exps: tuple[tuple[int, int, int], ...] = field(default_factory=lambda: TENSOR_MAXDEG4_EXPS)
 
     def _build_grad_coeffs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Pre-compute derivative coefficient arrays for grad_fit_3d."""
+        """Pre-compute derivative coefficient arrays for grad_fit_3d（按 coeffs 实际维度动态）。"""
         c = self.coeffs
-        c_du = np.zeros((4, 5, 5))
-        for i in range(4):
+        n = c.shape[0]          # = D+1
+        D = n - 1               # 每变量最高次
+        if D < 1:               # 常数势：梯度恒为 0
+            return np.zeros((1, n, n)), np.zeros((n, 1, n)), np.zeros((n, n, 1))
+        c_du = np.zeros((D, n, n))
+        for i in range(D):
             c_du[i, :, :] = c[i + 1, :, :] * (i + 1)
-        c_dv = np.zeros((5, 4, 5))
-        for j in range(4):
+        c_dv = np.zeros((n, D, n))
+        for j in range(D):
             c_dv[:, j, :] = c[:, j + 1, :] * (j + 1)
-        c_dw = np.zeros((5, 5, 4))
-        for k in range(4):
+        c_dw = np.zeros((n, n, D))
+        for k in range(D):
             c_dw[:, :, k] = c[:, :, k + 1] * (k + 1)
         return c_du, c_dv, c_dw
 
@@ -212,7 +224,7 @@ def fit_potential_3d_quartic(
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
     n_pts_per_axis: int | tuple[int, int, int] = 8,
     potential_offset_V: float | None = None,
-    fit_mode: str | None = "quartic",
+    fit_mode: str | int | None = "quartic",
 ) -> FitResult3D:
     """
     对总势场在缩放坐标下做多项式最小二乘拟合，并将势能零点平移到参考最小势。
@@ -235,10 +247,11 @@ def fit_potential_3d_quartic(
         基函数多时须保证有效网格点数 ≥ 未知数个数。
     potential_offset_V : float | None
         势能零点平移参考值 V_min_ref（单位 V）。若为 None，则退化为当前拟合采样点的最小势。
-    fit_mode : str | None
-        默认 'quartic'：i+j+k≤4（35）。'none'：0≤i,j,k≤4 张量积（125）。
-        'even'：其上去掉任一指为奇次的项（27）。'quartic_even'：quartic 的全偶子集（10）。
-        'quadratic'：常数 + u²,v²,w²（4）。显式传入 None 等价于 'none'（125 项）。
+    fit_mode : str | int | None
+        非负整数 N：总次数 i+j+k≤N 的完整基（C(N+3,3) 项，如 4→35、6→84），与 'quartic'(=4) 连续。
+        'none'：0≤i,j,k≤4 张量积（125）。'even'：其上去掉任一指为奇次的项（27）。
+        'quartic_even'：quartic 的全偶子集（10）。'quadratic'：常数 + u²,v²,w²（4）。
+        显式传入 None 等价于 'none'（125 项）。
 
     Returns
     -------
@@ -315,7 +328,10 @@ def fit_potential_3d_quartic(
     V_shifted_valid = V_true_valid - v_min_ref
 
     coefs_flat, residuals, rank, s = np.linalg.lstsq(V_mat_valid, V_shifted_valid, rcond=None)
-    coefs = np.zeros((5, 5, 5))
+    # 系数数组维度 = 每变量最高次 +1；至少 (5,5,5) 以与既有字符串模式的存储/调用方一致
+    deg = max(max(e) for e in basis_exps)
+    deg = max(deg, DEGREE_QUARTIC)
+    coefs = np.zeros((deg + 1, deg + 1, deg + 1))
     for idx, (i, j, k) in enumerate(basis_exps):
         coefs[i, j, k] = coefs_flat[idx]
 
@@ -398,38 +414,47 @@ def hessian_fit_3d(fit: FitResult3D, r_um: np.ndarray) -> np.ndarray:
     v = (r_um[:, 1] - y0) / L
     w = (r_um[:, 2] - z0) / L
     c = fit.coeffs
+    n = c.shape[0]          # = D+1
+    D = n - 1               # 每变量最高次
 
-    # 二阶偏导在 (u,v,w) 坐标下
-    c_duu = np.zeros((3, 5, 5))
-    for i in range(3):
-        c_duu[i, :, :] = c[i + 2, :, :] * (i + 2) * (i + 1)
-    d2V_duu = P.polyval3d(u, v, w, c_duu)
+    # 二阶纯偏导（需 D≥2；D<2 时该方向二阶导恒 0，避免访问越界索引）
+    if D >= 2:
+        c_duu = np.zeros((D - 1, n, n))
+        for i in range(D - 1):
+            c_duu[i, :, :] = c[i + 2, :, :] * (i + 2) * (i + 1)
+        d2V_duu = P.polyval3d(u, v, w, c_duu)
 
-    c_dvv = np.zeros((5, 3, 5))
-    for j in range(3):
-        c_dvv[:, j, :] = c[:, j + 2, :] * (j + 2) * (j + 1)
-    d2V_dvv = P.polyval3d(u, v, w, c_dvv)
+        c_dvv = np.zeros((n, D - 1, n))
+        for j in range(D - 1):
+            c_dvv[:, j, :] = c[:, j + 2, :] * (j + 2) * (j + 1)
+        d2V_dvv = P.polyval3d(u, v, w, c_dvv)
 
-    c_dww = np.zeros((5, 5, 3))
-    for k in range(3):
-        c_dww[:, :, k] = c[:, :, k + 2] * (k + 2) * (k + 1)
-    d2V_dww = P.polyval3d(u, v, w, c_dww)
+        c_dww = np.zeros((n, n, D - 1))
+        for k in range(D - 1):
+            c_dww[:, :, k] = c[:, :, k + 2] * (k + 2) * (k + 1)
+        d2V_dww = P.polyval3d(u, v, w, c_dww)
+    else:
+        d2V_duu = np.zeros_like(u)
+        d2V_dvv = np.zeros_like(u)
+        d2V_dww = np.zeros_like(u)
 
-    c_duv = np.zeros((4, 4, 5))
-    for i in range(4):
-        for j in range(4):
+    # 二阶混合偏导（需 D≥1）
+    h1 = max(D, 1)
+    c_duv = np.zeros((h1, h1, n))
+    for i in range(h1):
+        for j in range(h1):
             c_duv[i, j, :] = c[i + 1, j + 1, :] * (i + 1) * (j + 1)
     d2V_duv = P.polyval3d(u, v, w, c_duv)
 
-    c_duw = np.zeros((4, 5, 4))
-    for i in range(4):
-        for k in range(4):
+    c_duw = np.zeros((h1, n, h1))
+    for i in range(h1):
+        for k in range(h1):
             c_duw[i, :, k] = c[i + 1, :, k + 1] * (i + 1) * (k + 1)
     d2V_duw = P.polyval3d(u, v, w, c_duw)
 
-    c_dvw = np.zeros((5, 4, 4))
-    for j in range(4):
-        for k in range(4):
+    c_dvw = np.zeros((n, h1, h1))
+    for j in range(h1):
+        for k in range(h1):
             c_dvw[:, j, k] = c[:, j + 1, k + 1] * (j + 1) * (k + 1)
     d2V_dvw = P.polyval3d(u, v, w, c_dvw)
 

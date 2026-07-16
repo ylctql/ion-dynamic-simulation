@@ -87,7 +87,7 @@ def calc_field_from_poly(
     dl: float,
     dV: float,
     *,
-    fit_mode: str = "quartic",
+    fit_mode: str | int = "quartic",
     n_pts_per_axis: int = 8,
     center_um: tuple[float, float, float] | None = None,
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
@@ -108,8 +108,9 @@ def calc_field_from_poly(
         特征长度 (m)
     dV : float
         特征电压 (V)
-    fit_mode : str
-        多项式拟合模式，默认 "quartic"（35 项，i+j+k≤4）
+    fit_mode : str | int
+        多项式拟合模式：正整数 N 表示总次数 i+j+k≤N 的完整基（如 4→35、6→84），
+        或旧字符串 quartic/quadratic/none 等；默认 "quartic"（=4，35 项）
     n_pts_per_axis : int
         拟合采样每轴点数，默认 8
     center_um : tuple or None

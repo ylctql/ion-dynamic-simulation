@@ -43,6 +43,17 @@ def _parse_n_list(value: str) -> list[int]:
     return out
 
 
+def _positive_int(value: str) -> int:
+    """argparse type：正整数（≥1），用于 --poly-fit-mode 等需要正整数的参数。"""
+    try:
+        n = int(value, 10)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"须为正整数: {value!r}") from e
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"须为正整数(≥1)，当前: {n}")
+    return n
+
+
 _MAX_SAVE_TIME_RANGE_POINTS = 1_000_000
 
 
@@ -189,8 +200,7 @@ class ParsedRun:
     continuous_sampling: bool = False
     continuous_sampling_frames: int = 1
     continuous_sampling_plot: bool = False
-    poly_fit: bool = False
-    poly_fit_mode: str = "quartic"
+    poly_fit: int | None = None  # None=格点插值；正整数=多项式拟合总次数 N
     poly_fit_npts: int = 8
 
 
@@ -307,15 +317,15 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--poly-fit",
-        action="store_true",
-        default=False,
-        help="对格点势场进行 3D 多项式拟合，用解析梯度替代格点插值",
-    )
-    parser.add_argument(
-        "--poly-fit-mode",
-        type=str,
-        default="quartic",
-        help="多项式拟合模式: quartic(35项,默认), quartic_even(10), quadratic(4)",
+        nargs="?",
+        const=4,
+        default=None,
+        type=_positive_int,
+        metavar="N",
+        help=(
+            "对格点势场做 N 次 3D 多项式拟合（基 i+j+k≤N，项数 C(N+3,3)），用解析梯度替代格点插值；"
+            "不传则用格点插值；传 --poly-fit 不带值等价于 4（= quartic，35 项）"
+        ),
     )
     parser.add_argument(
         "--poly-fit-npts",
@@ -691,8 +701,7 @@ def parse_and_build(
     if continuous_sampling_plot and not continuous_sampling:
         raise ValueError("--continuous-sampling-plot 须配合 --continuous-sampling 使用")
 
-    poly_fit = bool(getattr(args, "poly_fit", False))
-    poly_fit_mode = getattr(args, "poly_fit_mode", "quartic") or "quartic"
+    poly_fit = getattr(args, "poly_fit", None)  # None=禁用；正整数=拟合总次数
     poly_fit_npts = int(getattr(args, "poly_fit_npts", 8))
     if continuous_sampling:
         if continuous_sampling_plot:
@@ -742,6 +751,5 @@ def parse_and_build(
         continuous_sampling_frames=continuous_sampling_frames,
         continuous_sampling_plot=continuous_sampling_plot,
         poly_fit=poly_fit,
-        poly_fit_mode=poly_fit_mode,
         poly_fit_npts=poly_fit_npts,
     )

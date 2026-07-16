@@ -135,3 +135,36 @@ def test_pure_continuous_sampling_unchanged():
     assert parsed.continuous_sampling_plot is False
     assert parsed.vision.plot_fig is None
     assert parsed.vision.show_plot is None
+
+
+# ============== --poly-fit（正整数总次数，nargs='?'）==============
+
+def test_poly_fit_default_none():
+    """不传 --poly-fit 时为 None（格点插值，禁用）。"""
+    parser = create_parser()
+    args = parser.parse_args([])
+    assert args.poly_fit is None
+
+
+def test_poly_fit_bare_defaults_to_4():
+    """--poly-fit 不带值等价于 4（= quartic）。"""
+    parser = create_parser()
+    args = parser.parse_args(["--poly-fit"])
+    assert args.poly_fit == 4
+
+
+def test_poly_fit_int_parsed():
+    parser = create_parser()
+    args = parser.parse_args(["--poly-fit", "6"])
+    assert args.poly_fit == 6
+    assert isinstance(args.poly_fit, int)
+
+
+def test_poly_fit_rejects_invalid():
+    """非正整数（0、-1、旧字符串、小数）应被拒绝。"""
+    import pytest
+
+    parser = create_parser()
+    for bad in ["0", "-1", "quartic", "2.5"]:
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--poly-fit", bad])
