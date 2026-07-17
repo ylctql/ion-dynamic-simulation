@@ -45,7 +45,7 @@ class OptimizationConfig:
     optimize_rf_v0: bool = False  # 是否同时优化 RF 幅值
 
     # 对称性评估
-    symmetry_fit_mode: str = "quartic"
+    symmetry_fit_mode: int = 4    # 3D 多项式拟合总次数 N（用于奇偶性诊断拟合）
     symmetry_n_pts: int = 6       # 3D 拟合每轴采样点数
 
 

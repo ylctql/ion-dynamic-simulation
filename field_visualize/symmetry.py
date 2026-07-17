@@ -501,7 +501,7 @@ def compute_polynomial_symmetry(
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
     potential_type: PotentialType,
     n_pts_per_axis: int = 8,
-    fit_mode: str = "quartic",
+    fit_mode: int = 4,
 ) -> PolynomialSymmetryResult | None:
     """多项式系数奇偶性分析"""
     from equilibrium.potential_fit_3d import fit_potential_3d_quartic
@@ -555,7 +555,7 @@ def compute_hessian_symmetry(
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
     potential_type: PotentialType,
     n_pts_per_axis: int = 8,
-    fit_mode: str = "quartic",
+    fit_mode: int = 4,
 ) -> HessianSymmetryResult | None:
     """Hessian 非对角项分析（中心点处）"""
     from equilibrium.potential_fit_3d import fit_potential_3d_quartic, hessian_fit_3d
@@ -617,7 +617,7 @@ def compute_potential_symmetry(
     n_mirror_pts: int = 10,
     n_rot_pts: int = 50,
     n_fit_pts: int = 8,
-    fit_mode: str = "quartic",
+    fit_mode: int = 4,
 ) -> PotentialSymmetry:
     """单一势场类型的完整对称性分析
 
@@ -676,7 +676,7 @@ def compute_symmetry_report(
     n_mirror_pts: int = 10,
     n_rot_pts: int = 50,
     n_fit_pts: int = 8,
-    fit_mode: str = "quartic",
+    fit_mode: int = 4,
 ) -> SymmetryReport:
     """DC / RF 赝势 / 总势场的完整对称性报告
 

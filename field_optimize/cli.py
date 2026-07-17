@@ -145,8 +145,8 @@ def create_parser() -> argparse.ArgumentParser:
 
     # 对称性评估
     parser.add_argument(
-        "--symmetry-fit-mode", type=str, default="quartic",
-        help="3D 多项式拟合模式，默认 quartic",
+        "--symmetry-fit-mode", type=int, default=4, metavar="N",
+        help="对称性诊断用 3D 多项式拟合总次数 N（如 4→35），默认 4",
     )
     parser.add_argument(
         "--symmetry-n-pts", type=int, default=6,

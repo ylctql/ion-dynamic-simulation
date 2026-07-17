@@ -54,6 +54,29 @@ def _positive_int(value: str) -> int:
     return n
 
 
+def _symmetry_axes(value: str) -> tuple[str, ...]:
+    """argparse type：对称轴子集，接受 'x,z' / 'xz' / 'x' 等，返回规范化 (x,y,z) 子序元组。"""
+    raw = value.strip()
+    if not raw:
+        return ()
+    # 允许逗号分隔或直接拼接
+    chars: list[str] = []
+    for tok in raw.replace(",", " ").split():
+        tok = tok.lower()
+        if all(c in "xyz" for c in tok):
+            chars.extend(list(tok))
+        else:
+            raise argparse.ArgumentTypeError(
+                f"对称轴仅支持 x/y/z 的子集（如 'x,z' 或 'xz'），得到 {value!r}"
+            )
+    bad = [c for c in chars if c not in "xyz"]
+    if bad:
+        raise argparse.ArgumentTypeError(
+            f"对称轴仅支持 x/y/z 的子集，非法值 {bad}"
+        )
+    return tuple(ax for ax in ("x", "y", "z") if ax in set(chars))
+
+
 _MAX_SAVE_TIME_RANGE_POINTS = 1_000_000
 
 
@@ -202,6 +225,7 @@ class ParsedRun:
     continuous_sampling_plot: bool = False
     poly_fit: int | None = None  # None=格点插值；正整数=多项式拟合总次数 N
     poly_fit_npts: int = 8
+    poly_symmetry: tuple[str, ...] = ()  # 多项式拟合对称轴子集 (x,y,z) 子序；空=不约束
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -332,6 +356,17 @@ def create_parser() -> argparse.ArgumentParser:
         type=int,
         default=8,
         help="拟合采样每轴点数 (默认 8)",
+    )
+    parser.add_argument(
+        "--poly-symmetry",
+        type=_symmetry_axes,
+        default=None,
+        metavar="AXES",
+        help=(
+            "多项式拟合对称轴子集 (x/y/z 的子集，如 'x,z' 或 'xyz')；"
+            "拟合前剔除所列轴上奇次单项式，强制关于 center_um 镜面对称。"
+            "默认空（不约束）。仅与 --poly-fit 配合使用"
+        ),
     )
     field_group = parser.add_mutually_exclusive_group()
     field_group.add_argument(
@@ -703,6 +738,9 @@ def parse_and_build(
 
     poly_fit = getattr(args, "poly_fit", None)  # None=禁用；正整数=拟合总次数
     poly_fit_npts = int(getattr(args, "poly_fit_npts", 8))
+    poly_symmetry = getattr(args, "poly_symmetry", None) or ()
+    if poly_symmetry and poly_fit is None:
+        raise ValueError("--poly-symmetry 须配合 --poly-fit 使用（对称约束仅作用于多项式拟合）")
     if continuous_sampling:
         if continuous_sampling_plot:
             # 边计算边实时显示 + 逐帧存 npz：保留 plot_fig，弹窗（imply show_plot）
@@ -752,4 +790,5 @@ def parse_and_build(
         continuous_sampling_plot=continuous_sampling_plot,
         poly_fit=poly_fit,
         poly_fit_npts=poly_fit_npts,
+        poly_symmetry=poly_symmetry,
     )

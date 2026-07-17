@@ -168,3 +168,27 @@ def test_poly_fit_rejects_invalid():
     for bad in ["0", "-1", "quartic", "2.5"]:
         with pytest.raises(SystemExit):
             parser.parse_args(["--poly-fit", bad])
+
+
+def test_poly_symmetry_parsed():
+    """--poly-symmetry 支持逗号分隔与拼接，归一到 (x,y,z) 子序。"""
+    parser = create_parser()
+    assert parser.parse_args(["--poly-symmetry", "x,z"]).poly_symmetry == ("x", "z")
+    assert parser.parse_args(["--poly-symmetry", "yz"]).poly_symmetry == ("y", "z")
+    assert parser.parse_args(["--poly-symmetry", "Z,X"]).poly_symmetry == ("x", "z")
+
+
+def test_poly_symmetry_default_empty():
+    """不传 --poly-symmetry 时为 None（parse_and_build 中归一为 ()）。"""
+    parser = create_parser()
+    assert parser.parse_args([]).poly_symmetry is None
+
+
+def test_poly_symmetry_rejects_invalid():
+    """非 x/y/z 子集应被拒绝。"""
+    import pytest
+
+    parser = create_parser()
+    for bad in ["x,w", "abc", "1"]:
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--poly-symmetry", bad])

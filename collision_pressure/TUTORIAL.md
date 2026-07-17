@@ -171,17 +171,15 @@ $$V = \frac{1}{2}m(\omega_x^2 x^2 + \omega_y^2 y^2 + \omega_z^2 z^2) / q$$
 python -m collision_pressure simulate \
   --csv data/monolithic20241118.csv \
   --config FieldConfiguration/configs/collision.json \
-  --fit-mode quartic
+  --fit-mode 4
 ```
 
-`--fit-mode` 选项：
-| 模式 | 基函数数量 | 说明 |
-|------|-----------|------|
-| `quadratic` | 10 | 纯谐振近似，快速 |
-| `quartic` | 35 | 默认，含 4 阶修正项 |
-| `quartic_even` | 35 | 仅偶数阶（镜像对称势阱） |
-| `even` | 125 | 高阶偶函数 |
-| `none` | 0 | 仅库仑力，无外势 |
+`--fit-mode N`：3D 多项式总次数 N（基 i+j+k≤N，项数 C(N+3,3)）。
+| N | 基函数数量 | 说明 |
+|---|-----------|------|
+| 2 | 10 | 总次数≤2，纯二次（含交叉项），快速 |
+| 4 | 35 | 默认，含 4 阶修正项 |
+| 6 | 84 | 六次，更精细 |
 
 ---
 
@@ -528,7 +526,7 @@ from collision_pressure import setup_fit
 fit, cfg = setup_fit(
     csv_path="data/monolithic20241118.csv",
     config_path="FieldConfiguration/configs/collision.json",
-    fit_mode="quartic",
+    fit_mode=4,
 )
 ```
 

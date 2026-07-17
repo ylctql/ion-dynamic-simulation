@@ -40,7 +40,7 @@ def test_calc_field_from_poly_returns_correct_count():
 def test_calc_field_from_poly_gradient_quadratic():
     """
     对二次势场 V = a*(x²+y²+z²) 拟合后，梯度应为 -2a*(x,y,z)。
-    使用 quadratic 模式（4 项：常数 + u²+v²+w²）可精确拟合。
+    使用 fit_mode=2（总次数≤2，10 项）可精确拟合（一次/交叉项系数收敛到 0）。
     """
     n_per_axis = 6
     span_um = 80.0
@@ -57,7 +57,7 @@ def test_calc_field_from_poly_gradient_quadratic():
 
     field_interps = calc_field_from_poly(
         grid_coord, grid_voltage, dl, dV,
-        fit_mode="quadratic", n_pts_per_axis=6,
+        fit_mode=2, n_pts_per_axis=6,
     )
 
     # 在格点中心附近采样验证
@@ -100,7 +100,7 @@ def test_calc_field_from_poly_quartic_on_quadratic():
 
     field_interps = calc_field_from_poly(
         grid_coord, grid_voltage, dl, dV,
-        fit_mode="quartic",
+        fit_mode=4,
     )
 
     half_norm = grid_coord.max()
@@ -126,15 +126,15 @@ def test_calc_field_from_poly_rejects_nonregular_grid():
 # ============== 整数 fit_mode（任意次多项式拟合）==============
 
 def test_fit_mode_basis_exponents_int_total_degree():
-    """正整数 N → 总次数 i+j+k≤N 的完整基，项数 C(N+3,3)；N=4 与 'quartic' 同基。"""
+    """正整数 N → 总次数 i+j+k≤N 的完整基，项数 C(N+3,3)；数字字符串等价于整数。"""
     from math import comb
     from equilibrium.potential_fit_3d import fit_mode_basis_exponents
 
     assert len(fit_mode_basis_exponents(2)) == comb(2 + 3, 3) == 10
     assert len(fit_mode_basis_exponents(4)) == 35
     assert len(fit_mode_basis_exponents(6)) == 84
-    # N=4 与字符串 'quartic' 生成同一组基
-    assert fit_mode_basis_exponents(4) == fit_mode_basis_exponents("quartic")
+    # 数字字符串 "4" 与整数 4 等价（CLI 透传）
+    assert fit_mode_basis_exponents(4) == fit_mode_basis_exponents("4")
     # 所有单项式均满足总次数约束
     for i, j, k in fit_mode_basis_exponents(6):
         assert i + j + k <= 6
@@ -173,20 +173,104 @@ def test_calc_field_from_poly_int_mode_2_exact_quadratic():
                                err_msg="fit_mode=2 应精确拟合二次势梯度")
 
 
-def test_calc_field_from_poly_int_mode_4_equals_quartic():
-    """整数 fit_mode=4 与字符串 'quartic' 生成同一组 35 项基，梯度应一致。"""
-    grid_coord, grid_voltage, dl, dV, _ = _make_quadratic_grid(n_per_axis=6)
+def test_normalize_symmetry_axes():
+    """对称轴输入规范化：逗号/拼接/大小写/序列/空 均归一到 (x,y,z) 子序。"""
+    from equilibrium.potential_fit_3d import normalize_symmetry_axes
 
-    E_int = calc_field_from_poly(grid_coord, grid_voltage, dl, dV, fit_mode=4)[0]
-    E_str = calc_field_from_poly(grid_coord, grid_voltage, dl, dV, fit_mode="quartic")[0]
+    assert normalize_symmetry_axes(None) == ()
+    assert normalize_symmetry_axes("") == ()
+    assert normalize_symmetry_axes("x") == ("x",)
+    assert normalize_symmetry_axes("x,z") == ("x", "z")
+    assert normalize_symmetry_axes("zx") == ("x", "z")          # 拼接，顺序归一
+    assert normalize_symmetry_axes("Z,Y") == ("y", "z")          # 大小写 + 顺序归一
+    assert normalize_symmetry_axes(["y", "x"]) == ("x", "y")     # 序列 + 去重
+    assert normalize_symmetry_axes(("x", "x", "y")) == ("x", "y")  # 去重
 
-    h = grid_coord.max()
-    test_r = np.array([
-        [h * 0.1, -h * 0.2, h * 0.05],
-        [0.0, h * 0.3, 0.0],
-    ])
-    np.testing.assert_allclose(E_int(test_r), E_str(test_r), atol=1e-12,
-                               err_msg="fit_mode=4 与 'quartic' 应完全等价")
+    import pytest
+    with pytest.raises(ValueError):
+        normalize_symmetry_axes("x,w")
+
+
+def test_filter_basis_by_symmetry():
+    """symmetry_axes 在拟合前从基底剔除对应轴的奇次单项式。"""
+    from math import comb
+    from equilibrium.potential_fit_3d import (
+        QUADRATIC_FIT_EXPS,
+        filter_basis_by_symmetry,
+        fit_mode_basis_exponents,
+        quartic_3d_exponents_total_degree,
+    )
+
+    full4 = quartic_3d_exponents_total_degree(4)
+    # 无约束 → 原样
+    assert filter_basis_by_symmetry(full4, None) == full4
+    assert filter_basis_by_symmetry(full4, "") == full4
+
+    # 仅 x 对称：剔除所有 i 为奇的项，保留 j/k 可奇
+    x_only = filter_basis_by_symmetry(full4, "x")
+    assert all(i % 2 == 0 for (i, j, k) in x_only)
+    # 仍应含 (0,1,0)、(0,0,1) 这类 y/z 奇次项
+    assert (0, 1, 0) in x_only and (0, 0, 1) in x_only
+    # (1,0,0) 被剔除
+    assert (1, 0, 0) not in x_only
+
+    # x+z 对称：剔除 i 奇 或 k 奇
+    xz = filter_basis_by_symmetry(full4, "x,z")
+    assert all(i % 2 == 0 and k % 2 == 0 for (i, j, k) in xz)
+    assert (0, 1, 0) in xz          # j 可奇
+    assert (0, 0, 1) not in xz      # k 奇被剔除
+
+    # N=2 + 全对称 ≡ 旧 quadratic 基底（常数 + u²,v²,w²，同一项集）
+    assert set(fit_mode_basis_exponents(2, ("x", "y", "z"))) == set(QUADRATIC_FIT_EXPS)
+    # N=4 + 全对称项数 = 总次数≤4 中全偶项数
+    full_even = filter_basis_by_symmetry(full4, "xyz")
+    assert len(full_even) == sum(
+        1 for s in range(5) for i in range(s + 1) for j in range(s + 1 - i)
+        if (i % 2 == 0 and (s - i - j) % 2 == 0 and j % 2 == 0)
+    )
+
+
+def test_calc_field_from_poly_symmetry_enforces_mirror():
+    """
+    symmetry_axes=('x',) 在拟合前剔除 x 奇次项：即便数据含非对称的 b*x 项，
+    拟合后 E_x 仍为 x 的奇函数（E_x(+x) = -E_x(-x)），而未约束拟合则保留偏移。
+    """
+    n_per_axis = 7
+    span_um = 80.0
+    dl = 1e-6
+    dV = 1.0
+    half_norm = span_um * 1e-6 / dl
+    a = 0.5 / (half_norm ** 2)
+    b = 0.3 / half_norm  # 非对称线性项的归一化系数
+
+    lin = np.linspace(-half_norm, half_norm, n_per_axis)
+    xx, yy, zz = np.meshgrid(lin, lin, lin, indexing="ij")
+    grid_coord = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
+    # V = a*(x²+y²+z²) + b*x   ← b*x 破坏 x 镜面对称
+    grid_voltage = (a * (grid_coord ** 2).sum(axis=1) + b * grid_coord[:, 0]).reshape(-1, 1)
+
+    # 约束 x 对称
+    E_sym = calc_field_from_poly(
+        grid_coord, grid_voltage, dl, dV,
+        fit_mode=4, symmetry_axes="x", n_pts_per_axis=n_per_axis,
+    )[0]
+    # 不约束
+    E_free = calc_field_from_poly(
+        grid_coord, grid_voltage, dl, dV,
+        fit_mode=4, n_pts_per_axis=n_per_axis,
+    )[0]
+
+    xp = half_norm * 0.3
+    E_sym_pos = E_sym(np.array([[xp, 0.0, 0.0]]))[0]
+    E_sym_neg = E_sym(np.array([[-xp, 0.0, 0.0]]))[0]
+    # 对称约束下 E_x 为奇函数（线性 b*x 贡献被投影剔除）
+    np.testing.assert_allclose(E_sym_pos[0], -E_sym_neg[0], atol=1e-9,
+                               err_msg="x 对称约束下 E_x 应为奇函数")
+
+    # 不约束时 E_x 含 -b 偏移（奇对称被破坏）
+    E_free_pos = E_free(np.array([[xp, 0.0, 0.0]]))[0]
+    E_free_neg = E_free(np.array([[-xp, 0.0, 0.0]]))[0]
+    assert abs(E_free_pos[0] + E_free_neg[0]) > 1e-6, "未约束拟合应保留 x 非对称偏移"
 
 
 def test_calc_field_from_poly_int_mode_6_recovers_sixth_order():

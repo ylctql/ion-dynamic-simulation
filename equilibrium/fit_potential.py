@@ -17,6 +17,21 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
+def _parse_symmetry_axes(s: str, parser: argparse.ArgumentParser) -> tuple[str, ...]:
+    """解析 '--symmetry-axes x,z' / 'xyz' 为规范化 (x,y,z) 子序元组；空串 → ()。"""
+    raw = s.strip()
+    if not raw:
+        return ()
+    chars: list[str] = []
+    for tok in raw.replace(",", " ").split():
+        tok = tok.lower()
+        if all(c in "xyz" for c in tok):
+            chars.extend(list(tok))
+        else:
+            parser.error(f"--symmetry-axes 仅支持 x/y/z 子集（如 'x,z'），得到 {s!r}")
+    return tuple(ax for ax in ("x", "y", "z") if ax in set(chars))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="沿 x,y,z 三轴对总势场做四次多项式拟合"
@@ -55,13 +70,19 @@ def main() -> None:
     )
     parser.add_argument(
         "--fit-mode",
+        type=int,
+        default=4,
+        metavar="N",
+        help="多项式总次数 N（基 i+j+k≤N，项数 C(N+3,3)，如 4→35、6→84），默认 4",
+    )
+    parser.add_argument(
+        "--symmetry-axes",
         type=str,
-        default="quartic",
-        choices=["none", "even", "quartic", "quartic_even", "quadratic"],
+        default="",
+        metavar="AXES",
         help=(
-            "默认 quartic=35 项总次数≤4；"
-            "none=125 项张量；even=27 项全偶；"
-            "quartic_even=10 项；quadratic=4 项（均为缩放坐标 u,v,w）"
+            "拟合对称轴子集 (x/y/z，如 'x,z' 或 'xyz')；拟合前剔除所列轴奇次单项式，"
+            "强制关于 --center 镜面对称。默认空（不约束）"
         ),
     )
     parser.add_argument(
@@ -167,6 +188,9 @@ def main() -> None:
         write_potential_fit_coeff_json,
     )
 
+    if args.fit_mode < 0:
+        parser.error("--fit-mode 须为非负整数（总次数 N）")
+    sym_axes = _parse_symmetry_axes(args.symmetry_axes, parser)
     fit = fit_potential_3d_quartic(
         compute_V_total=compute_V_total,
         um_to_norm=um_to_norm_fn,
@@ -175,6 +199,7 @@ def main() -> None:
         n_pts_per_axis=args.n_pts,
         potential_offset_V=v_min_grid,
         fit_mode=args.fit_mode,
+        symmetry_axes=sym_axes,
     )
     write_potential_fit_coeff_json(
         fit,
@@ -193,8 +218,8 @@ def main() -> None:
     print()
     print(f"拟合优度 R²: {fit.r_squared:.6f}")
     print()
-    mode_disp = fit.fit_mode if fit.fit_mode else "none"
-    sym_note = f"，fit_mode={mode_disp}（{len(fit.basis_exps)} 项）"
+    sym_disp = ",".join(fit.symmetry_axes) if fit.symmetry_axes else "none"
+    sym_note = f"，fit_mode={fit.fit_mode}, symmetry_axes={sym_disp}（{len(fit.basis_exps)} 项）"
     print(
         "模型: V_shifted = Σ c_ijk u^i v^j w^k"
         f"{sym_note}, u=(x-x0)/L, v=(y-y0)/L, w=(z-z0)/L"

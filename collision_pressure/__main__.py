@@ -18,8 +18,8 @@ def main() -> int:
     p_scan.add_argument("--n-scans", type=int, default=200)
     p_scan.add_argument("--seed", type=int, default=42)
     p_scan.add_argument("--maxiter", type=int, default=500)
-    p_scan.add_argument("--fit-mode", type=str, default="quartic",
-                        choices=["none", "even", "quartic", "quartic_even", "quadratic"])
+    p_scan.add_argument("--fit-mode", type=int, default=4, metavar="N",
+                        help="3D 势拟合多项式总次数 N（如 4→35、6→84），默认 4")
     p_scan.add_argument("--output-dir", type=str, default=None)
     p_scan.add_argument("--csv", type=str, default=None)
     p_scan.add_argument("--trap-freq", nargs=3, type=float, metavar=("FX", "FY", "FZ"))
@@ -77,8 +77,8 @@ def main() -> int:
     field_group.add_argument("--csv", type=str, default=None)
     field_group.add_argument("--trap-freq", nargs=3, type=float, metavar=("FX", "FY", "FZ"))
     p_sim.add_argument("--config", type=str, default="FieldConfiguration/configs/collision.json")
-    p_sim.add_argument("--fit-mode", type=str, default="quartic",
-                       choices=["none", "even", "quartic", "quartic_even", "quadratic"])
+    p_sim.add_argument("--fit-mode", type=int, default=4, metavar="N",
+                       help="3D 势拟合多项式总次数 N（如 4→35、6→84），默认 4")
 
     args = parser.parse_args()
 

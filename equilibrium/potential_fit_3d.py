@@ -1,16 +1,18 @@
 """
 总势场 3D 多项式拟合（缩放坐标 u,v,w）
 
-fit_potential_3d_quartic: V_shifted = Σ c_{ijk} u^i v^j w^k，由 fit_mode 选基底：
-- 非负整数 N：总次数 i+j+k≤N 的完整三元多项式基，C(N+3,3) 项（如 4→35、6→84）；
-- quartic：总次数 i+j+k≤4，35 项（等价于 N=4）；
-- none：0≤i,j,k≤4 张量积，5³=125 项；
-- even：在 125 项上删去 i,j,k 任一为奇数的项（仅全偶次），27 项；
-- quartic_even：quartic 上仅保留 i,j,k 全偶，10 项；
-- quadratic：常数 + u²,v²,w²，4 项。
+fit_potential_3d_quartic: V_shifted = Σ c_{ijk} u^i v^j w^k，多项式形式由两个**正交**维度决定：
 
-系数存 (D+1,D+1,D+1)，D 为基底每变量最高次且 D≥4（故既有字符串模式仍为 (5,5,5)），
-未用位置为 0，与 numpy polynomial.polyval3d 兼容；求值/梯度/Hessian 均按 coeffs 实际维度动态计算。
+- ``fit_mode``（非负整数 N）：总次数 i+j+k≤N 的完整三元多项式基，C(N+3,3) 项（如 2→10、4→35、6→84）。
+  仅指定"用哪些次数的项"。
+- ``symmetry_axes``（{'x','y','z'} 的子集，可省略）：在上述基底上**拟合前**剔除对称轴指数为奇数的单项式，
+  强制势场关于 center_um 处相应坐标平面镜面对称（V(x₀+δ)=V(x₀−δ) ⟺ 该轴仅保留偶次项）。
+  例如 ``symmetry_axes=("x","z")`` 删去所有 i 或 k 为奇的项；``("x","y","z")`` 仅留全偶项。
+
+二者组合即可表达任意想要的对称多项式形式：例如 N=2 + 全对称 ≡ 旧 quadratic（常数 + u²,v²,w²）。
+
+系数存 (D+1,D+1,D+1)，D 为基底每变量最高次且 D≥4，未用位置为 0，与 numpy polynomial.polyval3d 兼容；
+求值/梯度/Hessian 均按 coeffs 实际维度动态计算。
 """
 from __future__ import annotations
 
@@ -26,6 +28,9 @@ from numpy.polynomial import polynomial as P
 
 
 DEGREE_QUARTIC = 4
+
+# 对称轴名 → 指数位（与 (i,j,k) 顺序一致）
+_AXIS_INDEX: dict[str, int] = {"x": 0, "y": 1, "z": 2}
 
 
 def quartic_3d_exponents_total_degree(max_total: int = DEGREE_QUARTIC) -> tuple[tuple[int, int, int], ...]:
@@ -45,13 +50,7 @@ def quartic_3d_exponents_total_degree(max_total: int = DEGREE_QUARTIC) -> tuple[
 QUARTIC_3D_EXPS: tuple[tuple[int, int, int], ...] = quartic_3d_exponents_total_degree(DEGREE_QUARTIC)
 N_QUARTIC_3D_TERMS = len(QUARTIC_3D_EXPS)
 
-# 各变量次数分别 ≤4：张量积基底，与 polyvander3d([4,4,4]) 列序一致（i 最外层）
-TENSOR_MAXDEG4_EXPS: tuple[tuple[int, int, int], ...] = tuple(
-    (i, j, k) for i in range(5) for j in range(5) for k in range(5)
-)
-N_TENSOR_MAXDEG4_TERMS = len(TENSOR_MAXDEG4_EXPS)
-
-# 二次模型：常数项 + u², v², w²（JSON 标签仍为 1, x^2, y^2, z^2）
+# 理想谐振阱专用：常数项 + u², v², w²（= N=2 + 全对称 的子集，JSON 标签为 1, x^2, y^2, z^2）
 QUADRATIC_FIT_EXPS: tuple[tuple[int, int, int], ...] = (
     (0, 0, 0),
     (2, 0, 0),
@@ -60,57 +59,103 @@ QUADRATIC_FIT_EXPS: tuple[tuple[int, int, int], ...] = (
 )
 
 
-def normalize_fit_mode(fit_mode: str | int | None) -> str | int | None:
+def normalize_fit_mode(fit_mode: int | str) -> int:
     """
-    None/'none'：张量积 125 项；'even'：125 项中去奇次（27）；'quartic'：总次数≤4（35 项）；
-    'quartic_even'：quartic + 全偶（10）；'quadratic'：常数 + 轴二次（4）。
-    非负整数 N：总次数 ≤N 的完整三元多项式基（C(N+3,3) 项），如 4→35、6→84；数字字符串 "6" 同样解析为 6。
+    将 fit_mode 规范化为非负整数 N（总次数）。
+
+    接受非负整数，或可解析为非负整数的字符串（如 ``"6"``，便于 CLI 透传）。
+    不接受 None / 布尔 / 负数 / 任意字符串——多项式形式完全由整数次数 N 表达。
     """
-    if fit_mode is None:
-        return None
     # bool 是 int 子类，先排除
     if isinstance(fit_mode, bool):
         raise ValueError(f"fit_mode 不接受布尔值: {fit_mode!r}")
     if isinstance(fit_mode, int):
         if fit_mode < 0:
-            raise ValueError(f"fit_mode 整数须非负，得到 {fit_mode}")
+            raise ValueError(f"fit_mode 须为非负整数（总次数 N），得到 {fit_mode}")
         return fit_mode
-    s = str(fit_mode).strip().lower()
-    if s in ("", "none"):
-        return None
-    if s in ("even", "quartic", "quartic_even", "quadratic"):
-        return s
+    s = str(fit_mode).strip()
     if s.isdigit():  # 数字字符串 → 整数（便于 CLI 透传）
         return int(s)
     raise ValueError(
-        f"fit_mode={fit_mode!r} 不受支持，请使用非负整数(总次数 N)、none、even、quartic、quartic_even、quadratic"
+        f"fit_mode={fit_mode!r} 不受支持，请使用非负整数（总次数 N，如 4→35 项）"
     )
 
 
-def fit_mode_basis_exponents(fit_mode: str | int | None) -> tuple[tuple[int, int, int], ...]:
-    """按 fit_mode 返回拟合用单项式指数 (i,j,k)，对应 u^i v^j w^k。"""
-    key = normalize_fit_mode(fit_mode)
-    if key is None:
-        return TENSOR_MAXDEG4_EXPS
-    if isinstance(key, int):  # 非负整数 N → 总次数 ≤N 完整基
-        return quartic_3d_exponents_total_degree(key)
-    if key == "even":
-        return tuple(
-            (i, j, k)
-            for (i, j, k) in TENSOR_MAXDEG4_EXPS
-            if i % 2 == 0 and j % 2 == 0 and k % 2 == 0
+def normalize_symmetry_axes(
+    symmetry_axes: str | tuple[str, ...] | list[str] | None,
+) -> tuple[str, ...]:
+    """
+    将对称轴输入规范化为按 (x,y,z) 顺序排列的唯一轴元组。
+
+    接受：
+    - None / 空串 / 空容器 → () （无对称约束）；
+    - 字符串："x,z" 或 "xz" 或 "x"（逗号分隔或直接拼接均可）；
+    - 序列：("x","z")、["y"] 等。
+
+    每个轴须 ∈ {'x','y','z'}（大小写不敏感），重复轴自动去重。
+    """
+    if symmetry_axes is None:
+        return ()
+    if isinstance(symmetry_axes, str):
+        tokens = symmetry_axes.replace(",", " ").split()
+    else:
+        tokens = [str(a) for a in symmetry_axes]
+    # 允许拼接形式 "xz" → 拆成单字符
+    chars: list[str] = []
+    for tok in tokens:
+        tok = tok.strip().lower()
+        if len(tok) == 1:
+            chars.append(tok)
+        elif len(tok) > 1 and all(c in _AXIS_INDEX for c in tok):
+            chars.extend(list(tok))
+        elif tok:
+            raise ValueError(
+                f"symmetry_axes 含非法轴 {tok!r}，仅支持 x/y/z 的子集（如 'x,z' 或 'xz'）"
+            )
+    bad = [c for c in chars if c not in _AXIS_INDEX]
+    if bad:
+        raise ValueError(
+            f"symmetry_axes 含非法轴 {bad}，仅支持 x/y/z 的子集（如 'x,z' 或 'xz'）"
         )
-    if key == "quartic":
-        return QUARTIC_3D_EXPS
-    if key == "quartic_even":
-        return tuple(
-            (i, j, k)
-            for (i, j, k) in QUARTIC_3D_EXPS
-            if i % 2 == 0 and j % 2 == 0 and k % 2 == 0
-        )
-    if key == "quadratic":
-        return QUADRATIC_FIT_EXPS
-    raise RuntimeError("unreachable")
+    # 去重并按 (x,y,z) 固定顺序排列
+    return tuple(ax for ax in ("x", "y", "z") if ax in set(chars))
+
+
+def filter_basis_by_symmetry(
+    basis_exps: tuple[tuple[int, int, int], ...],
+    symmetry_axes: str | tuple[str, ...] | list[str] | None,
+) -> tuple[tuple[int, int, int], ...]:
+    """
+    从基底中剔除违反镜面对称的单项式：对称轴上指数为奇数的项一律删除。
+
+    这是**拟合前**的基底选择——被剔除的单项式根本不进入设计矩阵，最小二乘仅在
+    保留项张成的对称子空间上求解（而非"全拟合后置零"），故保留项系数会被重新优化，
+    把被剔除方向上的（噪声/非对称）投影吸收掉。
+    """
+    axes = normalize_symmetry_axes(symmetry_axes)
+    if not axes:
+        return basis_exps
+    odd_positions = {_AXIS_INDEX[a] for a in axes}
+    return tuple(
+        (i, j, k)
+        for (i, j, k) in basis_exps
+        if all(exp % 2 == 0 for pos, exp in enumerate((i, j, k)) if pos in odd_positions)
+    )
+
+
+def fit_mode_basis_exponents(
+    fit_mode: int | str,
+    symmetry_axes: str | tuple[str, ...] | list[str] | None = None,
+) -> tuple[tuple[int, int, int], ...]:
+    """
+    返回拟合用单项式指数 (i,j,k)，对应 u^i v^j w^k。
+
+    先按 ``fit_mode``（非负整数 N）取总次数 ≤N 的完整基，再按 ``symmetry_axes``
+    剔除对称轴上奇次项。返回的基底即实际参与最小二乘的列集合。
+    """
+    n = normalize_fit_mode(fit_mode)
+    basis = quartic_3d_exponents_total_degree(n)
+    return filter_basis_by_symmetry(basis, symmetry_axes)
 
 
 def _monomial_factor(var: str, exp: int) -> str:
@@ -152,9 +197,9 @@ def write_potential_fit_coeff_json(
     config: str | Path | None = None,
 ) -> None:
     """
-    将四次拟合各阶项系数写入 JSON。
+    将多项式拟合各阶项系数写入 JSON。
 
-    文件结构：csv、config、fit_mode，随后 coefficients（项名 -> float）。
+    文件结构：csv、config、fit_mode、symmetry_axes，随后 coefficients（项名 -> float）。
     """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -163,7 +208,8 @@ def write_potential_fit_coeff_json(
     payload: dict[str, object] = {
         "csv": csv_name,
         "config": config_name,
-        "fit_mode": fit.fit_mode if fit.fit_mode else "none",
+        "fit_mode": fit.fit_mode if fit.fit_mode is not None else "none",
+        "symmetry_axes": list(fit.symmetry_axes),
         "center_um": [float(c) for c in fit.center_um],
         "scale_um": float(fit.scale_um),
         "potential_offset_V": float(fit.potential_offset_V),
@@ -176,10 +222,11 @@ def write_potential_fit_coeff_json(
 @dataclass
 class FitResult3D:
     """
-    3D 四次多项式拟合结果
+    3D 多项式拟合结果
 
     势场模型: V_shifted = Σ c_ijk u^i v^j w^k，u=(x-x0)/L, v=(y-y0)/L, w=(z-z0)/L，
-    仅 fit_mode 所选基底中的项非零（见 fit_mode_basis_exponents）；(5,5,5) 存储。
+    仅 (fit_mode, symmetry_axes) 选定基底中的项非零（见 fit_mode_basis_exponents）；
+    存于 (D+1)³ 张量，D≥4，故低次/对称削项基底仍占 (5,5,5)，未参与拟合的位置恒为 0。
     为数值稳定，拟合在缩放坐标上进行。L 为半跨度。
     V_shifted = V_true - V_min_ref（将零点平移到参考最小势）。坐标单位: μm
     """
@@ -189,8 +236,9 @@ class FitResult3D:
     scale_um: float  # L，坐标缩放半跨度
     potential_offset_V: float  # 参考最小势 V_min_ref（被减去）
     r_squared: float
-    fit_mode: str | None = None  # 本此拟合模式键；None 在结果里表示 none（125 项张量）
-    basis_exps: tuple[tuple[int, int, int], ...] = field(default_factory=lambda: TENSOR_MAXDEG4_EXPS)
+    fit_mode: int | None = None  # 本次拟合的总次数 N；None 表示非拟合来源（显式系数/理想阱）
+    symmetry_axes: tuple[str, ...] = ()  # 拟合时施加的对称轴子集（规范化的 (x,y,z) 子序）
+    basis_exps: tuple[tuple[int, int, int], ...] = field(default_factory=lambda: QUARTIC_3D_EXPS)
 
     def _build_grad_coeffs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Pre-compute derivative coefficient arrays for grad_fit_3d（按 coeffs 实际维度动态）。"""
@@ -224,12 +272,14 @@ def fit_potential_3d_quartic(
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
     n_pts_per_axis: int | tuple[int, int, int] = 8,
     potential_offset_V: float | None = None,
-    fit_mode: str | int | None = "quartic",
+    fit_mode: int | str = 4,
+    symmetry_axes: str | tuple[str, ...] | list[str] | None = None,
 ) -> FitResult3D:
     """
     对总势场在缩放坐标下做多项式最小二乘拟合，并将势能零点平移到参考最小势。
 
-    基底由 fit_mode 决定（见模块文档）。
+    多项式形式由 ``fit_mode``（次数）与 ``symmetry_axes``（对称轴）共同决定（见模块文档）。
+    对称约束在**拟合前**从基底中剔除违反镜面对称的单项式，最小二乘仅在保留的对称子空间上求解。
 
     Parameters
     ----------
@@ -238,7 +288,7 @@ def fit_potential_3d_quartic(
     um_to_norm : callable
         μm → 归一化坐标的转换函数
     center_um : tuple
-        参考中心 (x0, y0, z0) μm，用于报告
+        参考中心 (x0, y0, z0) μm；对称约束关于此点（镜像面 x=x0 等），须设为真实对称中心。
     range_um : tuple of tuples, optional
         各轴拟合范围 ((x_min, x_max), (y_min, y_max), (z_min, z_max)) μm
         默认 (-50, 50) 每轴
@@ -247,11 +297,12 @@ def fit_potential_3d_quartic(
         基函数多时须保证有效网格点数 ≥ 未知数个数。
     potential_offset_V : float | None
         势能零点平移参考值 V_min_ref（单位 V）。若为 None，则退化为当前拟合采样点的最小势。
-    fit_mode : str | int | None
-        非负整数 N：总次数 i+j+k≤N 的完整基（C(N+3,3) 项，如 4→35、6→84），与 'quartic'(=4) 连续。
-        'none'：0≤i,j,k≤4 张量积（125）。'even'：其上去掉任一指为奇次的项（27）。
-        'quartic_even'：quartic 的全偶子集（10）。'quadratic'：常数 + u²,v²,w²（4）。
-        显式传入 None 等价于 'none'（125 项）。
+    fit_mode : int | str
+        非负整数 N：总次数 i+j+k≤N 的完整基（C(N+3,3) 项，如 4→35、6→84）。
+        默认 4（= quartic，35 项）。
+    symmetry_axes : str | tuple[str,...] | None
+        对称轴子集 {'x','y','z'}，如 "x,z" 或 ("x","z")；None/空表示不施加对称约束。
+        每个列出的轴强制镜面对称（剔除该轴奇次单项式）。
 
     Returns
     -------
@@ -303,10 +354,12 @@ def fit_potential_3d_quartic(
     V_true = compute_V_total(r_norm)
 
     mode_key = normalize_fit_mode(fit_mode)
-    basis_exps = fit_mode_basis_exponents(fit_mode)
+    sym_axes = normalize_symmetry_axes(symmetry_axes)
+    # 基底 = 总次数≤N 的完整基，再按对称轴剔除奇次项（拟合前的形式约束）
+    basis_exps = fit_mode_basis_exponents(mode_key, sym_axes)
     n_basis = len(basis_exps)
 
-    # 设计矩阵：fit_mode 选定基，缩放坐标 u,v,w
+    # 设计矩阵：仅保留基底中的项，缩放坐标 u,v,w
     V_mat = np.empty((u_flat.size, n_basis), dtype=float)
     for col, (i, j, k) in enumerate(basis_exps):
         V_mat[:, col] = (u_flat**i) * (v_flat**j) * (w_flat**k)
@@ -314,7 +367,8 @@ def fit_potential_3d_quartic(
     if np.sum(valid) < n_basis:
         raise ValueError(
             f"有效采样点 {np.sum(valid)} 不足，至少需 {n_basis} 点拟合"
-            f"（fit_mode={mode_key or 'none'}，当前基底项数 {n_basis}）。"
+            f"（fit_mode={mode_key}，symmetry_axes={sym_axes or '()'}，"
+            f"当前基底项数 {n_basis}）。"
             f"请增大 n_pts_per_axis（当前网格 {nx}x{ny}x{nz}）或检查势场范围。"
         )
     V_mat_valid = V_mat[valid]
@@ -328,7 +382,7 @@ def fit_potential_3d_quartic(
     V_shifted_valid = V_true_valid - v_min_ref
 
     coefs_flat, residuals, rank, s = np.linalg.lstsq(V_mat_valid, V_shifted_valid, rcond=None)
-    # 系数数组维度 = 每变量最高次 +1；至少 (5,5,5) 以与既有字符串模式的存储/调用方一致
+    # 系数数组维度 = 每变量最高次 +1；至少 (5,5,5) 以兼容低次/对称削项基底
     deg = max(max(e) for e in basis_exps)
     deg = max(deg, DEGREE_QUARTIC)
     coefs = np.zeros((deg + 1, deg + 1, deg + 1))
@@ -348,6 +402,7 @@ def fit_potential_3d_quartic(
         potential_offset_V=v_min_ref,
         r_squared=r_squared,
         fit_mode=mode_key,
+        symmetry_axes=sym_axes,
         basis_exps=basis_exps,
     )
 
@@ -546,7 +601,8 @@ def make_ideal_trap_fit(
         scale_um=scale_um,
         potential_offset_V=0.0,
         r_squared=1.0,
-        fit_mode="quadratic",
+        fit_mode=2,
+        symmetry_axes=("x", "y", "z"),
         basis_exps=_QUADRATIC_BASIS_EXPS,
     )
 

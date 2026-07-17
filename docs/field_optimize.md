@@ -316,7 +316,7 @@ python field_visualize.py --csv default.csv --config optimized.json --symmetry p
 
 | 参数 | CLI | 默认值 | 说明 |
 |------|-----|--------|------|
-| 拟合模式 | `--symmetry-fit-mode` | `quartic` | 3D 多项式拟合模式 |
+| 拟合模式 | `--symmetry-fit-mode` | `4` | 对称性诊断用 3D 多项式总次数 N（如 4→35 项） |
 | 采样点数 | `--symmetry-n-pts` | `6` | 对称性评估每轴采样点数（总计 N³） |
 
 ### 势场平滑

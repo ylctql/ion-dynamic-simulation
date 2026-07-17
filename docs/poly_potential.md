@@ -210,7 +210,7 @@ $$V(\mathbf{r}) = \sum_{ijk} c_{ijk}\, u^i v^j w^k,\qquad u=\frac{x-x_0}{L},\ v=
 - `write_potential_fit_coeff_json` 把拟合的 `center_um`、`scale_um`（即 `L`，由拟合范围自动算出）、`potential_offset_V` 与 `coefficients`（term-label→V）**原样写入** JSON；
 - `load_poly_potential_json` 读回同样的字段、按同一模型重建 `FitResult3D`。
 
-因此拟合导出的系数**无需任何换算**即可作为 `--poly-potential` 输入。已实测验证（default config + monolithic20241118.csv，`fit-mode quartic`）：
+因此拟合导出的系数**无需任何换算**即可作为 `--poly-potential` 输入。已实测验证（default config + monolithic20241118.csv，`--fit-mode 4`）：
 
 - 拟合 `R² = 0.99987`，`scale_um = 150.0`（z 轴半跨度主导）；
 - 导出→读回的系数张量逐元素一致（容差 1e-12）；
@@ -225,7 +225,8 @@ $$V(\mathbf{r}) = \sum_{ijk} c_{ijk}\, u^i v^j w^k,\qquad u=\frac{x-x_0}{L},\ v=
 ```bash
 # 拟合 config 总势并导出系数到 equilibrium/results/potential_fit_coeff.json
 python -m equilibrium.fit_potential --csv <csv> --config <json> \
-    --fit-mode quartic --n-pts 100 \
+    --fit-mode 4 --n-pts 100 \
+    [--symmetry-axes x,z] \
     [--x-range -50,50 --y-range -20,20 --z-range -100,100 --center 0,0,0] \
     [--plot-fit-report]   # 可选：1D/2D/残差/梯度误差可视化报告
 ```
@@ -234,7 +235,7 @@ python -m equilibrium.fit_potential --csv <csv> --config <json> \
 
 ```bash
 python -m equilibrium.find_equilibrium --csv <csv> --config <json> \
-    --fit-mode quartic [--fit-n-pts-x 100 --fit-n-pts-y 40 --fit-n-pts-z 300]
+    --fit-mode 4 [--symmetry-axes x,z] [--fit-n-pts-x 100 --fit-n-pts-y 40 --fit-n-pts-z 300]
 ```
 
 两者写出的文件**逐字段一致**（均含 `center_um`/`scale_um`/`potential_offset_V`/`coefficients`），可直接喂动力学：
@@ -248,7 +249,7 @@ python main.py --N 50 --time 10 \
 
 > **字段有效性**：导出文件中的 `csv`/`config`/`fit_mode` 字段对 `--poly-potential` 无意义（被忽略）；`coefficients` + `center_um` + `scale_um` 才是有效输入。`potential_offset_V` 与常数项 `"1"` 只平移势能零点、梯度为零，**不影响力**。
 
-> **拟合基底限制**：`fit_mode=quartic`（35 项）、`none`（125 项）、`even`/`quartic_even`/`quadratic` 的所有项，每变量次数均 ≤4，都在 term-label 允许范围内，均可直接被 `--poly-potential` 读取。
+> **拟合基底**：`fit_mode` 为非负整数 N（总次数 i+j+k≤N，项数 C(N+3,3)，如 4→35、6→84）；`symmetry_axes`（x/y/z 子集）可在拟合前剔除对称轴奇次项、强制关于 center_um 镜面对称。注意 `--poly-potential` 的显式系数读取（`fit_result_from_coeff_map`）目前限定每变量次数 ≤4（(5,5,5) 张量），故 JSON 系数文件往返仅对 N≤4 完整成立；N>4 的拟合可直接用于动力学（`--poly-fit`），不受此限。
 
 > **`scale_um` 随工具/范围不同**：`fit_potential` 默认 z 范围 ±100 → `scale_um=100`；`find_equilibrium` 默认 z 范围 ±150 → `scale_um=150`。两者各自正确（`scale_um` 由拟合范围算出并写入），只要用同一文件配套使用即一致。
 

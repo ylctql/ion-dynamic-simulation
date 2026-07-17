@@ -1,7 +1,7 @@
 """
 基于 3D 多项式拟合的电场力函数构建
 
-对每个电极基函数独立做 quartic 多项式拟合，用解析梯度替代格点插值，
+对每个电极基函数独立做 N 次多项式拟合（可选对称轴约束），用解析梯度替代格点插值，
 消除数值噪声，获得全局光滑的力场。
 
 复用 equilibrium/potential_fit_3d.py 的拟合基础设施。
@@ -87,7 +87,8 @@ def calc_field_from_poly(
     dl: float,
     dV: float,
     *,
-    fit_mode: str | int = "quartic",
+    fit_mode: int | str = 4,
+    symmetry_axes: str | tuple[str, ...] | list[str] | None = None,
     n_pts_per_axis: int = 8,
     center_um: tuple[float, float, float] | None = None,
     range_um: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None,
@@ -108,13 +109,15 @@ def calc_field_from_poly(
         特征长度 (m)
     dV : float
         特征电压 (V)
-    fit_mode : str | int
-        多项式拟合模式：正整数 N 表示总次数 i+j+k≤N 的完整基（如 4→35、6→84），
-        或旧字符串 quartic/quadratic/none 等；默认 "quartic"（=4，35 项）
+    fit_mode : int | str
+        多项式总次数 N（基 i+j+k≤N，项数 C(N+3,3)，如 4→35、6→84）；默认 4。
+    symmetry_axes : str | tuple[str,...] | None
+        对称轴子集 {'x','y','z'}（如 "x,z"），拟合前剔除对称轴奇次单项式，
+        强制关于 center_um 镜面对称；None/空表示不约束。
     n_pts_per_axis : int
         拟合采样每轴点数，默认 8
     center_um : tuple or None
-        拟合中心 (µm)，默认为格点中心
+        拟合中心 (µm)，默认为格点中心（对称约束关于此点）
     range_um : tuple or None
         拟合范围 ((x_min,x_max), ...) (µm)，默认为格点范围
 
@@ -158,7 +161,7 @@ def calc_field_from_poly(
 
         compute_V = _make_compute_V(pot_interp, dV)
 
-        # 执行 3D 多项式拟合
+        # 执行 3D 多项式拟合（对称约束在拟合前从基底中剔除奇次项）
         fit = fit_potential_3d_quartic(
             compute_V_total=compute_V,
             um_to_norm=um_to_norm,
@@ -166,11 +169,12 @@ def calc_field_from_poly(
             range_um=range_um,
             n_pts_per_axis=n_pts_per_axis,
             fit_mode=fit_mode,
+            symmetry_axes=symmetry_axes,
         )
 
         logger.info(
-            "电极 %d/%d 多项式拟合: R²=%.8f, fit_mode=%s",
-            i + 1, n_basis, fit.r_squared, fit_mode,
+            "电极 %d/%d 多项式拟合: R²=%.8f, fit_mode=%s, symmetry_axes=%s",
+            i + 1, n_basis, fit.r_squared, fit_mode, fit.symmetry_axes,
         )
 
         # 创建力兼容 callable

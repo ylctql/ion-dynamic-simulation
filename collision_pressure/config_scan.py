@@ -149,7 +149,7 @@ class ConfigurationLibrary:
 def setup_fit(
     csv_path: str = "data/monolithic20241118.csv",
     config_path: str = "FieldConfiguration/configs/collision.json",
-    fit_mode: str = "quartic",
+    fit_mode: int = 4,
     smooth_axes: tuple[str, ...] = ("z",),
     smooth_window: int = 11,
     smooth_polyorder: int = 3,
@@ -265,7 +265,8 @@ def setup_fit_harmonic(
         scale_um=L,
         potential_offset_V=0.0,
         r_squared=1.0,
-        fit_mode="quadratic",
+        fit_mode=2,
+        symmetry_axes=("x", "y", "z"),
         basis_exps=QUADRATIC_FIT_EXPS,
     )
     return fit, 0.0

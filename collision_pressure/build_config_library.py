@@ -31,10 +31,10 @@ def main() -> int:
     parser.add_argument("--maxiter", type=int, default=500)
     parser.add_argument(
         "--fit-mode",
-        type=str,
-        default="quartic",
-        choices=["none", "even", "quartic", "quartic_even", "quadratic"],
-        help="3D 势拟合模式，仅在使用 CSV 数据时生效（默认 quartic）",
+        type=int,
+        default=4,
+        metavar="N",
+        help="3D 势拟合多项式总次数 N（如 4→35、6→84），仅在使用 CSV 数据时生效；默认 4",
     )
     parser.add_argument("--output-dir", type=str, default=None,
                         help="输出目录 (默认 collision_pressure/configs/N{N})")
@@ -132,7 +132,7 @@ def main() -> int:
             fit_mode=args.fit_mode,
         )
         n_terms = len(fit.basis_exps)
-        fm = fit.fit_mode if fit.fit_mode else "none"
+        fm = fit.fit_mode if fit.fit_mode is not None else "none"
         print(
             f"  完成 ({time.time() - t0:.1f}s), R-squared={fit.r_squared:.6f}, "
             f"fit_mode={fm} ({n_terms} terms)"
