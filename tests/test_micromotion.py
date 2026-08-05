@@ -17,7 +17,7 @@ from motion_analysis.micromotion import (
     load_continuous_sampling,
     report_to_dict,
 )
-from motion_analysis.plots import plot_lattice_micromotion
+from motion_analysis.plots import plot_amplitude_histogram, plot_lattice_micromotion
 
 F_RF_MHZ = 35.0
 OMEGA_RF = 2.0 * np.pi * F_RF_MHZ   # rad/µs
@@ -478,6 +478,71 @@ class TestLatticePlot:
         assert len(self._vertical_lines(fig.axes[0])) == 2
         plt.close(fig)
 
+    def test_amplitude_histogram_runs(self, tmp_path):
+        """plot_amplitude_histogram 渲染不崩；中位竖线 x ≈ β=(q/2)·R0（默认 amp_stat=last）。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        report = self._build_report(
+            tmp_path, q_list=[0.3], R0_list=[40.0], z_list=[0.0],
+        )
+        fig = plot_amplitude_histogram(report)   # 默认 rf_axis=x, amp_stat=last
+        assert fig is not None
+        ax = fig.axes[0]
+        # 中位竖线（黑色虚线）x ≈ β = (q/2)·R0 = 0.15·40 = 6.0
+        dashed = [ln for ln in ax.get_lines() if ln.get_linestyle() == "--"]
+        assert len(dashed) == 1
+        # phase-folding 有限窗有 ~0.5% 数值误差，用 rel 容差；同口径精确一致性
+        # 由 test_amplitude_histogram_pairs_with_lattice 覆盖
+        assert dashed[0].get_xdata()[0] == pytest.approx(0.5 * 0.3 * 40.0, rel=0.05)
+        plt.close(fig)
+
+    def test_amplitude_histogram_pairs_with_lattice(self, tmp_path):
+        """histogram 与 lattice 同口径：中位竖线 = _beta_per_ion(rf_axis=x, amp_stat=last) 的中位。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from motion_analysis.plots import _beta_per_ion
+        report = self._build_report(
+            tmp_path, q_list=[0.3, 0.3], R0_list=[20.0, 60.0], z_list=[0.0, 20.0],
+        )
+        beta = _beta_per_ion(report, "x", "last")
+        fig = plot_amplitude_histogram(report)
+        ax = fig.axes[0]
+        dashed = [ln for ln in ax.get_lines() if ln.get_linestyle() == "--"]
+        assert dashed[0].get_xdata()[0] == pytest.approx(
+            float(np.median(beta)), abs=1e-6)
+        plt.close(fig)
+
+    def test_amplitude_histogram_missing_axis(self, tmp_path):
+        """report 未分析 x 轴 → 不崩，无 hist bar，显示提示文本。"""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        N = 2
+        n_frames = 4000
+        dt_us = 0.001
+        for k in range(n_frames):
+            t = k * dt_us
+            r = np.zeros((N, 3))
+            r[0, 2] = 0.0
+            r[1, 2] = 20.0
+            np.savez(tmp_path / f"frame{k}.npz", r=r, v=np.zeros_like(r), t_us=t)
+        report = analyze_run(
+            tmp_path, freq_rf_MHz=F_RF_MHZ, check_sampling=False,
+            axes=("z",), window_us=0.1,
+        )
+        fig = plot_amplitude_histogram(report)   # 默认 rf_axis=x，report 无 x 数据
+        assert len(fig.axes[0].patches) == 0    # 无 hist bar
+        plt.close(fig)
+
+    def test_amplitude_histogram_invalid_axis(self, tmp_path):
+        report = self._build_report(
+            tmp_path, q_list=[0.3], R0_list=[30.0], z_list=[0.0],
+        )
+        with pytest.raises(ValueError, match="rf_axis"):
+            plot_amplitude_histogram(report, rf_axis="w")
+
     def test_missing_rf_axis_no_crash(self, tmp_path):
         """report 未分析 rf_axis（--axes 不含 x）→ 不崩，无竖线，显示提示。"""
         import matplotlib
@@ -710,12 +775,12 @@ class TestCLI:
         assert b.show is False
         assert b.plot_dir is None
 
-    def test_lattice_show_theory_flag(self):
+    def test_show_theory_flag(self):
         from motion_analysis.__main__ import create_parser
         parser = create_parser()
         a = parser.parse_args(["r", "--csv", "c.csv", "--config", "g.json",
-                               "--lattice-show-theory"])
-        assert a.lattice_show_theory is True
+                               "--show-theory"])
+        assert a.show_theory is True
 
     def test_axis_range_flags(self):
         """--x-range/--y-range/--z-range 解析为 (lo,hi) tuple；--no-equal-aspect 关等比。"""

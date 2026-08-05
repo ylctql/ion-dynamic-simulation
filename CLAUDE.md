@@ -224,7 +224,7 @@ python -m trap_stability --csv <csv> --config <json> [--center 0,0,0] [--species
 | 文件 | 关键内容 |
 |------|---------|
 | `micromotion.py` | `load_continuous_sampling()`（RF 频率来自 config；含采样率/总时长断言）、`compute_micromotion()`（phase-folding 得时变 β(t) + FFT 低通提取 secular 包络并回归全局 q_eff）、`detect_warmup()`（secular 包络稳态检测瞬态收敛点 t*）、`analyze_run()` 多离子批处理（含 warmup 裁剪）、`cross_check_q()` 对接 trap_stability 理论 q |
-| `plots.py` | `plot_ion_timeseries`/`plot_qeff_histogram`/`plot_qeff_vs_displacement`/`plot_beta_vs_secular`/`plot_lattice_micromotion`（zox 平面晶格**末端帧瞬时**位置 + 每离子 x 方向 micromotion 竖线，excess micromotion 成像；`show_theory` 叠理论比对竖线、`theory_z_offset` 挂钩中位离子间距、`equal_aspect=True` 默认等比、`axis_ranges` 按物理轴定尺度） |
+| `plots.py` | `plot_ion_timeseries`/`plot_qeff_histogram`/`plot_qeff_vs_displacement`/`plot_beta_vs_secular`/`plot_lattice_micromotion`/`plot_amplitude_histogram`（zox 平面晶格**末端帧瞬时**位置 + 每离子 x 方向 micromotion 竖线，excess micromotion 成像；`show_theory` 叠理论比对竖线、`theory_z_offset` 挂钩中位离子间距、`equal_aspect=True` 默认等比、`axis_ranges` 按物理轴定尺度） |
 | `__main__.py` | CLI 入口；`python -m motion_analysis` |
 | `micromotion_analysis.ipynb` | 调用库的展示层 notebook |
 

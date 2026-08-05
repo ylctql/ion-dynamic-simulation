@@ -103,9 +103,13 @@ def create_parser() -> argparse.ArgumentParser:
                         help="Savitzky-Golay 窗口,阶数，默认 11,3")
     parser.add_argument("--no-cross-check", action="store_true",
                         help="跳过 trap_stability 交叉验证")
-    parser.add_argument("--lattice-show-theory", action="store_true",
+    parser.add_argument("--show-theory", action="store_true",
                         help="在晶格 micromotion 图上叠加理论 β=|q_th|/2·|x−x_null| "
                              "比对竖线（绿色虚线），需 cross-check 未关闭")
+    parser.add_argument("--diagnostic-plots", action="store_true",
+                        help="额外生成三张诊断图（qeff_histogram / qeff_vs_displacement "
+                             "/ beta_vs_secular）；默认只产出 lattice_micromotion 图。"
+                             "需配合 --plot-dir / --show")
     parser.add_argument("--x-range", dest="x_range", nargs=2, type=float,
                         default=None, metavar=("LO", "HI"),
                         help="晶格图 x 物理轴显示范围 (µm)，空格分隔如 --x-range -5 5；"
@@ -279,22 +283,31 @@ def main(argv: list[str] | None = None) -> int:
         if not args.show:
             matplotlib.use("Agg")          # 仅保存：无头后端；--show 用默认 GUI 后端
         import matplotlib.pyplot as plt
-        from .plots import (
-            plot_qeff_histogram, plot_qeff_vs_displacement, plot_beta_vs_secular,
-            plot_lattice_micromotion,
-        )
+        from .plots import plot_amplitude_histogram, plot_lattice_micromotion
+
+        # 默认两张图，各一个窗口：amplitude 频数直方图 + lattice（晶格 + β 竖线）
+        # 二者 rf_axis="x"、amp_stat="last" 同口径，是同一组 {β_i} 的统计/空间两视图
         figures = [
-            (plot_qeff_histogram(report), "qeff_histogram.png"),
-            (plot_qeff_vs_displacement(report, cross), "qeff_vs_displacement.png"),
-            (plot_beta_vs_secular(report, cross), "beta_vs_secular.png"),
+            (plot_amplitude_histogram(report),
+             "amplitude_histogram.png"),
             (plot_lattice_micromotion(
                 report, cross=cross,
-                show_theory=args.lattice_show_theory,
+                show_theory=args.show_theory,
                 equal_aspect=args.equal_aspect,
                 axis_ranges=_collect_axis_ranges(args),
             ),
              "lattice_micromotion_x.png"),
         ]
+        # 三张诊断图默认关闭，--diagnostic-plots 开启
+        if args.diagnostic_plots:
+            from .plots import (
+                plot_qeff_histogram, plot_qeff_vs_displacement, plot_beta_vs_secular,
+            )
+            figures = [
+                (plot_qeff_histogram(report), "qeff_histogram.png"),
+                (plot_qeff_vs_displacement(report, cross), "qeff_vs_displacement.png"),
+                (plot_beta_vs_secular(report, cross), "beta_vs_secular.png"),
+            ] + figures
         if args.plot_dir:
             plot_dir = Path(args.plot_dir)
             plot_dir.mkdir(parents=True, exist_ok=True)

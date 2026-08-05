@@ -223,6 +223,32 @@ def _theory_offset_auto(axial_pos_um: np.ndarray) -> float:
     return offset
 
 
+def _beta_per_ion(
+    report: MicromotionReport, rf_axis: str, amp_stat: str = "last",
+) -> np.ndarray:
+    """每离子 rf_axis micromotion 幅度 β（µm），plot_lattice_micromotion 与
+    plot_amplitude_histogram 共用此口径。
+
+    amp_stat 决定从每离子 β(t) 序列取哪个标量："last"（末端窗 β，与末端构型同快照）、
+    "median"（β(t) 中位）或 "max"（峰值）。缺失 (ion, rf_axis) 结果的离子留 NaN。
+    """
+    if amp_stat not in ("last", "median", "max"):
+        raise ValueError(f"amp_stat 需为 'last'/'median'/'max'，收到 '{amp_stat}'")
+    n_ions = report.trajectory.r_um.shape[1]
+    beta = np.full(n_ions, np.nan)
+    for i in range(n_ions):
+        res = report.results.get((i, rf_axis))
+        if res is None or res.beta_t.size == 0:
+            continue
+        if amp_stat == "max":
+            beta[i] = float(np.max(res.beta_t))
+        elif amp_stat == "median":
+            beta[i] = float(np.median(res.beta_t))
+        else:   # "last"
+            beta[i] = float(res.beta_t[-1])
+    return beta
+
+
 def plot_lattice_micromotion(
     report: MicromotionReport,
     *,
@@ -298,18 +324,8 @@ def plot_lattice_micromotion(
     ai_rf = _AXIS_INDEX[rf_axis]
     ai_axial = _AXIS_INDEX[axial_axis]
 
-    # 每离子 rf_axis micromotion 幅度 β（半长）
-    beta = np.full(n_ions, np.nan)
-    for i in range(n_ions):
-        res = report.results.get((i, rf_axis))
-        if res is None or res.beta_t.size == 0:
-            continue
-        if amp_stat == "max":
-            beta[i] = float(np.max(res.beta_t))
-        elif amp_stat == "median":
-            beta[i] = float(np.median(res.beta_t))
-        else:   # "last"：末端窗 β，与末端构型同快照
-            beta[i] = float(res.beta_t[-1])
+    # 每离子 rf_axis micromotion 幅度 β（半长），与 plot_amplitude_histogram 同口径
+    beta = _beta_per_ion(report, rf_axis, amp_stat)
     has_beta = np.isfinite(beta)
 
     fig, ax = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -469,3 +485,52 @@ def _apply_lattice_aspect(
                 w, h = base, base / ratio
             fig.set_size_inches(w, h)
         ax.set_aspect("equal", adjustable="box")
+
+
+def plot_amplitude_histogram(
+    report: MicromotionReport,
+    *,
+    rf_axis: str = "x",
+    amp_stat: str = "last",
+):
+    """rf_axis micromotion 幅度 β 的频数分布直方图（每离子一个 β）。
+
+    与 plot_lattice_micromotion 配对：lattice 图给 β 在晶格中的空间分布（末端构型
+    + 每离子竖线），本图给同一组 {β_i} 在离子间的统计分布。rf_axis / amp_stat 应与
+    lattice 图一致以保持同口径（CLI 默认二者均为 rf_axis="x"、amp_stat="last"）。
+
+    Parameters
+    ----------
+    rf_axis : micromotion 幅度所在轴，默认 "x"（与 lattice 默认一致）
+    amp_stat : 每离子 β(t) 取值统计量，"last"（末端窗，默认）/"median"/"max"，
+        与 plot_lattice_micromotion 同语义
+    """
+    plt = _plt()
+    if rf_axis not in _AXIS_INDEX:
+        raise ValueError(f"rf_axis 需为 x/y/z，收到 '{rf_axis}'")
+    beta = _beta_per_ion(report, rf_axis, amp_stat)
+    beta = beta[np.isfinite(beta)]
+
+    fig, ax = plt.subplots(figsize=(7, 4), layout="constrained")
+    if beta.size:
+        # bin 数自适应离子数：少离子少 bin 避免锯齿，多离子按 √N
+        bins = max(5, min(30, int(np.sqrt(beta.size))))
+        ax.hist(beta, bins=bins, color="C3", alpha=0.75,
+                edgecolor="white", linewidth=0.6)
+        med = float(np.median(beta))
+        ax.axvline(med, color="k", ls="--", lw=1,
+                   label=f"median = {med:.3f} µm")
+        ax.legend(fontsize=8)
+    else:
+        ax.text(0.5, 0.5,
+                f"无 {rf_axis} 轴 micromotion 数据（--axes 未含 {rf_axis}）",
+                transform=ax.transAxes, ha="center", va="center", fontsize=11)
+    ax.set_xlabel(f"{rf_axis} micromotion amplitude β (µm, {amp_stat})")
+    ax.set_ylabel("ion count")
+    fig.suptitle(
+        f"{rf_axis} micromotion amplitude distribution "
+        f"(β {amp_stat}, N={beta.size})",
+        fontsize=10,
+    )
+    ax.grid(True, alpha=0.3)
+    return fig
