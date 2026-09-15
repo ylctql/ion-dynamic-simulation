@@ -29,6 +29,10 @@ from numpy.polynomial import polynomial as P
 
 DEGREE_QUARTIC = 4
 
+# 显式系数（标签解析/直接构造）的每变量次数上限；x^6 项需 (7,7,7) 张量。
+# 与 fit_potential_3d_quartic 的动态高次拟合（fit_mode N）兼容。
+MAX_MONOMIAL_EXP = 6
+
 # 对称轴名 → 指数位（与 (i,j,k) 顺序一致）
 _AXIS_INDEX: dict[str, int] = {"x": 0, "y": 1, "z": 2}
 
@@ -621,7 +625,7 @@ def parse_term_label(label: str) -> tuple[int, int, int]:
 
     支持 "1"（常数）、"x"、"x^2"、"x*y"、"x^2*y^3*z" 等；
     变量出现顺序无关（"y*x" 与 "x*y" 等价），但同一变量重复出现视为非法。
-    每变量次数须在 0..4（与 (5,5,5) 系数张量一致，对应高次 quartic 拟合）。
+    每变量次数须在 0..MAX_MONOMIAL_EXP（=6，张量按需扩到 (7,7,7)）。
 
     Raises
     ------
@@ -649,9 +653,9 @@ def parse_term_label(label: str) -> tuple[int, int, int]:
             raise ValueError(f"单项式标签 {label!r} 中变量 {var} 重复出现")
         seen.add(var)
         exp = int(exp_s) if exp_s else 1
-        if exp < 0 or exp > DEGREE_QUARTIC:
+        if exp < 0 or exp > MAX_MONOMIAL_EXP:
             raise ValueError(
-                f"单项式因子 {tok!r} 次数 {exp} 越界，每变量次数须在 0..{DEGREE_QUARTIC}"
+                f"单项式因子 {tok!r} 次数 {exp} 越界，每变量次数须在 0..{MAX_MONOMIAL_EXP}"
             )
         exps[idx[var]] = exp
     return (exps[0], exps[1], exps[2])
@@ -686,10 +690,11 @@ def fit_result_from_coeff_map(
     FitResult3D
         可直接用于 eval_fit_3d / grad_fit_3d / hessian_fit_3d，或经
         FieldParser.poly_force._make_field_callable 转为动力学力场。
+        系数张量按最高次数动态扩维（每变量 ≤ MAX_MONOMIAL_EXP=6 → 至多
+        (7,7,7)），下限 (5,5,5)（与 fit_potential_3d_quartic 一致）。
     """
-    coeffs = np.zeros((5, 5, 5), dtype=float)
+    parsed: list[tuple[tuple[int, int, int], float]] = []
     seen: set[tuple[int, int, int]] = set()
-    exps: list[tuple[int, int, int]] = []
     for label, val in coeff_map.items():
         e = parse_term_label(label)
         if e in seen:
@@ -697,8 +702,14 @@ def fit_result_from_coeff_map(
                 f"项 {label!r} 解析为 (i,j,k)={e}，与已有项重复（同一单项式被多次指定）"
             )
         seen.add(e)
-        coeffs[e] = float(val)
-        exps.append(e)
+        parsed.append((e, float(val)))
+    # 系数数组维度 = 每变量最高次 + 1；至少 (5,5,5) 以兼容低次基底
+    deg = max((max(e) for e, _ in parsed), default=0)
+    deg = max(deg, DEGREE_QUARTIC)
+    coeffs = np.zeros((deg + 1, deg + 1, deg + 1), dtype=float)
+    for e, val in parsed:
+        coeffs[e] = val
+    exps = [e for e, _ in parsed]
     # 规范化基底顺序：按总次数、再字典序
     exps.sort(key=lambda t: (sum(t), t))
     return FitResult3D(

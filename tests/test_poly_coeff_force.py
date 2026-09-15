@@ -43,7 +43,7 @@ def test_parse_term_label_cases():
 
 def test_parse_term_label_rejects_invalid():
     with pytest.raises(ValueError, match="次数.*越界"):
-        parse_term_label("x^5")          # 每变量次数上限 4
+        parse_term_label("x^7")          # 每变量次数上限 6（MAX_MONOMIAL_EXP）
     with pytest.raises(ValueError, match="无法解析"):
         parse_term_label("w")            # 非法变量
     with pytest.raises(ValueError, match="无法解析"):
