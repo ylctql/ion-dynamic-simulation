@@ -108,7 +108,7 @@ $$\mathbf{F} = q\,\mathbf{E} - \gamma\mathbf{v},\qquad \mathbf{E} = -\nabla V$$
 python main.py --N <N> --time <T> --poly-potential <poly.json> [--g <γ>] [其它通用参数]
 ```
 
-- `--poly-potential <path>`：多项式系数势 JSON 路径。**仅传文件名**（如 `example.json`）时自动在 `FieldConfiguration/configs/poly_potential/` 下查找；带子路径则相对仓库根；也可用绝对路径；
+- `--poly-potential <path>`：多项式系数势 JSON 路径。**仅传文件名**（如 `example.json`）时自动在 `configs/poly_potential/` 下查找；带子路径则相对仓库根；也可用绝对路径；
 - 与 `--csv`、`--trap-freq` **互斥**（argparse 强制，三选一）；
 - `--g`：耗散强度 γ，与其它模式一致（默认 `0.1`）；设 `--g 0` 关闭阻尼；
 - 其余参数（`--device`、`--calc-method`、`--plot`、`--init_file` 等）照常使用。
@@ -271,11 +271,11 @@ python main.py --N 50 --time 10 \
 
 ## 10. 完整示例
 
-仓库内置一个可运行的示例：[`FieldConfiguration/configs/poly_potential/example.json`](../FieldConfiguration/configs/poly_potential/example.json)（Ba-138 谐振阱 + 小 `z^4` 非谐项，阱频 2.0/2.5/0.5 MHz，系数由 `make_ideal_trap_fit` 生成并验证）：
+仓库内置一个可运行的示例：[`configs/poly_potential/example.json`](../configs/poly_potential/example.json)（Ba-138 谐振阱 + 小 `z^4` 非谐项，阱频 2.0/2.5/0.5 MHz，系数由 `make_ideal_trap_fit` 生成并验证）：
 
 ```bash
 python main.py --N 50 --time 10 \
-    --poly-potential FieldConfiguration/configs/poly_potential/example.json --plot
+    --poly-potential configs/poly_potential/example.json --plot
 ```
 
 下面演示手写一个弱非谐势（二次 + 四阶修正）：

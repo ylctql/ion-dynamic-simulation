@@ -49,7 +49,7 @@ def main() -> None:
         "--config",
         type=str,
         default="",
-        help="电压配置 JSON；--bilayer 且未指定时默认 FieldConfiguration/configs/bilayer8.json",
+        help="电压配置 JSON；--bilayer 且未指定时默认 configs/bilayer8.json",
     )
     parser.add_argument(
         "--vary",
@@ -184,7 +184,7 @@ def main() -> None:
         type=str,
         default=None,
         help="多项式系数势 JSON 路径（与 --csv 互斥）；可仅传文件名则自动在 "
-        "FieldConfiguration/configs/poly_potential/ 下查找。poly 指定的是总势"
+        "configs/poly_potential/ 下查找。poly 指定的是总势"
         "（DC + RF 赝势已合并），按 total 标注；--freq/--symmetry/--laplace 均可用",
     )
     # --- 对称性分析参数 ---

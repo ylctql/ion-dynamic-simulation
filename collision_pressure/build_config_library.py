@@ -52,7 +52,7 @@ def main() -> int:
 
     parser.add_argument(
         "--config", type=str,
-        default="FieldConfiguration/configs/collision.json",
+        default="configs/collision.json",
         help="电压配置 JSON (仅配合 --csv 使用)",
     )
     parser.add_argument("--mass-amu", type=float, default=135.0)

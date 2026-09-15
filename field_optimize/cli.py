@@ -39,7 +39,7 @@ def create_parser() -> argparse.ArgumentParser:
         description="优化电极电压以匹配目标阱频",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例:
-  python -m field_optimize --csv data/default.csv --config FieldConfiguration/configs/default.json \\
+  python -m field_optimize --csv data/default.csv --config configs/default.json \\
       --target-freq 2.0 3.0 0.1
 
   # 仅传文件名时自动在默认目录查找
@@ -62,7 +62,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--config",
         type=str,
         required=True,
-        help="电压配置 JSON 路径；可仅传文件名自动在 FieldConfiguration/configs/ 下查找",
+        help="电压配置 JSON 路径；可仅传文件名自动在 configs/ 下查找",
     )
     parser.add_argument(
         "--target-freq",

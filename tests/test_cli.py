@@ -19,7 +19,7 @@ def test_create_parser_returns_parser():
 
 def test_default_paths():
     assert "default.json" in DEFAULT_CONFIG_PATH
-    assert "FieldConfiguration" in DEFAULT_CONFIG_PATH
+    assert "configs" in DEFAULT_CONFIG_PATH
     assert "data" in DEFAULT_CSV_PATH or "monolithic" in DEFAULT_CSV_PATH
 
 

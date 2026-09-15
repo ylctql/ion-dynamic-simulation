@@ -25,7 +25,7 @@ from field_visualize.core import (
     um_to_norm,
 )
 
-EXAMPLE = "FieldConfiguration/configs/poly_potential/example.json"
+EXAMPLE = "configs/poly_potential/example.json"
 
 
 def _ideal_bundle(tmp_path, freqs=(2.0, 2.5, 0.5), scale_um=100.0):

@@ -53,7 +53,7 @@ python field_visualize.py \
 ```bash
 python field_visualize.py \
   --csv data/circle_RF_r100.csv \
-  --config FieldConfiguration/configs/circle_rf_r100.json \
+  --config configs/circle_rf_r100.json \
   --const 0,0,0 \
   --x_range -80,80 --y_range -80,80 --z_range -300,300 \
   --symmetry m,r \
@@ -89,7 +89,7 @@ from FieldParser.csv_reader import read as read_csv
 from field_visualize.symmetry import compute_symmetry_report
 
 # 1. 加载配置和格点数据
-cfg, config = init_from_config("FieldConfiguration/configs/circle_rf_r100.json")
+cfg, config = init_from_config("configs/circle_rf_r100.json")
 grid_coord, grid_voltage = read_csv(
     "data/circle_RF_r100.csv", None,
     normalize=True, dl=cfg.dl, dV=cfg.dV
@@ -97,7 +97,7 @@ grid_coord, grid_voltage = read_csv(
 n_voltage = grid_voltage.shape[1]
 field_settings = field_settings_from_config(
     "data/circle_RF_r100.csv",
-    "FieldConfiguration/configs/circle_rf_r100.json",
+    "configs/circle_rf_r100.json",
     n_voltage, cfg
 )
 

@@ -23,7 +23,7 @@ def main() -> int:
     p_scan.add_argument("--output-dir", type=str, default=None)
     p_scan.add_argument("--csv", type=str, default=None)
     p_scan.add_argument("--trap-freq", nargs=3, type=float, metavar=("FX", "FY", "FZ"))
-    p_scan.add_argument("--config", type=str, default="FieldConfiguration/configs/collision.json")
+    p_scan.add_argument("--config", type=str, default="configs/collision.json")
     p_scan.add_argument("--mass-amu", type=float, default=135.0)
     p_scan.add_argument("--softening-um", type=float, default=0.001)
     p_scan.add_argument("--edge-filter", type=float, default=1.5)
@@ -76,7 +76,7 @@ def main() -> int:
     field_group = p_sim.add_mutually_exclusive_group()
     field_group.add_argument("--csv", type=str, default=None)
     field_group.add_argument("--trap-freq", nargs=3, type=float, metavar=("FX", "FY", "FZ"))
-    p_sim.add_argument("--config", type=str, default="FieldConfiguration/configs/collision.json")
+    p_sim.add_argument("--config", type=str, default="configs/collision.json")
     p_sim.add_argument("--fit-mode", type=int, default=4, metavar="N",
                        help="3D 势拟合多项式总次数 N（如 4→35、6→84），默认 4")
 

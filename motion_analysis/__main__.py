@@ -26,7 +26,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 DEFAULT_CSV_DIR = "data"
-DEFAULT_CONFIG_DIR = "FieldConfiguration/configs"
+DEFAULT_CONFIG_DIR = "configs"
 
 
 def _resolve_path(arg: str, default_dir: str, root: Path) -> str:

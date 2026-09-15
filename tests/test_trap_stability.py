@@ -219,7 +219,7 @@ class TestFieldModeIntegration:
         from field_visualize.core import apply_savgol_smooth
 
         cfg, config_dict = init_from_config(
-            "FieldConfiguration/configs/default.json", mass_amu=BA_135.mass_amu
+            "configs/default.json", mass_amu=BA_135.mass_amu
         )
         csv_path = "data/monolithic20241118.csv"
         grid_coord, grid_voltage = read_csv(
@@ -375,7 +375,7 @@ class TestFindRfNull:
         from FieldParser.csv_reader import read as read_csv
         from field_visualize.core import apply_savgol_smooth
         cfg, config_dict = init_from_config(
-            "FieldConfiguration/configs/default.json", mass_amu=BA_135.mass_amu
+            "configs/default.json", mass_amu=BA_135.mass_amu
         )
         grid_coord, grid_voltage = read_csv(
             "data/monolithic20241118.csv", None, normalize=True, dl=cfg.dl, dV=cfg.dV

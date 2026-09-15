@@ -148,7 +148,7 @@ class ConfigurationLibrary:
 
 def setup_fit(
     csv_path: str = "data/monolithic20241118.csv",
-    config_path: str = "FieldConfiguration/configs/collision.json",
+    config_path: str = "configs/collision.json",
     fit_mode: int = 4,
     smooth_axes: tuple[str, ...] = ("z",),
     smooth_window: int = 11,

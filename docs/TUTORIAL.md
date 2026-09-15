@@ -78,7 +78,7 @@ CLI 参数和输出文件统一使用**物理单位**：
 
 ```python
 from FieldConfiguration.constants import init_from_config
-cfg = init_from_config("FieldConfiguration/configs/default.json")
+cfg = init_from_config("configs/default.json")
 print(f"dt = {cfg.dt*1e6:.6f} us")
 print(f"dl = {cfg.dl*1e6:.6f} um")
 print(f"dV = {cfg.dV:.6f} V")
@@ -129,13 +129,13 @@ print(f"dV = {cfg.dV:.6f} V")
 
 ```bash
 python main.py --csv data/monolithic20241118.csv \
-  --config FieldConfiguration/configs/default.json
+  --config configs/default.json
 ```
 
 流程：CSV 电场格点 → E = -∇V → 3D 插值 → `force(r, v, t)`
 
 - `--csv`：电场数据文件。仅传文件名时自动在 `data/` 下查找
-- `--config`：电压配置 JSON。仅传文件名时自动在 `FieldConfiguration/configs/` 下查找
+- `--config`：电压配置 JSON。仅传文件名时自动在 `configs/` 下查找
 - `--smooth-axes x,y,z`（默认）：沿 x,y,z 三轴做 Savitzky-Golay 平滑
 - `--smooth-sg 11,3`（默认）：平滑窗口 11 点、3 阶多项式
 
@@ -474,7 +474,7 @@ python -m collision_pressure simulate \
 # 用实验势场，运行 500 μs，每 10 μs 保存一次
 python main.py --N 200 --time 500 \
   --csv data/monolithic20241118.csv \
-  --config FieldConfiguration/configs/default.json \
+  --config configs/default.json \
   --interval 5.0 --step 50 \
   --save_times_us 0:510:10 \
   --save_rv_traj_dir results/rv \

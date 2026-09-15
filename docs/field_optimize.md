@@ -109,7 +109,7 @@ python -m field_optimize --csv <CSV路径> --config <JSON路径> --target-freq f
 | 参数 | 说明 |
 |------|------|
 | `--csv` | 电场 CSV 路径；可仅传文件名自动在 `data/` 下查找 |
-| `--config` | 电压配置 JSON 路径；可仅传文件名自动在 `FieldConfiguration/configs/` 下查找 |
+| `--config` | 电压配置 JSON 路径；可仅传文件名自动在 `configs/` 下查找 |
 | `--target-freq` | 目标阱频 (MHz)，三个浮点数：`fx fy fz` |
 
 ### 最简示例
@@ -161,13 +161,13 @@ from FieldParser.csv_reader import read as read_csv
 from field_optimize import optimize_voltages, OptimizationConfig
 
 # 1. 加载配置
-cfg, config = init_from_config("FieldConfiguration/configs/default.json")
+cfg, config = init_from_config("configs/default.json")
 grid_coord, grid_voltage = read_csv(
     "data/default.csv", None, normalize=True, dl=cfg.dl, dV=cfg.dV
 )
 n_voltage = grid_voltage.shape[1]
 field_settings = field_settings_from_config(
-    "data/default.csv", "FieldConfiguration/configs/default.json",
+    "data/default.csv", "configs/default.json",
     n_voltage, cfg
 )
 
@@ -238,7 +238,7 @@ opt_config = OptimizationConfig(
 
 ## 5. 输出格式
 
-输出 JSON 与现有 `FieldConfiguration/configs/` 中的配置格式**完全兼容**，可直接用于 `main.py`、`field_visualize` 等模块：
+输出 JSON 与现有 `configs/` 中的配置格式**完全兼容**，可直接用于 `main.py`、`field_visualize` 等模块：
 
 ```json
 {
@@ -400,13 +400,13 @@ from FieldParser.calc_field import calc_field, calc_potential
 from FieldParser.csv_reader import read as read_csv
 
 # 加载
-cfg, config = init_from_config("FieldConfiguration/configs/default.json")
+cfg, config = init_from_config("configs/default.json")
 grid_coord, grid_voltage = read_csv(
     "data/default.csv", None, normalize=True, dl=cfg.dl, dV=cfg.dV
 )
 n_voltage = grid_voltage.shape[1]
 fs = field_settings_from_config(
-    "data/default.csv", "FieldConfiguration/configs/default.json",
+    "data/default.csv", "configs/default.json",
     n_voltage, cfg
 )
 
@@ -549,4 +549,4 @@ python main.py --csv <csv> --config optimized.json --N 10 --time 10 --plot
 
 ### Q: 输出 JSON 可以直接用于其他模块吗？
 
-可以。输出格式与 `FieldConfiguration/configs/` 中的配置完全兼容。唯一的区别是包含一个额外的 `_optimization` 字段（以 `_` 开头，不影响解析）和 `_comment` 字段。
+可以。输出格式与 `configs/` 中的配置完全兼容。唯一的区别是包含一个额外的 `_optimization` 字段（以 `_` 开头，不影响解析）和 `_comment` 字段。

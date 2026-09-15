@@ -66,7 +66,7 @@ class TestFreqHarmonicityIntegration:
         from field_visualize.core import apply_savgol_smooth
 
         cfg, config_dict = init_from_config(
-            "FieldConfiguration/configs/default.json", mass_amu=BA_135.mass_amu
+            "configs/default.json", mass_amu=BA_135.mass_amu
         )
         grid_coord, grid_voltage = read_csv(
             "data/monolithic20241118.csv", None, normalize=True, dl=cfg.dl, dV=cfg.dV
@@ -116,7 +116,7 @@ class TestFreqHarmonicityIntegration:
         from field_visualize.core import apply_savgol_smooth
 
         cfg, config_dict = init_from_config(
-            "FieldConfiguration/configs/default.json", mass_amu=BA_135.mass_amu
+            "configs/default.json", mass_amu=BA_135.mass_amu
         )
         grid_coord, grid_voltage = read_csv(
             "data/monolithic20241118.csv", None, normalize=True, dl=cfg.dl, dV=cfg.dV

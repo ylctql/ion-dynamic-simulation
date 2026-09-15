@@ -257,7 +257,7 @@ python -m motion_analysis continuous_sampling/t030.00_interval0.08_step10 \
 
 - `setup_path.ensure_build_in_path()` — 将项目根和 build/（含 ionsim*.so）加入 `sys.path`
 - `--csv` 支持仅传文件名，自动在 `data/` 下查找
-- `--config` 支持仅传文件名，自动在 `FieldConfiguration/configs/` 下查找
+- `--config` 支持仅传文件名，自动在 `configs/` 下查找
 - `--init-file` 的 `.npz` 需含 `r`（µm, shape (N,3)）和 `v`（m/s），可选 `t_us`
 - `ImgSimulation` JSON 路径解析：先相对 JSON 文件目录，再相对仓库根
 
@@ -308,5 +308,5 @@ pytest                # 所有测试
 - 首行为注释（含单位信息），随后为 x, y, z 坐标 + 各电极电势列
 - `csv_reader.read()` 自动检测长度单位（mm 或 µm）并归一化
 
-### 电压配置 JSON (`FieldConfiguration/configs/`)
+### 电压配置 JSON (`configs/`)
 - 含 RF 频率和各电极电压（DC 或 RF），`loader.py` 解析为 `Voltage` 对象列表

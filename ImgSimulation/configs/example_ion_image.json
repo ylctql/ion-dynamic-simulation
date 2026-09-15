@@ -2,7 +2,7 @@
   "version": 1,
   "description": "Example single-frame ion image (smoke / demo). dynamics: same ideas as main Parameters (init_file .npz with r,v in μm and m/s; or r0_um/v0_m_s; or legacy dimensionless r0/v0; or init_random with N). paths.field_csv is optional when dynamics.force is zero; set it and use dynamics.force trap for trap field from CSV + field_config; then set simulation.use_zero_force to false. trap.smooth_* matches main _build_force.",
   "paths": {
-    "field_config": "FieldConfiguration/configs/default.json",
+    "field_config": "configs/default.json",
     "field_csv": "data/monolithic20241118.csv"
   },
   "trap": {

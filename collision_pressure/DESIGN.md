@@ -391,7 +391,7 @@ python -m collision_pressure simulate \
 ### 6.1 输入
 
 - 电场 CSV：复用 `FieldParser.csv_reader.read()` 格式
-- 电压配置 JSON：复用 `FieldConfiguration/configs/` 格式
+- 电压配置 JSON：复用 `configs/` 格式
 - 预计算平衡构型 `.npz`：`equilibrium` 模块输出格式（含 `r` 字段）
 
 ### 6.2 输出

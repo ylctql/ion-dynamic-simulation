@@ -170,7 +170,7 @@ $$V = \frac{1}{2}m(\omega_x^2 x^2 + \omega_y^2 y^2 + \omega_z^2 z^2) / q$$
 ```bash
 python -m collision_pressure simulate \
   --csv data/monolithic20241118.csv \
-  --config FieldConfiguration/configs/collision.json \
+  --config configs/collision.json \
   --fit-mode 4
 ```
 
@@ -525,7 +525,7 @@ from collision_pressure import setup_fit
 
 fit, cfg = setup_fit(
     csv_path="data/monolithic20241118.csv",
-    config_path="FieldConfiguration/configs/collision.json",
+    config_path="configs/collision.json",
     fit_mode=4,
 )
 ```

@@ -36,7 +36,7 @@ from ImgSimulation.types import (
 
 def test_single_ion_center_peak(tmp_path: Path):
     """Static ion at origin, zero external force; bright spot near image center."""
-    cfg, _ = init_from_config(str(_ROOT / "FieldConfiguration/configs/default.json"))
+    cfg, _ = init_from_config(str(_ROOT / "configs/default.json"))
     r0 = np.zeros((1, 3), dtype=np.float64)
     v0 = np.zeros((1, 3), dtype=np.float64)
     q = np.ones(1, dtype=np.float64)

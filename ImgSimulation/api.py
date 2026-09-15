@@ -9,7 +9,7 @@ Typical use::
     from ImgSimulation.api import run_ion_image, CameraParams, BeamParams, NoiseParams, IntegrationParams
     import numpy as np
 
-    cfg, _ = init_from_config("FieldConfiguration/configs/default.json")
+    cfg, _ = init_from_config("configs/default.json")
     # ... r0, v0, q, m ...
     img = run_ion_image(
         cfg, _zero_force, r0, v0, q, m,

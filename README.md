@@ -31,7 +31,7 @@ The external trap potential can be specified in two mutually exclusive ways:
 ### Option A: CSV + Config (real trap)
 
 ```bash
-python main.py --N 50 --time 10 --csv data/monolithic20241118.csv --config FieldConfiguration/configs/default.json
+python main.py --N 50 --time 10 --csv data/monolithic20241118.csv --config configs/default.json
 ```
 
 Reads electrode potentials from CSV grid data and voltage configuration from JSON. `--csv` supports filename-only (auto-searches `data/`). Optional: `--smooth-axes z --smooth-sg 11,3` for Savitzky-Golay smoothing.
@@ -197,7 +197,7 @@ python main.py --N 50 --time 10 --plot
 ### 方式 A：CSV + Config（实际陷阱）
 
 ```bash
-python main.py --N 50 --time 10 --csv data/monolithic20241118.csv --config FieldConfiguration/configs/default.json
+python main.py --N 50 --time 10 --csv data/monolithic20241118.csv --config configs/default.json
 ```
 
 从 CSV 格点数据和 JSON 电压配置读取电极势场。`--csv` 支持仅传文件名（自动在 `data/` 下查找）。可选 `--smooth-axes z --smooth-sg 11,3` 进行 Savitzky-Golay 平滑。
@@ -319,7 +319,7 @@ ism-main/
 ├── main.py                # 入口
 ├── build.py               # C++ 扩展构建脚本
 ├── Interface/             # 命令行、参数
-├── FieldConfiguration/    # 无量纲常数、电压配置；configs/
+├── FieldConfiguration/    # 无量纲常数、电压配置加载（constants/loader 等）
 ├── FieldParser/           # CSV 解析、场插值、力函数
 ├── ComputeKernel/         # C++ ionsim、Python 后端
 ├── Plotter/               # 实时可视化
@@ -329,6 +329,7 @@ ism-main/
 ├── collision_pressure/    # H2 碰撞压强估算
 ├── benchmark/             # 性能测试
 ├── data/                  # 电场 CSV 文件
+├── configs/               # 电压配置 JSON
 └── externals/             # 本地 Eigen/pybind11（可选）
 ```
 

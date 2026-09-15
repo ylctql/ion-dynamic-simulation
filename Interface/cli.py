@@ -191,14 +191,14 @@ def parse_save_times_us(raw: str) -> list[float]:
 
 
 # 默认路径，可通过环境变量覆盖
-DEFAULT_CONFIG_PATH = os.environ.get("ISM_DEFAULT_CONFIG", "FieldConfiguration/configs/default.json")
+DEFAULT_CONFIG_PATH = os.environ.get("ISM_DEFAULT_CONFIG", "configs/default.json")
 DEFAULT_CSV_PATH = os.environ.get("ISM_DEFAULT_CSV", "data/monolithic20241118.csv")
 DEFAULT_SAVE_FIG_DIR = os.environ.get("ISM_DEFAULT_SAVE_FIG_DIR", "saves/images/traj")
 # 仅传文件名时使用的默认目录（写死，便于日常只传文件名）
 DEFAULT_CSV_DIR = "data"
-DEFAULT_CONFIG_DIR = "FieldConfiguration/configs"
-DEFAULT_POLY_POTENTIAL_DIR = "FieldConfiguration/configs/poly_potential"
-DEFAULT_POLY_POTENTIAL_EXAMPLE = "FieldConfiguration/configs/poly_potential/example.json"
+DEFAULT_CONFIG_DIR = "configs"
+DEFAULT_POLY_POTENTIAL_DIR = "configs/poly_potential"
+DEFAULT_POLY_POTENTIAL_EXAMPLE = "configs/poly_potential/example.json"
 # --bilayer 且未传 --csv / --config 时使用的默认场文件（相对上述目录）
 DEFAULT_BILAYER_CSV = "bilayer8.csv"
 DEFAULT_BILAYER_CONFIG = "bilayer8.json"
@@ -246,7 +246,7 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "双层离子晶格：未指定 --csv/--config 时默认使用 data/bilayer8.csv 与 "
-            "FieldConfiguration/configs/bilayer8.json；初态在随机/加载位置基础上，"
+            "configs/bilayer8.json；初态在随机/加载位置基础上，"
             "索引 0:N/2 沿 +y、N/2:N 沿 -y 各平移 --bilayer-y0（μm）；"
             "绘图改为两片 z-x 面并标注各层 σ_y"
         ),
@@ -386,7 +386,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--poly-potential",
         type=str,
         default=None,
-        help="多项式系数势 JSON 路径（显式单项式系数，单位 V，与高次拟合同量纲）；可仅传文件名(如 example.json)则自动在 FieldConfiguration/configs/poly_potential/ 下查找；与 --csv/--trap-freq 互斥",
+        help="多项式系数势 JSON 路径（显式单项式系数，单位 V，与高次拟合同量纲）；可仅传文件名(如 example.json)则自动在 configs/poly_potential/ 下查找；与 --csv/--trap-freq 互斥",
     )
     parser.add_argument(
         "--g",
@@ -398,7 +398,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--config",
         type=str,
         default="",
-        help="电极电压 JSON；可仅传文件名(如 default.json)则自动在 FieldConfiguration/configs/ 下查找；可设 ISM_DEFAULT_CONFIG 覆盖默认",
+        help="电极电压 JSON；可仅传文件名(如 default.json)则自动在 configs/ 下查找；可设 ISM_DEFAULT_CONFIG 覆盖默认",
     )
     parser.add_argument("--save-final-image", type=str, default=None, help="最后一帧保存路径")
     parser.add_argument(
@@ -611,7 +611,7 @@ def parse_and_build(
             trap_freq_MHz=(trap_freq[0], trap_freq[1], trap_freq[2]),
         )
     elif poly_potential is not None:
-        # 裸文件名自动在 FieldConfiguration/configs/poly_potential/ 下查找（同 --csv/--config）
+        # 裸文件名自动在 configs/poly_potential/ 下查找（同 --csv/--config）
         poly_path = _resolve_path(
             poly_potential, DEFAULT_POLY_POTENTIAL_EXAMPLE, DEFAULT_POLY_POTENTIAL_DIR
         )

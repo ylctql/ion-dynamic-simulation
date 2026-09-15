@@ -51,8 +51,8 @@ Thumbs.db
 # 数据与输出
 data_cache/
 *.npy
-FieldConfiguration/configs/*
-!FieldConfiguration/configs/default.json
+/configs/*
+!/configs/default.json
 
 # 势场格点数据
 data/*

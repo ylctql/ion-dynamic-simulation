@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # 默认路径（与 Interface/cli.py 一致）
 DEFAULT_CSV_DIR = "data"
-DEFAULT_CONFIG_DIR = "FieldConfiguration/configs"
+DEFAULT_CONFIG_DIR = "configs"
 
 
 def _resolve_path(arg: str, default_dir: str, root: Path) -> str:

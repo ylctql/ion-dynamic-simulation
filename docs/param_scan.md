@@ -5,7 +5,7 @@
 最后由 log 画出 (x², x⁴, σ_y) 热力图。
 
 > **相关**：势场来源见 [`docs/poly_potential.md`](poly_potential.md)；softmode.json 在
-> `FieldConfiguration/configs/poly_potential/softmode.json`（当前 `x²=0.01`、`x⁴=0.005`，
+> `configs/poly_potential/softmode.json`（当前 `x²=0.01`、`x⁴=0.005`，
 > 其余 `y²=1.18`/`z²=0.002`/`z⁴=0.000917`/`scale_um=100` 固定）。
 
 ## 设计要点

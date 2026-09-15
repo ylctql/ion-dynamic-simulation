@@ -62,7 +62,7 @@ python -m trap_stability --csv default.csv --config default.json --out result.js
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `--csv` | （必填） | 电场 CSV 路径；仅文件名时在 `data/` 下查找 |
-| `--config` | `""` | 电压 JSON 路径；仅文件名时在 `FieldConfiguration/configs/` 下查找 |
+| `--config` | `""` | 电压 JSON 路径；仅文件名时在 `configs/` 下查找 |
 | `--center` | 自动检测 | 陷阱中心坐标 `X,Y,Z` (μm) |
 | `--x-range` | `-50,50` | x 轴拟合范围 (μm) |
 | `--y-range` | `-20,20` | y 轴拟合范围 (μm) |
