@@ -68,6 +68,7 @@ continuous_sampling/
 secular_sampling/
 outputs/
 collision_pressure/results/
+radial_trap/results/
 
 # 性能测试结果
 benchmark/benchmark_results/

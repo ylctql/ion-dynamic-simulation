@@ -245,6 +245,22 @@ python -m motion_analysis continuous_sampling/t030.00_interval0.08_step10 \
 
 规划文档: `docs/plan/micromotion_analysis.md`
 
+### `radial_trap/` — 2D 径向多项式势阱
+
+以 Laplace 多项式基解析指定径向平面 (x,y) 势场（RF 四极+十六极 A,B + RF bias D + DC E,F），计算平衡构型、各离子解析 micromotion、晶格成形条件与可选面内声子。**无需 CSV、无需 C++ 构建**（纯 numpy/scipy）；复用 equilibrium 的能量/声子/FitResult3D 机制。
+
+| 文件 | 关键内容 |
+|------|---------|
+| `types.py` | `RadialTrapParams`（A,B,D,E,F + RF 频率/物种/N/range/seed）、`LatticeConditions`（4 条件 + 派生量）等数据类 |
+| `potential.py` | `rf_field_V_per_um`（+∇φ_rf 约定）、`alpha_eff_um2_per_V`（物种质量）、`total_potential_coefficients`（9 单项式系数表）、`build_total_potential_fit`（直接构造 FitResult3D）、`evaluate_conditions`（4 条件 + f/q/eps4） |
+| `lattice.py` | `find_radial_equilibrium`（L-BFGS-B，z 钉平面）、`micromotion_amplitude`（a_mm=(Q/mΩ²)E_rf + excess 比 ρ）、`solve_inplane_phonons`（dof_indices 面内子空间） |
+| `plots.py` | `plot_lattice` — xoy 构型 + micromotion 线段 / 幅度与 ρ 双联图 |
+| `cli.py` | CLI 入口；`--json` 严格键集存档、npz/report 输出、`--export-poly`（衔接 `main.py --poly-potential`） |
+
+运行: `python -m radial_trap --N 10`（默认参数即有效演示）；`--phonon` 面内声子；`--B 1e-7 --D 0.5 --F -5e-8` 演示 DB+F 精确抵消。注意 `--x-range=-10,10` 负数须 = 语法。
+
+说明文档: `docs/radial_trap.md`（系数推导、4 条件、micromotion 恒等式、zigzag 阈值提示、v1 局限）
+
 ## 核心类型 (`utils.py`)
 
 - `CommandType` — START/PAUSE/RESUME/STOP（子进程控制）
@@ -282,6 +298,7 @@ pytest                # 所有测试
 | `tests/test_field_optimize.py` | FastEvaluator 预计算、目标函数、NaN 保护、优化收敛、CLI 解析、JSON 输出 |
 | `tests/test_trap_stability.py` | a/q 教科书公式验证、物种质量标度、稳定性判断、secular 频率一致性、非谐常数（合成+场积分）、fit_degree=2/4/6、CLI 解析 |
 | `tests/test_micromotion.py` | 合成数据回收已知 q（常位移/secular 调制）、q=0 退化、负 q、β(t) 跟踪 secular、加载/采样校验异常、多离子批处理 |
+| `tests/test_radial_trap.py` | radial_trap：RF 场/系数表/条件解析验证、N=1/2 平衡与间距公式、micromotion 恒等式与 excess 比、N=2 面内声子解析谱、CLI（--json 往返/npz/不稳定配置/绘图/导出往返） |
 | `tests/test_cpu_cuda_error_accumulation.py` | 圆轨道 CPU/CUDA 误差对比 |
 
 ## 开发注意事项
