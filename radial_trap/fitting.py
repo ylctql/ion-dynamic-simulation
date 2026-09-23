@@ -19,6 +19,7 @@ V 一律为伏特（与本模块其余部分一致）。
 from __future__ import annotations
 
 import csv
+import warnings
 from dataclasses import dataclass
 from typing import IO, Iterable
 
@@ -91,7 +92,8 @@ def load_radial_grid_csv(path: str | IO[str] | Iterable[str]) -> tuple[
     """读取二维格点 CSV → (x_um, y_um, v_V) 三个等长一维数组。
 
     自动识别 Comsol 导出（`%` 元数据行 + `% Length unit` 单位换算）、
-    简单表头与无表头三种格式，见模块 docstring。
+    简单表头与无表头三种格式，见模块 docstring。含 NaN/Inf 的行（Comsol
+    在几何奇点/域外格点的典型导出形态）自动剔除并发 RuntimeWarning。
     """
     if hasattr(path, "read"):
         rows = list(csv.reader(path))
@@ -149,6 +151,13 @@ def load_radial_grid_csv(path: str | IO[str] | Iterable[str]) -> tuple[
     except (ValueError, IndexError) as exc:
         raise ValueError(f"CSV 数据行解析失败: {exc}") from exc
     pts[:, :2] *= unit_to_um
+    finite = np.isfinite(pts).all(axis=1)
+    if not finite.all():
+        n_bad = int(finite.size - finite.sum())
+        warnings.warn(
+            f"已剔除 {n_bad} 个含 NaN/Inf 的格点行（Comsol 域外点/奇点常见此形态）",
+            RuntimeWarning, stacklevel=2)
+        pts = pts[finite]
     if pts.shape[0] < 4:
         raise ValueError(f"格点数不足（{pts.shape[0]} < 4，至少需定 3 个系数）")
     return pts[:, 0], pts[:, 1], pts[:, 2]
@@ -158,7 +167,8 @@ def fit_rf_ab(x_um: np.ndarray, y_um: np.ndarray, v_V: np.ndarray,
               fit_range_um: tuple[float, float] | None = None) -> FitABResult:
     """对 Laplace 基 [1, x²−y², x⁴−6x²y²+y⁴] 做线性最小二乘。
 
-    x/y/v 同形状即可（meshgrid 二维阵可直接传入，内部展平）。
+    x/y/v 同形状即可（meshgrid 二维阵可直接传入，内部展平）。含 NaN/Inf
+    时直接报错（单个 NaN 即可使全部系数静默变 NaN）。
     fit_range_um=(rx, ry) 时只拟合 |x|≤rx、|y|≤ry 的格点（以坐标原点为
     中心）——格点覆盖远大于链展宽时，更高阶 Laplace 项（六阶/十二极等）
     会泄漏进 A/B（实测 ±300 µm 全域拟合可把 A 抬高 ~50%）；限制到离子区
@@ -175,6 +185,11 @@ def fit_rf_ab(x_um: np.ndarray, y_um: np.ndarray, v_V: np.ndarray,
     x = x.ravel()
     y = y.ravel()
     v = v.ravel()
+    if not (np.isfinite(x).all() and np.isfinite(y).all()
+            and np.isfinite(v).all()):
+        # 单个 NaN 会使 lstsq 全系数变 NaN 且 R² 兜底成 1.0，静默掩盖故障
+        raise ValueError("x/y/v 含 NaN/Inf——请先剔除非有限值格点"
+                         "（load_radial_grid_csv 会自动剔除 CSV 中的此类行）")
     if fit_range_um is not None:
         rx, ry = fit_range_um
         if not (np.isfinite(rx) and rx > 0 and np.isfinite(ry) and ry > 0):

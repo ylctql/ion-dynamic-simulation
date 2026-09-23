@@ -979,6 +979,50 @@ def test_fit_rf_ab_range_restriction():
         fit_rf_ab(xx, yy, vv, fit_range_um=(-80.0, 80.0))
 
 
+def test_load_radial_grid_csv_drops_nonfinite(tmp_path):
+    # Comsol 域外/奇点格点导出 NaN——loader 剔除含 NaN/Inf 的行并告警，
+    # 拟合不被毒化（单个 NaN 会使 lstsq 全系数变 NaN 且 R² 兜底成 1.0）
+    xs = np.linspace(-30.0, 30.0, 13)
+    ys = np.linspace(-30.0, 30.0, 13)
+    xx, yy = np.meshgrid(xs, ys)
+    q2 = xx ** 2 - yy ** 2
+    q4 = xx ** 4 - 6.0 * xx ** 2 * yy ** 2 + yy ** 4
+    vv = _DEF_V0 + _DEF_A * q2 + _DEF_B * q4
+    flat = list(zip(xx.ravel(), yy.ravel(), vv.ravel()))
+    bad_text = {0: "NaN", 17: "nan", 100: "inf"}
+    lines = ["x,y,v"]
+    for i, (xi, yi, vi) in enumerate(flat):
+        s = bad_text.get(i, f"{vi:.15g}")
+        lines.append(f"{xi:.15g},{yi:.15g},{s}")
+    p = tmp_path / "nan_grid.csv"
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="NaN/Inf"):
+        gx, gy, gv = load_radial_grid_csv(str(p))
+    assert gv.size == len(flat) - len(bad_text)
+    assert np.isfinite(gx).all() and np.isfinite(gy).all()
+    assert np.isfinite(gv).all()
+    fit = fit_rf_ab(gx, gy, gv)
+    assert fit.A_V_per_um2 == pytest.approx(_DEF_A, rel=1e-9)
+    assert fit.B_V_per_um4 == pytest.approx(_DEF_B, rel=1e-9)
+    assert fit.n_points == len(flat) - len(bad_text)
+
+
+def test_fit_rf_ab_rejects_nonfinite():
+    # 直接传数组（库用法）含非有限值 → 显式报错，而非静默产出 NaN 系数
+    xs = np.linspace(-30.0, 30.0, 7)
+    xx, yy = np.meshgrid(xs, xs)
+    vv = _DEF_A * (xx ** 2 - yy ** 2)
+    vv[3, 3] = np.nan
+    with pytest.raises(ValueError, match="NaN/Inf"):
+        fit_rf_ab(xx, yy, vv)
+    vv[3, 3] = 0.0  # v 恢复干净，验 x 坐标的 Inf 同样触发
+    xx2 = xx.copy()
+    xx2[0, 0] = np.inf
+    with pytest.raises(ValueError, match="NaN/Inf"):
+        fit_rf_ab(xx2, yy, vv)
+
+
 def test_cli_fit_ab_range(tmp_path, capsys):
     # --fit-ab-range 限制拟合域：stdout 报告范围；单独使用（无 --fit-ab）exit 2
     p = tmp_path / "g.csv"
