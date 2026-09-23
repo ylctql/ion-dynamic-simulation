@@ -18,6 +18,9 @@
 """
 from __future__ import annotations
 
+import math
+from dataclasses import replace
+
 import numpy as np
 from scipy.constants import e as ELEMENTARY_CHARGE
 
@@ -68,7 +71,8 @@ def rf_omega_rad_per_s(freq_rf_mhz: float) -> float:
 def alpha_eff_um2_per_V(freq_rf_mhz: float, species: Species) -> float:
     """赝势系数 α_eff [µm²/V]：φ_pp[V] = α_eff·|E_rf[V/µm]|²。
 
-    α_eff = Q·1e12/(4·m·Ω²)，等价于 Ψ[J] = Q²|E|²/(4mΩ²) 的伏特形式；
+    α_eff = Q·1e12/(4·m·Ω²)，等价于 Ψ[J] = Q²|E|²/(4mΩ²) 除以 Q 的伏特形式
+    （单电荷离子即除以元电荷 e；Note 的 α 为能量量纲，此处统一电势量纲 V）；
     注意使用物种自身质量（不同于 field_visualize 中硬编码 Ba135 的路径）。
     """
     omega = rf_omega_rad_per_s(freq_rf_mhz)
@@ -127,20 +131,70 @@ def build_total_potential_fit(params: RadialTrapParams) -> FitResult3D:
     )
 
 
+def augment_fit_with_axial_confinement(
+    fit: FitResult3D, f_z_mhz: float, species_name: str
+) -> FitResult3D:
+    """给径向总势追加简谐轴向囚禁项 c_z2·z²（--export-fz 导出 3D 动力学用）。
+
+    径向模块把 z 钉在 0 平面，总势本身无任何 z 项；导出的势直接交
+    main.py --poly-potential 做 3D 演化时 z 方向无囚禁——库伦作用把离子
+    沿 z 摊开成片、进而 y 分层（一维链在无轴势中只是鞍点，z 模全负）。
+    本函数按目标轴向阱频 f_z 追加 c_z2·z²（c_z2 = m·ω_z²/(2Q)，复用
+    trap_freq_MHz_to_k2），对应真实阱由端帽 DC 提供的轴向囚禁。
+
+    N=20 经验：单排链要求 f_y/f_x 与 f_z/f_x 均 ≳ 8.5（有限 N zigzag
+    边界，与横向方向无关），取 ~10 留裕量。
+    """
+    sp = get_species(species_name)
+    c_z2 = trap_freq_MHz_to_k2(f_z_mhz, sp.mass_kg, sp.charge_C)
+    coeffs = fit.coeffs.copy()
+    coeffs[0, 0, 2] = c_z2 * fit.scale_um**2
+    if (0, 0, 2) in fit.basis_exps:  # 幂等：已有 z² 项则只覆盖系数
+        return replace(fit, coeffs=coeffs)
+    basis = tuple(sorted(fit.basis_exps + ((0, 0, 2),), key=lambda t: (sum(t), t)))
+    return replace(fit, coeffs=coeffs, basis_exps=basis, symmetry_axes=("x", "y", "z"))
+
+
+def pseudopotential_V(
+    x_um: np.ndarray, y_um: np.ndarray, params: RadialTrapParams
+) -> np.ndarray:
+    """RF 赝势 φ_pp = α_eff·|E_rf|² [V]（恒 ≥ 0，最小值在 RF null 处）。"""
+    sp = get_species(params.species_name)
+    alpha = alpha_eff_um2_per_V(params.freq_rf_mhz, sp)
+    e_field = rf_field_V_per_um(x_um, y_um, params.A_V_per_um2, params.B_V_per_um4)
+    return alpha * (e_field[..., 0] ** 2 + e_field[..., 1] ** 2)
+
+
+def bias_potential_V(
+    x_um: np.ndarray, y_um: np.ndarray, params: RadialTrapParams
+) -> np.ndarray:
+    """RF bias 静态势 D·φ_rf [V]（与 RF 电势同空间形状）。"""
+    return params.D_dimless * rf_potential_V(
+        x_um, y_um, params.A_V_per_um2, params.B_V_per_um4
+    )
+
+
+def dc_potential_V(
+    x_um: np.ndarray, y_um: np.ndarray, params: RadialTrapParams
+) -> np.ndarray:
+    """DC 势 E(x²−y²) + F(x⁴−6x²y²+y⁴) [V]。"""
+    x = np.asarray(x_um, dtype=float)
+    y = np.asarray(y_um, dtype=float)
+    return (
+        params.E_dc_V_per_um2 * (x * x - y * y)
+        + params.F_dc_V_per_um4 * (x**4 - 6.0 * x * x * y * y + y**4)
+    )
+
+
 def total_potential_V(
     x_um: np.ndarray, y_um: np.ndarray, params: RadialTrapParams
 ) -> np.ndarray:
-    """总势直接解析求值（独立于 FitResult3D，用于交叉校验）。"""
-    sp = get_species(params.species_name)
-    alpha = alpha_eff_um2_per_V(params.freq_rf_mhz, sp)
-    A = params.A_V_per_um2
-    B = params.B_V_per_um4
-    e_field = rf_field_V_per_um(x_um, y_um, A, B)
-    v = alpha * (e_field[:, 0] ** 2 + e_field[:, 1] ** 2)
-    v = v + params.D_dimless * rf_potential_V(x_um, y_um, A, B)
-    v = v + params.E_dc_V_per_um2 * (x_um**2 - y_um**2)
-    v = v + params.F_dc_V_per_um4 * (x_um**4 - 6.0 * x_um**2 * y_um**2 + y_um**4)
-    return v
+    """总势直接解析求值 = 赝势 + RF bias + DC 三组分之和（独立于 FitResult3D）。"""
+    return (
+        pseudopotential_V(x_um, y_um, params)
+        + bias_potential_V(x_um, y_um, params)
+        + dc_potential_V(x_um, y_um, params)
+    )
 
 
 def mathieu_q_per_axis(params: RadialTrapParams) -> tuple[float, float]:
@@ -153,6 +207,53 @@ def mathieu_q_per_axis(params: RadialTrapParams) -> tuple[float, float]:
     omega = rf_omega_rad_per_s(params.freq_rf_mhz)
     pref = 4.0 * sp.charge_C * 1e12 / (sp.mass_kg * omega**2)
     return (pref * params.A_V_per_um2, -pref * params.A_V_per_um2)
+
+
+def trap_freq_MHz_to_k2(f_mhz: float, mass_kg: float, charge: float) -> float:
+    """k2_to_trap_freq_MHz 的精确逆：阱频 f [MHz] → 二次系数 k2 [V/µm²]。
+
+    ω = √(2Q·k2/m)（k2 以 V/µm² 计，含 1e12 µm²/m² 换算）→
+    k2 = m·(2πf)²/(2Q) / 1e12。f ≤ 0 / NaN 抛 ValueError。
+    """
+    f = float(f_mhz)
+    if not f > 0.0:  # 同时挡住 NaN
+        raise ValueError(f"阱频需为有限正数 (MHz)，收到 {f_mhz}")
+    omega = 2.0 * np.pi * f * 1e6
+    return mass_kg * omega**2 / (2.0 * charge) / 1e12
+
+
+def invert_trap_freqs_to_params(
+    f_x_mhz: float,
+    f_y_mhz: float,
+    freq_rf_mhz: float,
+    species_name: str,
+    D: float = 0.0,
+) -> tuple[float, float, float]:
+    """由目标轴阱频 (f_x, f_y) 反算势系数 (A, E)，返回 (A, E, q_x)。
+
+    利用和式恒等式 c_x2 + c_y2 = 8αA²（D、E 均从和式消去）：
+
+    - c_a2 = trap_freq_MHz_to_k2(f_a)（目标二次系数，V/µm²）
+    - A = √((c_x2+c_y2)/(8α))   （取正根 → q_x > 0）
+    - E = (c_x2−c_y2)/2 − D·A   （D·A 项参与 c_x2/c_y2 的分配，需扣除）
+
+    B/F 只影响四次及以上系数，反算仅确定二次部分（B/F 由调用方另行给定）。
+    q_y = −q_x；调用方应检查 |q|（Mathieu 稳定性要求 |q| ≲ 0.9）。
+    """
+    sp = get_species(species_name)
+    alpha = alpha_eff_um2_per_V(freq_rf_mhz, sp)
+    c_x2 = trap_freq_MHz_to_k2(f_x_mhz, sp.mass_kg, sp.charge_C)
+    c_y2 = trap_freq_MHz_to_k2(f_y_mhz, sp.mass_kg, sp.charge_C)
+    a_sum = c_x2 + c_y2
+    if not a_sum > 0.0:
+        raise ValueError(f"c_x2+c_y2 = {a_sum} ≤ 0，无法反算 A")
+    A = math.sqrt(a_sum / (8.0 * alpha))
+    E = 0.5 * (c_x2 - c_y2) - D * A
+    q_x, _ = mathieu_q_per_axis(
+        RadialTrapParams(A_V_per_um2=A, freq_rf_mhz=freq_rf_mhz,
+                         species_name=species_name)
+    )
+    return A, E, q_x
 
 
 def evaluate_conditions(

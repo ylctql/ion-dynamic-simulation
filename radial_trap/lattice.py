@@ -43,16 +43,24 @@ def find_radial_equilibrium(
     params: RadialTrapParams,
     maxiter: int = 50000,
     tol: float = 1e-15,
+    r_init_um: np.ndarray | None = None,
 ) -> EquilibriumResult:
     """L-BFGS-B 最小化 外势+库伦 总能量，返回 EquilibriumResult。
 
     tol 映射到 L-BFGS-B ftol；gtol 固定 1e-12（eV/µm，保证间距收敛到
     远优于 1e-6 相对精度，供声子/解析验证使用）。
+
+    r_init_um : 可选热启动初态 (N,3) µm（None 则按 seed 随机撒点）。
+    用于参数连续微调（UI 滑块）时保持构型连续并减少迭代；注意在
+    xy_degenerate 附近随机初始化可能跳取向，热启动可避免。
     """
     sp = get_species(params.species_name)
     n = params.n_ions
     charge = np.full(n, sp.charge_ec)
-    r0 = initial_positions(params)
+    if r_init_um is None:
+        r0 = initial_positions(params)
+    else:
+        r0 = np.array(r_init_um, dtype=float).reshape(n, 3).copy()
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray]:
         breakdown, grad = total_energy_and_grad(

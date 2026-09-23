@@ -17,18 +17,24 @@ class RadialTrapParams:
     RF bias 势（静态）: D·φ_rf
     DC 势: E(x²−y²) + F(x⁴−6x²y²+y⁴)
     其中 x,y 单位 µm，A/E 单位 V/µm²，B/F 单位 V/µm⁴，D 无量纲。
+
+    轴向定位（与 3D 情形对应）：设计对应的 3D 理想二维晶格位于 xoz 平面
+    （y=0），在本径向平面 (x,y) 中表现为**离子链沿 x 轴**——x 为弱/晶格轴，
+    y 为紧束缚轴。默认参数（A=5e-3, E=−3.5e-4）即此取向：f_x≈0.71 MHz
+    （链轴），f_y≈5.09 MHz，q≈0.29，4 条件全过，N=10 线性链。
+    E 为 DC 四极系数：E<0 → x 弱轴（默认，链沿 x）；E>0 → y 弱轴（链沿 y）。
     """
 
-    A_V_per_um2: float
+    A_V_per_um2: float = 5e-3
     B_V_per_um4: float = 0.0
     D_dimless: float = 0.0
-    E_dc_V_per_um2: float = 0.0
+    E_dc_V_per_um2: float = -3.5e-4
     F_dc_V_per_um4: float = 0.0
     freq_rf_mhz: float = 35.28
     species_name: str = "Ba135+"
     n_ions: int = 10
-    x_range_um: tuple[float, float] = (-10.0, 10.0)
-    y_range_um: tuple[float, float] = (-80.0, 80.0)
+    x_range_um: tuple[float, float] = (-30.0, 30.0)
+    y_range_um: tuple[float, float] = (-10.0, 10.0)
     seed: int = 0
     softening_um: float = 1e-3
     scale_um: float = 100.0

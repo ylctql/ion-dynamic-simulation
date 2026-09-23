@@ -247,19 +247,21 @@ python -m motion_analysis continuous_sampling/t030.00_interval0.08_step10 \
 
 ### `radial_trap/` — 2D 径向多项式势阱
 
-以 Laplace 多项式基解析指定径向平面 (x,y) 势场（RF 四极+十六极 A,B + RF bias D + DC E,F），计算平衡构型、各离子解析 micromotion、晶格成形条件与可选面内声子。**无需 CSV、无需 C++ 构建**（纯 numpy/scipy）；复用 equilibrium 的能量/声子/FitResult3D 机制。
+以 Laplace 多项式基解析指定径向平面 (x,y) 势场（RF 四极+十六极 A,B + RF bias D + DC E,F），计算平衡构型（默认线性链沿 x 轴——x 取弱/晶格轴，对应 3D xoz 面晶格；E=−3.5e-4 默认）、各离子解析 micromotion、晶格成形条件与可选面内声子；v1.1 加势场分布图、阱频反算与滑块 UI；v1.2 UI 加系数数值/范围框、N/区域框、键盘方向键步进与 DB+F=0 约束开关；v1.3 UI 重解防抖 + 绘制节流（修交互卡死）与水平 colorbar；v1.4 `--export-fz` 导出附加轴向囚禁（3D 链前提：f_y、f_z 均 ≳ r_min(N)≈0.60·N^0.88——N=20/30/40 分别 ≳8.4/12/15.5·f_x）；v1.5 `--fit-ab` 可选地从二维格点 CSV（含 Comsol 导出，`--fit-ab-range` 限域防高阶泄漏）最小二乘拟合 RF 势 A,B。**无需电场 CSV、无需 C++ 构建**（纯 numpy/scipy）；复用 equilibrium 的能量/声子/FitResult3D 机制。
 
 | 文件 | 关键内容 |
 |------|---------|
 | `types.py` | `RadialTrapParams`（A,B,D,E,F + RF 频率/物种/N/range/seed）、`LatticeConditions`（4 条件 + 派生量）等数据类 |
-| `potential.py` | `rf_field_V_per_um`（+∇φ_rf 约定）、`alpha_eff_um2_per_V`（物种质量）、`total_potential_coefficients`（9 单项式系数表）、`build_total_potential_fit`（直接构造 FitResult3D）、`evaluate_conditions`（4 条件 + f/q/eps4） |
-| `lattice.py` | `find_radial_equilibrium`（L-BFGS-B，z 钉平面）、`micromotion_amplitude`（a_mm=(Q/mΩ²)E_rf + excess 比 ρ）、`solve_inplane_phonons`（dof_indices 面内子空间） |
-| `plots.py` | `plot_lattice` — xoy 构型 + micromotion 线段 / 幅度与 ρ 双联图 |
-| `cli.py` | CLI 入口；`--json` 严格键集存档、npz/report 输出、`--export-poly`（衔接 `main.py --poly-potential`） |
+| `potential.py` | `rf_field_V_per_um`（+∇φ_rf 约定）、`alpha_eff_um2_per_V`（物种质量）、`total_potential_coefficients`（9 单项式系数表）、`build_total_potential_fit`（直接构造 FitResult3D）、`augment_fit_with_axial_confinement`（追加 c_z2·z² 轴向囚禁，--export-fz 用）、`evaluate_conditions`（4 条件 + f/q/eps4）、`pseudopotential_V`/`bias_potential_V`/`dc_potential_V`/`total_potential_V` 组分与总势、`invert_trap_freqs_to_params`（目标阱频 → A,E） |
+| `lattice.py` | `find_radial_equilibrium`（L-BFGS-B，z 钉平面，`r_init_um` 可热启动）、`micromotion_amplitude`（a_mm=(Q/mΩ²)E_rf + excess 比 ρ）、`solve_inplane_phonons`（dof_indices 面内子空间） |
+| `fitting.py` | `load_radial_grid_csv`（Comsol `%` 元数据行剥离 + Length unit 单位自动换算到 µm/表头列名别名/无表头 3 列/UTF-8 BOM）+ `fit_rf_ab`（Laplace 四极+十六极基线性最小二乘，常数吸收零点；`fit_range_um` 限域去高阶泄漏）→ `FitABResult`（A,B,V₀ + n_points/R²/rms/范围诊断）；`--fit-ab` 后端 |
+| `plots.py` | `plot_lattice` — xoy 构型 + micromotion 线段 / 幅度与 ρ 双联图；`plot_potential_maps` — 径向平面 2×2 势场分布图（赝势/bias/DC/总势+离子） |
+| `ui.py` | `RadialTrapUI` — matplotlib 交互窗（A/B/D/E/F 滑块 + 数值/范围框 + N/区域框 + DB+F=0 约束开关 + 键盘方向键步进 + 势场实时面板（水平 colorbar）+ 重解防抖/绘制节流 + 阱频反算/存档按钮；refresh/set_coeff_value/set_coeff_range/set_n_ions/set_region/set_constraint/save_json 无头可测） |
+| `cli.py` | CLI 入口；`--json` 严格键集存档、npz/report 输出、`--export-poly`（衔接 `main.py --poly-potential`）+ `--export-fz`（附加简谐轴向囚禁 c_z2·z²——3D 链的前提，不加则 z 零囚禁、链摊成片）、`--plot-potential`、`--from-freq`（阱频反算，与显式 A/E 冲突报错）、`--fit-ab`（格点 CSV 拟合 A,B，与 --A/--B/--from-freq/含 A/B 的 --json 冲突报错）+ `--fit-ab-range`（限域防高阶泄漏——全域拟合可把 A 抬高数十百分点，取链展宽 ×1.5~2）、`--ui`（需交互式后端） |
 
-运行: `python -m radial_trap --N 10`（默认参数即有效演示）；`--phonon` 面内声子；`--B 1e-7 --D 0.5 --F -5e-8` 演示 DB+F 精确抵消。注意 `--x-range=-10,10` 负数须 = 语法。
+运行: `python -m radial_trap --N 10`（默认参数即有效演示：链沿 x，f_x≈0.71/f_y≈5.09 MHz）；`--phonon` 面内声子；`--plot-potential` 势场分布图；`--from-freq 0.7091 5.086` 阱频反算；`--fit-ab grid.csv` 格点 CSV 拟合 A/B；`--ui` 滑块交互窗；`--B 1e-7 --D 0.5 --F=-5e-8` 演示 DB+F 精确抵消。负数参数用 `=` 语法最稳：`--x-range=-10,10`、`--F=-5e-8`。
 
-说明文档: `docs/radial_trap.md`（系数推导、4 条件、micromotion 恒等式、zigzag 阈值提示、v1 局限）
+说明文档: `docs/radial_trap.md`（系数推导、4 条件、micromotion 恒等式、zigzag 阈值、势场图/UI/阱频反算）；用户教程: `docs/radial_trap_tutorial.md`（快速上手/选参/常见任务/FAQ；图内文本为英文——matplotlib 默认字体无 CJK 字形）
 
 ## 核心类型 (`utils.py`)
 
@@ -298,7 +300,7 @@ pytest                # 所有测试
 | `tests/test_field_optimize.py` | FastEvaluator 预计算、目标函数、NaN 保护、优化收敛、CLI 解析、JSON 输出 |
 | `tests/test_trap_stability.py` | a/q 教科书公式验证、物种质量标度、稳定性判断、secular 频率一致性、非谐常数（合成+场积分）、fit_degree=2/4/6、CLI 解析 |
 | `tests/test_micromotion.py` | 合成数据回收已知 q（常位移/secular 调制）、q=0 退化、负 q、β(t) 跟踪 secular、加载/采样校验异常、多离子批处理 |
-| `tests/test_radial_trap.py` | radial_trap：RF 场/系数表/条件解析验证、N=1/2 平衡与间距公式、micromotion 恒等式与 excess 比、N=2 面内声子解析谱、CLI（--json 往返/npz/不稳定配置/绘图/导出往返） |
+| `tests/test_radial_trap.py` | radial_trap：RF 场/系数表/条件解析验证、N=1/2 平衡与间距公式、micromotion 恒等式与 excess 比、N=2 面内声子解析谱、CLI（--json 往返/npz/不稳定配置/绘图/--from-freq/导出往返）、势组分恒等/阱频反算/热启动/UI 冒烟（v1.2 控件/约束/键盘、v1.3 重解防抖、v1.4 --export-fz 轴向囚禁往返与错误分支）、格点 CSV 拟合（fit_rf_ab 已知系数回收/含噪稳健/限域去 q6 泄漏、load_radial_grid_csv 别名/无表头/BOM/坏列/Comsol 格式、--fit-ab 往返与四类冲突 exit 2、--fit-ab-range 往返与守卫） |
 | `tests/test_cpu_cuda_error_accumulation.py` | 圆轨道 CPU/CUDA 误差对比 |
 
 ## 开发注意事项
